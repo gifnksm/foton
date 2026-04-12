@@ -1,3 +1,6 @@
+[workspace]
+members = [ "xtask" ]
+
 [package]
 name = "foton"
 version = "0.1.0"
@@ -34,8 +37,6 @@ clap_mangen = "0.3"
 
 [dev-dependencies]
 [build-dependencies]
-
-[profile.dev]
 
 [profile.release]
 strip = true
