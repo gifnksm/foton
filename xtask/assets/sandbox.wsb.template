@@ -1,0 +1,12 @@
+<Configuration>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>__HOST_TARGET__</HostFolder>
+      <SandboxFolder>C:\sandbox\target</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>__LOGON_COMMAND__</Command>
+  </LogonCommand>
+</Configuration>
