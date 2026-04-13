@@ -8,3 +8,4 @@ publish = false
 clap = { version = "4.6.0", features = ["derive"] }
 color-eyre = "0.6.5"
 derive_more = { version = "2.1.1", features = ["display"] }
+wsbx = "0.1.0"
