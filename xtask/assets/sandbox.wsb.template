@@ -1,8 +1,13 @@
 <Configuration>
   <MappedFolders>
     <MappedFolder>
-      <HostFolder>__HOST_TARGET__</HostFolder>
-      <SandboxFolder>C:\sandbox\target</SandboxFolder>
+      <HostFolder>__HOST_BIN_DIR__</HostFolder>
+      <SandboxFolder>__SANDBOX_BIN_DIR__</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>__HOST_OUTPUT_DIR__</HostFolder>
+      <SandboxFolder>__SANDBOX_OUTPUT_DIR__</SandboxFolder>
       <ReadOnly>false</ReadOnly>
     </MappedFolder>
   </MappedFolders>

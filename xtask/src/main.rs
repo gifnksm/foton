@@ -8,6 +8,7 @@ use color_eyre::eyre::{self, OptionExt};
 
 use crate::{sandbox::SandboxCommand, scenario::ScenarioCommand};
 
+mod fs_util;
 mod sandbox;
 mod scenario;
 
@@ -58,5 +59,3 @@ fn host_target_dir() -> eyre::Result<PathBuf> {
     }
     Ok(host_repository_root()?.join("target"))
 }
-
-const SANDBOX_TARGET_DIR: &str = r"C:\sandbox\target";

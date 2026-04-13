@@ -1,29 +1,16 @@
-use std::{
-    fs::{self, File},
-    process::Command,
-};
+use std::process::Command;
 
 use color_eyre::eyre::{self, WrapErr as _, ensure};
 
-use crate::scenario::RunArgs;
+use crate::{fs_util, scenario::RunArgs};
 
 pub(super) fn run(args: &RunArgs) -> eyre::Result<()> {
     let stdout_path = args.output_dir.join("stdout.txt");
     let stderr_path = args.output_dir.join("stderr.txt");
     let exitcode_path = args.output_dir.join("exitcode.txt");
 
-    let stdout_file = File::create(&stdout_path).wrap_err_with(|| {
-        format!(
-            "failed to create foton stdout file: {}",
-            stdout_path.display()
-        )
-    })?;
-    let stderr_file = File::create(&stderr_path).wrap_err_with(|| {
-        format!(
-            "failed to create foton stderr file: {}",
-            stderr_path.display()
-        )
-    })?;
+    let stdout_file = fs_util::create_file("foton stdout", &stdout_path)?;
+    let stderr_file = fs_util::create_file("foton stderr", &stderr_path)?;
 
     let status = Command::new(&args.foton_exe)
         .arg("--help")
@@ -37,25 +24,21 @@ pub(super) fn run(args: &RunArgs) -> eyre::Result<()> {
             )
         })?;
 
-    fs::write(&exitcode_path, format!("{}", status.code().unwrap_or(255))).wrap_err_with(|| {
-        format!(
-            "failed to write foton exitcode: {}",
-            exitcode_path.display()
-        )
-    })?;
+    fs_util::write(
+        "foton exitcode",
+        &exitcode_path,
+        format!("{}", status.code().unwrap_or(255)),
+    )?;
 
-    let stdout = fs::read_to_string(&stdout_path).wrap_err_with(|| {
-        format!(
-            "failed to read foton stdout file: {}",
-            stdout_path.display()
-        )
-    })?;
+    let stdout = fs_util::read_to_string("foton stdout", &stdout_path)?;
+    let stderr = fs_util::read_to_string("foton stderr", &stderr_path)?;
 
     ensure!(status.success(), "foton exitcode is not 0: {}", status);
     ensure!(
         stdout.contains("Usage:"),
         "foton stdout does not contain `Usage:`"
     );
+    ensure!(stderr.is_empty(), "foton stderr is not empty");
 
     Ok(())
 }
