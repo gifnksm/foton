@@ -65,7 +65,7 @@ where
             dst.display()
         )
     })?;
-    ensure_dir_exists(&format!("{name} destination"), dst_parent)?;
+    ensure_dir_exists(&format!("{name} destination directory"), dst_parent)?;
 
     fs::copy(src, dst).wrap_err_with(|| {
         format!(
