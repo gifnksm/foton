@@ -17,12 +17,7 @@ pub(super) fn run(args: &RunArgs) -> eyre::Result<()> {
         .stdout(stdout_file)
         .stderr(stderr_file)
         .status()
-        .wrap_err_with(|| {
-            format!(
-                "failed to execute foton command: {}",
-                args.foton_exe.display()
-            )
-        })?;
+        .wrap_err_with(|| format!("failed to execute foton command: {}", args.foton_exe))?;
 
     fs_util::write(
         "foton exitcode",
