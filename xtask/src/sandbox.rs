@@ -1,7 +1,7 @@
 use std::{
     fmt,
     io::BufReader,
-    process::{Command, Stdio},
+    process::{self, Command, Stdio},
 };
 
 use cargo_metadata::{
@@ -65,11 +65,17 @@ fn generate_config(scenario: &Scenario) -> eyre::Result<()> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RunId {
     timestamp: DateTime<Utc>,
+    pid: u32,
 }
 
 impl fmt::Display for RunId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.timestamp.format("%Y%m%d-%H%M%S-%3fZ"))
+        write!(
+            f,
+            "{}-{}",
+            self.timestamp.format("%Y%m%d-%H%M%S-%3f"),
+            self.pid,
+        )
     }
 }
 
@@ -77,6 +83,7 @@ impl RunId {
     fn new() -> Self {
         Self {
             timestamp: Utc::now(),
+            pid: process::id(),
         }
     }
 }

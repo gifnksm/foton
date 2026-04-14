@@ -844,6 +844,8 @@ dependencies = [
  "clap",
  "color-eyre",
  "derive_more",
+ "serde",
+ "serde_json",
  "wsbx",
 ]
 
