@@ -13,7 +13,7 @@ pub(super) fn run(args: &RunArgs) -> eyre::Result<()> {
 
     ensure!(
         res.status.success(),
-        "foton exitcode is not 0: {}",
+        "foton exited with non-zero status: {}",
         res.status
     );
     ensure!(

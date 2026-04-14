@@ -2,6 +2,8 @@ use std::{
     fmt,
     io::BufReader,
     process::{self, Command, Stdio},
+    sync::mpsc::{self, RecvTimeoutError},
+    time::{Duration, Instant},
 };
 
 use cargo_metadata::{
@@ -9,10 +11,15 @@ use cargo_metadata::{
     camino::{Utf8Path, Utf8PathBuf},
 };
 use chrono::{DateTime, Utc};
-use color_eyre::eyre::{self, OptionExt as _, WrapErr as _, ensure};
-use wsbx::{SandboxConfig, config::MappedFolder};
+use color_eyre::eyre::{self, OptionExt as _, WrapErr as _, bail, ensure};
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher as _};
+use wsbx::{SandboxConfig, SandboxEnvironment, config::MappedFolder};
 
-use crate::{env_util, fs_util, scenario::Scenario};
+use crate::{
+    env_util, fs_util,
+    report::{ScenarioOutcome, ScenarioReport},
+    scenario::Scenario,
+};
 
 #[derive(clap::Subcommand)]
 pub(crate) enum SandboxCommand {
@@ -20,15 +27,22 @@ pub(crate) enum SandboxCommand {
         #[clap(long)]
         scenario: Scenario,
     },
+    Run {
+        #[clap(long)]
+        scenario: Scenario,
+        #[clap(long, default_value_t = 60)]
+        timeout: u64,
+    },
 }
 
 pub(crate) fn dispatch(command: &SandboxCommand) -> eyre::Result<()> {
     match command {
-        SandboxCommand::GenerateConfig { scenario } => generate_config(scenario),
+        SandboxCommand::GenerateConfig { scenario } => generate_config(*scenario),
+        SandboxCommand::Run { scenario, timeout } => run(*scenario, Duration::from_secs(*timeout)),
     }
 }
 
-fn generate_config(scenario: &Scenario) -> eyre::Result<()> {
+fn generate_config(scenario: Scenario) -> eyre::Result<()> {
     let run_id = RunId::new();
     let target_dir = env_util::cargo_target_dir()?;
     let host_paths = MappingPaths::new_host(&target_dir, scenario, run_id);
@@ -52,12 +66,68 @@ fn generate_config(scenario: &Scenario) -> eyre::Result<()> {
         config.as_encoded_bytes(),
     )?;
 
-    eprintln!("Generated Windows Sandbox config:");
-    eprintln!("  {}", config_path);
-    eprintln!("Scenario:");
-    eprintln!("  {scenario}");
-    eprintln!("Run ID:");
-    eprintln!("  {run_id}");
+    eprintln!("Generated Windows Sandbox config.");
+    eprintln!("  Config: {config_path}");
+    eprintln!("  Scenario: {scenario}");
+    eprintln!("  Run ID: {run_id}");
+
+    Ok(())
+}
+
+fn run(scenario: Scenario, timeout: Duration) -> eyre::Result<()> {
+    let run_id = RunId::new();
+    let target_dir = env_util::cargo_target_dir()?;
+    let host_paths = MappingPaths::new_host(&target_dir, scenario, run_id);
+    let sandbox_paths = MappingPaths::new_sandbox();
+
+    prepare_host_artifacts(&host_paths)?;
+    let logon_command = format!(
+        r"{} scenario run --scenario {} --foton-exe {} --output-dir {} --report {} --complete-stamp {}",
+        sandbox_paths.xtask_exe,
+        scenario,
+        sandbox_paths.foton_exe,
+        sandbox_paths.output_dir,
+        sandbox_paths.report,
+        sandbox_paths.complete_stamp,
+    );
+
+    let config = configure_mapped_folders(SandboxConfig::new(), &host_paths, &sandbox_paths)
+        .logon_command(logon_command);
+
+    let (_report_watcher, watcher_rx) = create_output_dir_watcher(&host_paths)?;
+
+    eprintln!("Starting sandbox scenario run...");
+    eprintln!("  Scenario: {scenario}");
+    eprintln!("  Run ID: {run_id}");
+    eprintln!("  Output dir: {}", host_paths.output_dir);
+    eprintln!("  Timeout: {timeout:?}");
+
+    let mut sandbox = SandboxGuard::start(scenario, run_id, config)?;
+    sandbox.connect()?;
+    eprintln!("Waiting for scenario completion...");
+    wait_for_completion_stamp(&host_paths, watcher_rx, timeout)?;
+    sandbox.stop()?;
+
+    let report: ScenarioReport = fs_util::read_json("report", &host_paths.report)?;
+
+    eprintln!("Scenario completed.");
+    eprintln!("  Scenario: {scenario}");
+    eprintln!("  Run ID: {run_id}");
+    eprintln!("  Output dir: {}", host_paths.output_dir);
+    eprintln!("  Report: {}", host_paths.report);
+
+    match report.outcome {
+        ScenarioOutcome::Success => eprintln!("  Result: Success"),
+        ScenarioOutcome::Failure { error, sources } => {
+            eprintln!("  Result: Failure");
+            eprintln!("  Error: {error}");
+            for source in sources {
+                eprintln!("    caused by: {source}");
+            }
+            eprintln!("Check captured stdout/stderr files in the output directory for details.");
+            bail!("scenario failed");
+        }
+    }
 
     Ok(())
 }
@@ -95,6 +165,8 @@ struct MappingPaths {
     foton_exe: Utf8PathBuf,
     xtask_exe: Utf8PathBuf,
     output_dir: Utf8PathBuf,
+    report: Utf8PathBuf,
+    complete_stamp: Utf8PathBuf,
 }
 
 impl MappingPaths {
@@ -103,16 +175,20 @@ impl MappingPaths {
         let foton_exe = bin_dir.join("foton.exe");
         let xtask_exe = bin_dir.join("xtask.exe");
         let output_dir = base_dir.join("output");
+        let report = output_dir.join("report.json");
+        let complete_stamp = output_dir.join("complete.stamp");
         Self {
             base_dir,
             bin_dir,
             foton_exe,
             xtask_exe,
             output_dir,
+            report,
+            complete_stamp,
         }
     }
 
-    fn new_host(target_dir: &Utf8Path, scenario: &Scenario, run_id: RunId) -> Self {
+    fn new_host(target_dir: &Utf8Path, scenario: Scenario, run_id: RunId) -> Self {
         MappingPaths::new(
             target_dir.join(format!(r"windows-sandbox\scenarios\{scenario}\{run_id}")),
         )
@@ -186,4 +262,110 @@ fn configure_mapped_folders(
                 .sandbox_folder(&sandbox_paths.output_dir)
                 .read_only(false),
         )
+}
+
+fn create_output_dir_watcher(
+    host_paths: &MappingPaths,
+) -> eyre::Result<(RecommendedWatcher, mpsc::Receiver<notify::Result<Event>>)> {
+    let (tx, rx) = mpsc::channel();
+    let mut watcher = notify::recommended_watcher(tx).wrap_err("failed to create file watcher")?;
+    watcher
+        .watch(
+            host_paths.output_dir.as_std_path(),
+            RecursiveMode::NonRecursive,
+        )
+        .wrap_err_with(|| format!("failed to watch directory: {}", host_paths.output_dir))?;
+    Ok((watcher, rx))
+}
+
+fn wait_for_completion_stamp(
+    host_paths: &MappingPaths,
+    watcher_rx: mpsc::Receiver<notify::Result<Event>>,
+    timeout: Duration,
+) -> eyre::Result<()> {
+    let target_path = &host_paths.complete_stamp;
+    if target_path.exists() {
+        return Ok(());
+    }
+
+    let deadline = Instant::now() + timeout;
+    loop {
+        let timeout = deadline.saturating_duration_since(Instant::now());
+        let res = match watcher_rx.recv_timeout(timeout) {
+            Ok(res) => res,
+            Err(RecvTimeoutError::Timeout) => {
+                bail!("timed out waiting for scenario completion");
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                bail!("file watcher disconnected while waiting for scenario completion")
+            }
+        };
+        let msg = res.wrap_err("failed to watch file changes")?;
+        if msg.kind.is_create() && msg.paths.iter().any(|path| path == target_path) {
+            return Ok(());
+        }
+    }
+}
+
+#[derive(Debug)]
+struct SandboxGuard {
+    scenario: Scenario,
+    run_id: RunId,
+    sandbox: SandboxEnvironment,
+    stopped: bool,
+}
+
+impl SandboxGuard {
+    fn start(scenario: Scenario, run_id: RunId, config: SandboxConfig) -> eyre::Result<Self> {
+        eprintln!("Starting Windows Sandbox...");
+        let sandbox = SandboxEnvironment::builder()
+            .config(config)
+            .start()
+            .wrap_err("failed to start sandbox")?;
+        eprintln!("Sandbox started. (Sandbox ID {})", sandbox.id());
+        let sandbox = Self {
+            scenario,
+            run_id,
+            sandbox,
+            stopped: false,
+        };
+        Ok(sandbox)
+    }
+
+    fn connect(&mut self) -> eyre::Result<()> {
+        eprintln!("Connecting to sandbox...");
+        self.sandbox.connect().wrap_err_with(|| {
+            format!(
+                "failed to connect to sandbox (Scenario {}, Run ID {}, Sandbox ID {})",
+                self.scenario,
+                self.run_id,
+                self.sandbox.id(),
+            )
+        })?;
+        Ok(())
+    }
+
+    fn stop(&mut self) -> eyre::Result<()> {
+        if self.stopped {
+            return Ok(());
+        }
+
+        eprintln!("Stopping sandbox...");
+        self.sandbox.stop().wrap_err_with(|| {
+            format!(
+                "failed to stop sandbox (Scenario {}, Run ID {}, Sandbox ID {})",
+                self.scenario,
+                self.run_id,
+                self.sandbox.id(),
+            )
+        })?;
+        self.stopped = true;
+        Ok(())
+    }
+}
+
+impl Drop for SandboxGuard {
+    fn drop(&mut self) {
+        let _ = self.stop();
+    }
 }

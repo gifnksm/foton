@@ -5,7 +5,7 @@ use std::{
 
 use cargo_metadata::camino::Utf8Path;
 use color_eyre::eyre::{self, WrapErr as _, ensure};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub(crate) fn create_file<N, P>(name: N, path: P) -> eyre::Result<File>
 where
@@ -14,6 +14,15 @@ where
 {
     let path = path.as_ref();
     File::create(path).wrap_err_with(|| format!("failed to create {name}: {path}"))
+}
+
+pub(crate) fn open_file<N, P>(name: N, path: P) -> eyre::Result<File>
+where
+    N: Display,
+    P: AsRef<Utf8Path>,
+{
+    let path = path.as_ref();
+    File::open(path).wrap_err_with(|| format!("failed to open {name}: {path}"))
 }
 
 pub(crate) fn create_dir_all<N, P>(name: N, path: P) -> eyre::Result<()>
@@ -78,6 +87,19 @@ where
 {
     let path = path.as_ref();
     fs::read_to_string(path).wrap_err_with(|| format!("failed to read {name}: {path}"))
+}
+
+pub(crate) fn read_json<N, P, T>(name: N, path: P) -> eyre::Result<T>
+where
+    N: Display,
+    P: AsRef<Utf8Path>,
+    T: for<'a> Deserialize<'a>,
+{
+    let path = path.as_ref();
+    let file = open_file(&name, path)?;
+    let data = serde_json::from_reader(file)
+        .wrap_err_with(|| format!("failed to read {name} as JSON: {path}"))?;
+    Ok(data)
 }
 
 pub(crate) fn write<N, P, C>(name: N, path: P, content: C) -> eyre::Result<()>

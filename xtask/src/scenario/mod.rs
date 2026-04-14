@@ -1,18 +1,19 @@
 use std::{
-    fs,
     process::{Command, ExitStatus},
     sync::atomic::{AtomicUsize, Ordering},
 };
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use color_eyre::eyre::{self, WrapErr as _};
-use serde::{Deserialize, Serialize};
 
-use crate::fs_util;
+use crate::{
+    fs_util,
+    report::{ScenarioOutcome, ScenarioReport},
+};
 
 mod help_check;
 
-#[derive(Debug, Clone, PartialEq, Eq, clap::ValueEnum, derive_more::Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, derive_more::Display)]
 #[display(rename_all = "kebab-case")]
 pub(crate) enum Scenario {
     HelpCheck,
@@ -34,6 +35,10 @@ pub(crate) struct RunArgs {
     foton_exe: Utf8PathBuf,
     #[clap(long)]
     output_dir: Utf8PathBuf,
+    #[clap(long)]
+    report: Option<Utf8PathBuf>,
+    #[clap(long)]
+    complete_stamp: Option<Utf8PathBuf>,
 }
 
 pub(crate) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()> {
@@ -43,13 +48,23 @@ pub(crate) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()> {
 }
 
 pub(crate) fn run(scenario: &Scenario, args: &RunArgs) -> eyre::Result<()> {
-    fs::create_dir_all(&args.output_dir)
-        .wrap_err_with(|| format!("failed to create output directory: {}", args.output_dir))?;
+    let report_path = args
+        .report
+        .clone()
+        .unwrap_or_else(|| args.output_dir.join("report.json"));
+    let complete_stamp_path = args
+        .complete_stamp
+        .clone()
+        .unwrap_or_else(|| args.output_dir.join("complete.stamp"));
+
+    fs_util::create_dir_all("output directory", &args.output_dir)?;
 
     let res = match scenario {
         Scenario::HelpCheck => help_check::run(args),
     };
-    dump_report(scenario, &args.output_dir.join("report.json"), &res)?;
+
+    write_scenario_report(scenario, &report_path, &res)?;
+    let _ = fs_util::create_file("complete stamp", complete_stamp_path)?;
     res
 }
 
@@ -109,21 +124,14 @@ impl ExecResult {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct ScenarioReport {
-    outcome: ScenarioOutcome,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-enum ScenarioOutcome {
-    Pass,
-    Fail { error: String, sources: Vec<String> },
-}
-
-fn dump_report(scenario: &Scenario, path: &Utf8Path, res: &eyre::Result<()>) -> eyre::Result<()> {
+fn write_scenario_report(
+    scenario: &Scenario,
+    path: &Utf8Path,
+    res: &eyre::Result<()>,
+) -> eyre::Result<()> {
     let outcome = match res {
-        Ok(()) => ScenarioOutcome::Pass,
-        Err(err) => ScenarioOutcome::Fail {
+        Ok(()) => ScenarioOutcome::Success,
+        Err(err) => ScenarioOutcome::Failure {
             error: err.to_string(),
             sources: err.chain().skip(1).map(|e| e.to_string()).collect(),
         },
