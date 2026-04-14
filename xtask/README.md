@@ -10,6 +10,13 @@ Generate a Windows Sandbox config:
 cargo xtask sandbox generate-config --scenario <scenario>
 ```
 
+Run a scenario in Windows Sandbox and wait for the result:
+
+```text
+cargo xtask sandbox run --scenario <scenario>
+cargo xtask sandbox run --scenario <scenario> --timeout <seconds>
+```
+
 Run a scenario directly:
 
 ```text
@@ -29,6 +36,7 @@ Scenario results are written to the specified output directory.
 Files:
 
 - `report.json`
+- `complete.stamp`
 - `<index>.<name>.stdout.txt`
 - `<index>.<name>.stderr.txt`
 - `<index>.<name>.status.txt`

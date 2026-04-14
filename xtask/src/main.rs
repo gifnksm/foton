@@ -5,6 +5,7 @@ use crate::{sandbox::SandboxCommand, scenario::ScenarioCommand};
 
 mod env_util;
 mod fs_util;
+mod report;
 mod sandbox;
 mod scenario;
 
