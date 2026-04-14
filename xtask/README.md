@@ -7,7 +7,7 @@ Development helpers for `foton`.
 Generate a Windows Sandbox config:
 
 ```text
-cargo xtask sandbox generate --scenario <scenario>
+cargo xtask sandbox generate-config --scenario <scenario>
 ```
 
 Run a scenario directly:
@@ -21,7 +21,7 @@ cargo xtask scenario run --scenario <scenario> --foton-exe <path> --output-dir <
 Generated Sandbox configs are written under:
 
 ```text
-target/windows-sandbox/scenarios/<scenario>/
+target/windows-sandbox/scenarios/<scenario>/<run-id>/
 ```
 
 Scenario results are written to the specified output directory.

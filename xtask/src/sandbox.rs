@@ -1,5 +1,9 @@
-use std::path::Path;
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+};
 
+use chrono::{DateTime, Utc};
 use color_eyre::eyre;
 use wsbx::{SandboxConfig, config::MappedFolder};
 
@@ -7,7 +11,7 @@ use crate::{fs_util, scenario::Scenario};
 
 #[derive(clap::Subcommand)]
 pub(crate) enum SandboxCommand {
-    Generate {
+    GenerateConfig {
         #[clap(long)]
         scenario: Scenario,
     },
@@ -15,53 +19,100 @@ pub(crate) enum SandboxCommand {
 
 pub(crate) fn dispatch(command: &SandboxCommand) -> eyre::Result<()> {
     match command {
-        SandboxCommand::Generate { scenario } => generate(scenario),
+        SandboxCommand::GenerateConfig { scenario } => generate_config(scenario),
     }
 }
 
-fn generate(scenario: &Scenario) -> eyre::Result<()> {
-    let host_target_dir = crate::host_target_dir()?;
-    let host_base_dir = host_target_dir.join(format!(r"windows-sandbox\scenarios\{scenario}"));
-    let host_bin_dir = host_base_dir.join(r"bin");
-    let host_output_dir = host_base_dir.join(r"output");
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RunId {
+    timestamp: DateTime<Utc>,
+}
 
-    fs_util::create_dir_all("scenario", &host_base_dir)?;
-    fs_util::create_dir_all("binary", &host_bin_dir)?;
-    fs_util::create_dir_all("output", &host_output_dir)?;
+impl fmt::Display for RunId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.timestamp.format("%Y%m%d-%H%M%S-%3fZ"))
+    }
+}
+
+impl RunId {
+    fn new() -> Self {
+        Self {
+            timestamp: Utc::now(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Dirs {
+    base_dir: PathBuf,
+    bin_dir: PathBuf,
+    foton_exe: PathBuf,
+    xtask_exe: PathBuf,
+    output_dir: PathBuf,
+}
+
+impl Dirs {
+    fn new(base_dir: PathBuf) -> Self {
+        let bin_dir = base_dir.join("bin");
+        let foton_exe = bin_dir.join("foton.exe");
+        let xtask_exe = bin_dir.join("xtask.exe");
+        let output_dir = base_dir.join("output");
+        Self {
+            base_dir,
+            bin_dir,
+            foton_exe,
+            xtask_exe,
+            output_dir,
+        }
+    }
+
+    fn new_host(target_dir: &Path, scenario: &Scenario, run_id: RunId) -> Self {
+        Dirs::new(target_dir.join(format!(r"windows-sandbox\scenarios\{scenario}\{run_id}")))
+    }
+
+    fn new_sandbox() -> Self {
+        Dirs::new(PathBuf::from(r"C:\sandbox\"))
+    }
+}
+
+fn generate_config(scenario: &Scenario) -> eyre::Result<()> {
+    let run_id = RunId::new();
+    let host_target_dir = crate::host_target_dir()?;
+    let host_dirs = Dirs::new_host(&host_target_dir, scenario, run_id);
+
+    fs_util::create_dir_all("base", &host_dirs.base_dir)?;
+    fs_util::create_dir_all("binary", &host_dirs.bin_dir)?;
+    fs_util::create_dir_all("output", &host_dirs.output_dir)?;
     fs_util::copy(
         "xtask.exe",
         host_target_dir.join(r"debug\xtask.exe"),
-        host_bin_dir.join("xtask.exe"),
+        &host_dirs.xtask_exe,
     )?;
     fs_util::copy(
         "foton.exe",
         host_target_dir.join(r"debug\foton.exe"),
-        host_bin_dir.join("foton.exe"),
+        &host_dirs.foton_exe,
     )?;
 
-    let sandbox_base_dir = Path::new(r"C:\sandbox\");
-    let sandbox_bin_dir = sandbox_base_dir.join(r"bin");
-    let sandbox_xtask = sandbox_bin_dir.join(r"xtask.exe");
-    let sandbox_foton = sandbox_bin_dir.join(r"foton.exe");
-    let sandbox_output_dir = sandbox_base_dir.join(r"output");
+    let sandbox_dirs = Dirs::new_sandbox();
     let logon_command = format!(
         r"{} scenario run --scenario {} --foton-exe {} --output-dir {}",
-        sandbox_xtask.display(),
+        sandbox_dirs.xtask_exe.display(),
         scenario,
-        sandbox_foton.display(),
-        sandbox_output_dir.display()
+        sandbox_dirs.foton_exe.display(),
+        sandbox_dirs.output_dir.display()
     );
 
-    let config_path = host_base_dir.join("sandbox.wsb");
+    let config_path = host_dirs.base_dir.join("sandbox.wsb");
     let config = SandboxConfig::new()
         .mapped_folder(
-            MappedFolder::new(host_bin_dir)
-                .sandbox_folder(sandbox_bin_dir)
+            MappedFolder::new(&host_dirs.bin_dir)
+                .sandbox_folder(&sandbox_dirs.bin_dir)
                 .read_only(true),
         )
         .mapped_folder(
-            MappedFolder::new(host_output_dir)
-                .sandbox_folder(sandbox_output_dir)
+            MappedFolder::new(&host_dirs.output_dir)
+                .sandbox_folder(&sandbox_dirs.output_dir)
                 .read_only(false),
         )
         .logon_command(logon_command)
@@ -77,6 +128,8 @@ fn generate(scenario: &Scenario) -> eyre::Result<()> {
     eprintln!("  {}", config_path.display());
     eprintln!("Scenario:");
     eprintln!("  {scenario}");
+    eprintln!("Run ID:");
+    eprintln!("  {run_id}");
 
     Ok(())
 }
