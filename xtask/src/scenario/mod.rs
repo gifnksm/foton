@@ -1,5 +1,6 @@
-use std::{fmt::Write as _, fs, path::PathBuf};
+use std::{fmt::Write as _, fs};
 
+use cargo_metadata::camino::Utf8PathBuf;
 use color_eyre::eyre::{self, WrapErr as _};
 
 mod help_check;
@@ -23,9 +24,9 @@ pub(crate) enum ScenarioCommand {
 #[derive(clap::Args)]
 pub(crate) struct RunArgs {
     #[clap(long)]
-    foton_exe: PathBuf,
+    foton_exe: Utf8PathBuf,
     #[clap(long)]
-    output_dir: PathBuf,
+    output_dir: Utf8PathBuf,
 }
 
 pub(crate) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()> {
@@ -35,12 +36,8 @@ pub(crate) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()> {
 }
 
 pub(crate) fn run(scenario: &Scenario, args: &RunArgs) -> eyre::Result<()> {
-    fs::create_dir_all(&args.output_dir).wrap_err_with(|| {
-        format!(
-            "failed to create output directory: {}",
-            args.output_dir.display()
-        )
-    })?;
+    fs::create_dir_all(&args.output_dir)
+        .wrap_err_with(|| format!("failed to create output directory: {}", args.output_dir))?;
 
     let result_path = args.output_dir.join("result.txt");
     let res = match scenario {
@@ -62,7 +59,7 @@ pub(crate) fn run(scenario: &Scenario, args: &RunArgs) -> eyre::Result<()> {
     };
 
     fs::write(&result_path, result)
-        .wrap_err_with(|| format!("failed to write to file: {}", result_path.display()))?;
+        .wrap_err_with(|| format!("failed to write to file: {}", result_path))?;
 
     res
 }
