@@ -28,10 +28,12 @@ Scenario results are written to the specified output directory.
 
 Files:
 
-- `stdout.txt`
-- `stderr.txt`
-- `exitcode.txt`
-- `result.txt`
+- `report.json`
+- `<index>.<name>.stdout.txt`
+- `<index>.<name>.stderr.txt`
+- `<index>.<name>.status.txt`
+
+The numbered files are generated per executed command in run order.
 
 ## Notes
 
