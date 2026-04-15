@@ -60,7 +60,7 @@ where
     Ok(())
 }
 
-pub(crate) fn copy<N, P, Q>(name: N, src: P, dst: Q) -> eyre::Result<()>
+pub(crate) fn copy<N, P, Q>(name: N, src: P, dst: Q) -> eyre::Result<u64>
 where
     N: Display,
     P: AsRef<Utf8Path>,
@@ -75,9 +75,9 @@ where
     })?;
     ensure_dir_exists(format_args!("{name} destination directory"), dst_parent)?;
 
-    fs::copy(src, dst)
+    let bytes = fs::copy(src, dst)
         .wrap_err_with(|| format!("failed to copy {name}:\n  src: {src}\n  dst: {dst}"))?;
-    Ok(())
+    Ok(bytes)
 }
 
 pub(crate) fn read_to_string<N, P>(name: N, path: P) -> eyre::Result<String>
