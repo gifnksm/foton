@@ -105,7 +105,7 @@ fn run(scenario: Scenario, timeout: Duration) -> eyre::Result<()> {
     let mut sandbox = SandboxGuard::start(scenario, run_id, config)?;
     sandbox.connect()?;
     eprintln!("Waiting for scenario completion...");
-    wait_for_completion_stamp(&host_paths, watcher_rx, timeout)?;
+    wait_for_completion_stamp(&host_paths, &watcher_rx, timeout)?;
     sandbox.stop()?;
 
     let report: ScenarioReport = fs_util::read_json("report", &host_paths.report)?;
@@ -240,8 +240,8 @@ fn prepare_host_artifacts(host_paths: &MappingPaths) -> eyre::Result<()> {
     fs_util::create_dir_all("base", &host_paths.base_dir)?;
     fs_util::create_dir_all("binary", &host_paths.bin_dir)?;
     fs_util::create_dir_all("output", &host_paths.output_dir)?;
-    fs_util::copy("xtask.exe", &xtask_exe, &host_paths.xtask_exe)?;
-    fs_util::copy("foton.exe", &foton_exe, &host_paths.foton_exe)?;
+    let _bytes = fs_util::copy("xtask.exe", &xtask_exe, &host_paths.xtask_exe)?;
+    let _bytes = fs_util::copy("foton.exe", &foton_exe, &host_paths.foton_exe)?;
 
     Ok(())
 }
@@ -280,7 +280,7 @@ fn create_output_dir_watcher(
 
 fn wait_for_completion_stamp(
     host_paths: &MappingPaths,
-    watcher_rx: mpsc::Receiver<notify::Result<Event>>,
+    watcher_rx: &mpsc::Receiver<notify::Result<Event>>,
     timeout: Duration,
 ) -> eyre::Result<()> {
     let target_path = &host_paths.complete_stamp;

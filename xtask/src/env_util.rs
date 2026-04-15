@@ -36,7 +36,7 @@ pub(crate) fn cargo_bin() -> eyre::Result<Utf8PathBuf> {
 }
 
 pub(crate) fn current_exe() -> eyre::Result<Utf8PathBuf> {
-    let path = std::env::current_exe().wrap_err("failed to get current executable path")?;
+    let path = env::current_exe().wrap_err("failed to get current executable path")?;
     let path = Utf8PathBuf::from_path_buf(path)
         .ok()
         .ok_or_else(|| eyre!("failed to convert current executable path to UTF-8"))?;

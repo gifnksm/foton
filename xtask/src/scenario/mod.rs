@@ -43,11 +43,11 @@ pub(crate) struct RunArgs {
 
 pub(crate) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()> {
     match command {
-        ScenarioCommand::Run { scenario, args } => run(scenario, args),
+        ScenarioCommand::Run { scenario, args } => run(*scenario, args),
     }
 }
 
-pub(crate) fn run(scenario: &Scenario, args: &RunArgs) -> eyre::Result<()> {
+pub(crate) fn run(scenario: Scenario, args: &RunArgs) -> eyre::Result<()> {
     let report_path = args
         .report
         .clone()
@@ -125,7 +125,7 @@ impl ExecResult {
 }
 
 fn write_scenario_report(
-    scenario: &Scenario,
+    scenario: Scenario,
     path: &Utf8Path,
     res: &eyre::Result<()>,
 ) -> eyre::Result<()> {
@@ -133,7 +133,7 @@ fn write_scenario_report(
         Ok(()) => ScenarioOutcome::Success,
         Err(err) => ScenarioOutcome::Failure {
             error: err.to_string(),
-            sources: err.chain().skip(1).map(|e| e.to_string()).collect(),
+            sources: err.chain().skip(1).map(ToString::to_string).collect(),
         },
     };
     let report = ScenarioReport { outcome };
