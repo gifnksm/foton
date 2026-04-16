@@ -7,7 +7,10 @@ Development helpers for `foton`.
 Generate a Windows Sandbox config:
 
 ```text
+cargo xtask sandbox generate-config --plain
+cargo xtask sandbox generate-config --plain --open
 cargo xtask sandbox generate-config --scenario <scenario>
+cargo xtask sandbox generate-config --scenario <scenario> --open
 ```
 
 Run a scenario in Windows Sandbox and wait for the result:
@@ -25,9 +28,10 @@ cargo xtask scenario run --scenario <scenario> --foton-exe <path> --output-dir <
 
 ## Output
 
-Generated Sandbox configs are written under:
+Generated Sandbox config artifacts are written under:
 
 ```text
+target/windows-sandbox/plain/<run-id>/
 target/windows-sandbox/scenarios/<scenario>/<run-id>/
 ```
 
@@ -45,5 +49,5 @@ The numbered files are generated per executed command in run order.
 
 ## Notes
 
-- the current implementation assumes `debug` binaries
+- The current implementation assumes `debug` binaries
 - Windows uses static CRT linking via `.cargo/config.toml`
