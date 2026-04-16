@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 cargo_metadata = "0.23.1"
 chrono = "0.4.44"
-clap = { version = "4.6.0", features = ["derive"] }
+clap = { version = "4.6.0", features = ["derive", "env"] }
 color-eyre = "0.6.5"
 derive_more = { version = "2.1.1", features = ["display"] }
 notify = "8.2.0"

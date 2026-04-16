@@ -25,7 +25,7 @@ pub(crate) enum ScenarioCommand {
     /// Run a scenario and write its outputs to the specified directory.
     Run {
         /// Scenario to run.
-        #[clap(long)]
+        #[clap(long, env = "FOTON_SCENARIO")]
         scenario: Scenario,
         #[clap(flatten)]
         args: RunArgs,
@@ -36,20 +36,20 @@ pub(crate) enum ScenarioCommand {
 #[derive(clap::Args)]
 pub(crate) struct RunArgs {
     /// Path to the `foton` executable to run inside the scenario.
-    #[clap(long)]
+    #[clap(long, env = "FOTON_FOTON_EXE")]
     foton_exe: Utf8PathBuf,
     /// Directory where scenario outputs are written.
-    #[clap(long)]
+    #[clap(long, env = "FOTON_OUTPUT_DIR")]
     output_dir: Utf8PathBuf,
     /// Optional path to the JSON report file.
     ///
     /// If omitted, `<output-dir>/report.json` is used.
-    #[clap(long)]
+    #[clap(long, env = "FOTON_REPORT")]
     report: Option<Utf8PathBuf>,
     /// Optional path to the completion stamp file.
     ///
     /// If omitted, `<output-dir>/complete.stamp` is used.
-    #[clap(long)]
+    #[clap(long, env = "FOTON_COMPLETE_STAMP")]
     complete_stamp: Option<Utf8PathBuf>,
 }
 
