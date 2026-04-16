@@ -19,9 +19,12 @@ pub(crate) enum Scenario {
     HelpCheck,
 }
 
+/// Commands for running scenarios.
 #[derive(clap::Subcommand)]
 pub(crate) enum ScenarioCommand {
+    /// Run a scenario and write its outputs to the specified directory.
     Run {
+        /// Scenario to run.
         #[clap(long)]
         scenario: Scenario,
         #[clap(flatten)]
@@ -29,14 +32,23 @@ pub(crate) enum ScenarioCommand {
     },
 }
 
+/// Common arguments for running a scenario.
 #[derive(clap::Args)]
 pub(crate) struct RunArgs {
+    /// Path to the `foton` executable to run inside the scenario.
     #[clap(long)]
     foton_exe: Utf8PathBuf,
+    /// Directory where scenario outputs are written.
     #[clap(long)]
     output_dir: Utf8PathBuf,
+    /// Optional path to the JSON report file.
+    ///
+    /// If omitted, `<output-dir>/report.json` is used.
     #[clap(long)]
     report: Option<Utf8PathBuf>,
+    /// Optional path to the completion stamp file.
+    ///
+    /// If omitted, `<output-dir>/complete.stamp` is used.
     #[clap(long)]
     complete_stamp: Option<Utf8PathBuf>,
 }

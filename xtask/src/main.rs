@@ -9,6 +9,7 @@ mod report;
 mod sandbox;
 mod scenario;
 
+/// Development helpers for `foton`.
 #[derive(clap::Parser)]
 struct Args {
     #[clap(subcommand)]
@@ -17,11 +18,15 @@ struct Args {
 
 #[derive(clap::Subcommand)]
 enum GlobalCommand {
+    /// Windows Sandbox helpers.
     Sandbox {
+        /// Sandbox subcommand to run.
         #[clap(subcommand)]
         command: SandboxCommand,
     },
+    /// Scenario helpers.
     Scenario {
+        /// Scenario subcommand to run.
         #[clap(subcommand)]
         command: ScenarioCommand,
     },

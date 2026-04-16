@@ -1,5 +1,5 @@
 use std::{
-    fmt,
+    fmt::{self, Display},
     io::BufReader,
     process::{self, Command, Stdio},
     sync::mpsc::{self, RecvTimeoutError},
@@ -21,15 +21,53 @@ use crate::{
     scenario::Scenario,
 };
 
+#[derive(Debug, Clone, Copy)]
+enum SandboxConfigKind {
+    Plain,
+    Scenario(Scenario),
+}
+
+/// Mutually exclusive options that choose what kind of sandbox config to generate.
+#[derive(Debug, clap::Args)]
+#[group(required = true, multiple = false)]
+pub(crate) struct SandboxConfigKindArgs {
+    /// Generate a plain sandbox config.
+    #[clap(long)]
+    plain: bool,
+    /// Generate a sandbox config that runs the specified scenario at logon.
+    #[clap(long)]
+    scenario: Option<Scenario>,
+}
+
+impl SandboxConfigKindArgs {
+    fn kind(&self) -> SandboxConfigKind {
+        if let Some(scenario) = self.scenario {
+            return SandboxConfigKind::Scenario(scenario);
+        }
+        if self.plain {
+            return SandboxConfigKind::Plain;
+        }
+        unreachable!()
+    }
+}
+
+/// Windows Sandbox-related helper commands.
 #[derive(clap::Subcommand)]
 pub(crate) enum SandboxCommand {
+    /// Generate a Windows Sandbox config file and supporting artifacts.
     GenerateConfig {
+        #[command(flatten)]
+        kind_args: SandboxConfigKindArgs,
+        /// Open the generated `.wsb` file with the default application after generation.
         #[clap(long)]
-        scenario: Scenario,
+        open: bool,
     },
+    /// Run a scenario in Windows Sandbox and wait for the result.
     Run {
+        /// Scenario to execute in Windows Sandbox.
         #[clap(long)]
         scenario: Scenario,
+        /// Timeout in seconds while waiting for scenario completion.
         #[clap(long, default_value_t = 60)]
         timeout: u64,
     },
@@ -37,39 +75,47 @@ pub(crate) enum SandboxCommand {
 
 pub(crate) fn dispatch(command: &SandboxCommand) -> eyre::Result<()> {
     match command {
-        SandboxCommand::GenerateConfig { scenario } => generate_config(*scenario),
+        SandboxCommand::GenerateConfig { kind_args, open } => {
+            generate_config(kind_args.kind(), *open)
+        }
         SandboxCommand::Run { scenario, timeout } => run(*scenario, Duration::from_secs(*timeout)),
     }
 }
 
-fn generate_config(scenario: Scenario) -> eyre::Result<()> {
+fn generate_config(kind: SandboxConfigKind, open: bool) -> eyre::Result<()> {
     let run_id = RunId::new();
     let target_dir = env_util::cargo_target_dir()?;
-    let host_paths = MappingPaths::new_host(&target_dir, scenario, run_id);
-    let sandbox_paths = MappingPaths::new_sandbox();
+    let host_paths = MappingPaths::host(&target_dir, kind, run_id);
+    let sandbox_paths = MappingPaths::sandbox();
 
     prepare_host_artifacts(&host_paths)?;
 
-    let logon_command = format!(
-        r"{} scenario run --scenario {} --foton-exe {} --output-dir {}",
-        sandbox_paths.xtask_exe, scenario, sandbox_paths.foton_exe, sandbox_paths.output_dir
-    );
-
     let config_path = host_paths.base_dir.join("sandbox.wsb");
-    let config = configure_mapped_folders(SandboxConfig::new(), &host_paths, &sandbox_paths)
-        .logon_command(logon_command)
-        .to_pretty_os_string();
+    let mut config = configure_mapped_folders(SandboxConfig::new(), &host_paths, &sandbox_paths);
+    if let Some(command) = kind.logon_command(&sandbox_paths) {
+        config = config.logon_command(command);
+    }
+    let config_str = config.to_pretty_os_string();
 
     fs_util::write(
         "sandbox config file",
         &config_path,
-        config.as_encoded_bytes(),
+        config_str.as_encoded_bytes(),
     )?;
 
     eprintln!("Generated Windows Sandbox config.");
     eprintln!("  Config: {config_path}");
-    eprintln!("  Scenario: {scenario}");
+    eprintln!("  Kind: {kind}");
     eprintln!("  Run ID: {run_id}");
+
+    if open {
+        eprintln!("Starting sandbox with generated config...");
+        let _child = Command::new("cmd")
+            .args(["/C", "start", ""])
+            .arg(config_path)
+            .spawn()
+            .wrap_err("failed to start sandbox with generated config")?;
+    }
 
     Ok(())
 }
@@ -77,8 +123,8 @@ fn generate_config(scenario: Scenario) -> eyre::Result<()> {
 fn run(scenario: Scenario, timeout: Duration) -> eyre::Result<()> {
     let run_id = RunId::new();
     let target_dir = env_util::cargo_target_dir()?;
-    let host_paths = MappingPaths::new_host(&target_dir, scenario, run_id);
-    let sandbox_paths = MappingPaths::new_sandbox();
+    let host_paths = MappingPaths::host_scenario(&target_dir, scenario, run_id);
+    let sandbox_paths = MappingPaths::sandbox();
 
     prepare_host_artifacts(&host_paths)?;
     let logon_command = format!(
@@ -132,13 +178,37 @@ fn run(scenario: Scenario, timeout: Duration) -> eyre::Result<()> {
     Ok(())
 }
 
+impl Display for SandboxConfigKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SandboxConfigKind::Plain => write!(f, "plain"),
+            SandboxConfigKind::Scenario(scenario) => write!(f, "scenario/{scenario}"),
+        }
+    }
+}
+
+impl SandboxConfigKind {
+    fn logon_command(self, sandbox_paths: &MappingPaths) -> Option<String> {
+        match self {
+            SandboxConfigKind::Plain => None,
+            SandboxConfigKind::Scenario(scenario) => Some(format!(
+                r"{} scenario run --scenario {} --foton-exe {} --output-dir {}",
+                sandbox_paths.xtask_exe,
+                scenario,
+                sandbox_paths.foton_exe,
+                sandbox_paths.output_dir
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RunId {
     timestamp: DateTime<Utc>,
     pid: u32,
 }
 
-impl fmt::Display for RunId {
+impl Display for RunId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -188,14 +258,36 @@ impl MappingPaths {
         }
     }
 
-    fn new_host(target_dir: &Utf8Path, scenario: Scenario, run_id: RunId) -> Self {
-        MappingPaths::new(
-            target_dir.join(format!(r"windows-sandbox\scenarios\{scenario}\{run_id}")),
+    fn host_plain(target_dir: &Utf8Path, run_id: RunId) -> Self {
+        Self::new(
+            target_dir
+                .join("windows-sandbox")
+                .join("plain")
+                .join(run_id.to_string()),
         )
     }
 
-    fn new_sandbox() -> Self {
-        MappingPaths::new(Utf8PathBuf::from(r"C:\sandbox\"))
+    fn host_scenario(target_dir: &Utf8Path, scenario: Scenario, run_id: RunId) -> Self {
+        Self::new(
+            target_dir
+                .join("windows-sandbox")
+                .join("scenarios")
+                .join(scenario.to_string())
+                .join(run_id.to_string()),
+        )
+    }
+
+    fn host(target_dir: &Utf8Path, kind: SandboxConfigKind, run_id: RunId) -> Self {
+        match kind {
+            SandboxConfigKind::Plain => Self::host_plain(target_dir, run_id),
+            SandboxConfigKind::Scenario(scenario) => {
+                Self::host_scenario(target_dir, scenario, run_id)
+            }
+        }
+    }
+
+    fn sandbox() -> Self {
+        Self::new(Utf8PathBuf::from(r"C:\sandbox\"))
     }
 }
 
