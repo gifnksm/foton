@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fmt::{self, Display},
     io::BufReader,
     process::{self, Command, Stdio},
@@ -13,6 +14,7 @@ use cargo_metadata::{
 use chrono::{DateTime, Utc};
 use color_eyre::eyre::{self, OptionExt as _, WrapErr as _, bail, ensure};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher as _};
+use serde::Serialize;
 use wsbx::{SandboxConfig, SandboxEnvironment, config::MappedFolder};
 
 use crate::{
@@ -87,15 +89,12 @@ fn generate_config(kind: SandboxConfigKind, open: bool) -> eyre::Result<()> {
     let target_dir = env_util::cargo_target_dir()?;
     let host_paths = MappingPaths::host(&target_dir, kind, run_id);
     let sandbox_paths = MappingPaths::sandbox();
+    let bootstrap_config = SandboxBootstrapConfig::new(&sandbox_paths, kind.scenario());
 
-    prepare_host_artifacts(&host_paths)?;
+    prepare_host_artifacts(&host_paths, &bootstrap_config)?;
 
     let config_path = host_paths.base_dir.join("sandbox.wsb");
-    let mut config = configure_mapped_folders(SandboxConfig::new(), &host_paths, &sandbox_paths);
-    if let Some(command) = kind.logon_command(&sandbox_paths) {
-        config = config.logon_command(command);
-    }
-    let config_str = config.to_pretty_os_string();
+    let config_str = sandbox_config(&host_paths, &sandbox_paths).to_pretty_os_string();
 
     fs_util::write(
         "sandbox config file",
@@ -125,20 +124,11 @@ fn run(scenario: Scenario, timeout: Duration) -> eyre::Result<()> {
     let target_dir = env_util::cargo_target_dir()?;
     let host_paths = MappingPaths::host_scenario(&target_dir, scenario, run_id);
     let sandbox_paths = MappingPaths::sandbox();
+    let bootstrap_config = SandboxBootstrapConfig::new(&sandbox_paths, Some(scenario));
 
-    prepare_host_artifacts(&host_paths)?;
-    let logon_command = format!(
-        r"{} scenario run --scenario {} --foton-exe {} --output-dir {} --report {} --complete-stamp {}",
-        sandbox_paths.xtask_exe,
-        scenario,
-        sandbox_paths.foton_exe,
-        sandbox_paths.output_dir,
-        sandbox_paths.report,
-        sandbox_paths.complete_stamp,
-    );
+    prepare_host_artifacts(&host_paths, &bootstrap_config)?;
 
-    let config = configure_mapped_folders(SandboxConfig::new(), &host_paths, &sandbox_paths)
-        .logon_command(logon_command);
+    let config = sandbox_config(&host_paths, &sandbox_paths);
 
     let (_report_watcher, watcher_rx) = create_output_dir_watcher(&host_paths)?;
 
@@ -188,16 +178,10 @@ impl Display for SandboxConfigKind {
 }
 
 impl SandboxConfigKind {
-    fn logon_command(self, sandbox_paths: &MappingPaths) -> Option<String> {
+    fn scenario(self) -> Option<Scenario> {
         match self {
             SandboxConfigKind::Plain => None,
-            SandboxConfigKind::Scenario(scenario) => Some(format!(
-                r"{} scenario run --scenario {} --foton-exe {} --output-dir {}",
-                sandbox_paths.xtask_exe,
-                scenario,
-                sandbox_paths.foton_exe,
-                sandbox_paths.output_dir
-            )),
+            SandboxConfigKind::Scenario(scenario) => Some(scenario),
         }
     }
 }
@@ -234,6 +218,11 @@ struct MappingPaths {
     bin_dir: Utf8PathBuf,
     foton_exe: Utf8PathBuf,
     xtask_exe: Utf8PathBuf,
+    config_dir: Utf8PathBuf,
+    bootstrap_config: Utf8PathBuf,
+    scripts_dir: Utf8PathBuf,
+    bootstrap_script: Utf8PathBuf,
+    bootstrap_transcript: Utf8PathBuf,
     output_dir: Utf8PathBuf,
     report: Utf8PathBuf,
     complete_stamp: Utf8PathBuf,
@@ -244,7 +233,12 @@ impl MappingPaths {
         let bin_dir = base_dir.join("bin");
         let foton_exe = bin_dir.join("foton.exe");
         let xtask_exe = bin_dir.join("xtask.exe");
+        let config_dir = base_dir.join("config");
+        let bootstrap_config = config_dir.join("bootstrap.config.json");
+        let scripts_dir = base_dir.join("scripts");
+        let bootstrap_script = scripts_dir.join("bootstrap.ps1");
         let output_dir = base_dir.join("output");
+        let bootstrap_transcript = output_dir.join("bootstrap.transcript.log");
         let report = output_dir.join("report.json");
         let complete_stamp = output_dir.join("complete.stamp");
         Self {
@@ -252,6 +246,11 @@ impl MappingPaths {
             bin_dir,
             foton_exe,
             xtask_exe,
+            config_dir,
+            bootstrap_config,
+            scripts_dir,
+            bootstrap_script,
+            bootstrap_transcript,
             output_dir,
             report,
             complete_stamp,
@@ -289,6 +288,13 @@ impl MappingPaths {
     fn sandbox() -> Self {
         Self::new(Utf8PathBuf::from(r"C:\sandbox\"))
     }
+
+    fn logon_command(&self) -> String {
+        format!(
+            r#"powershell.exe -ExecutionPolicy Bypass -NoProfile -File "{}" -BootstrapConfigPath "{}" -TranscriptPath "{}""#,
+            self.bootstrap_script, self.bootstrap_config, self.bootstrap_transcript,
+        )
+    }
 }
 
 fn build_foton_exe() -> eyre::Result<Utf8PathBuf> {
@@ -325,17 +331,40 @@ fn build_foton_exe() -> eyre::Result<Utf8PathBuf> {
     Ok(foton_exe)
 }
 
-fn prepare_host_artifacts(host_paths: &MappingPaths) -> eyre::Result<()> {
+fn prepare_host_artifacts(
+    host_paths: &MappingPaths,
+    bootstrap_config: &SandboxBootstrapConfig,
+) -> eyre::Result<()> {
     let xtask_exe = env_util::current_exe()?;
     let foton_exe = build_foton_exe()?;
+    let logon_script = include_str!("../scripts/bootstrap.ps1");
 
     fs_util::create_dir_all("base", &host_paths.base_dir)?;
     fs_util::create_dir_all("binary", &host_paths.bin_dir)?;
+    fs_util::create_dir_all("config", &host_paths.config_dir)?;
+    fs_util::create_dir_all("scripts", &host_paths.scripts_dir)?;
     fs_util::create_dir_all("output", &host_paths.output_dir)?;
+
     let _bytes = fs_util::copy("xtask.exe", &xtask_exe, &host_paths.xtask_exe)?;
     let _bytes = fs_util::copy("foton.exe", &foton_exe, &host_paths.foton_exe)?;
 
+    fs_util::write_json(
+        "bootstrap config",
+        &host_paths.bootstrap_config,
+        bootstrap_config,
+    )?;
+    fs_util::write(
+        "bootstrap script",
+        &host_paths.bootstrap_script,
+        logon_script.as_bytes(),
+    )?;
+
     Ok(())
+}
+
+fn sandbox_config(host_paths: &MappingPaths, sandbox_paths: &MappingPaths) -> SandboxConfig {
+    configure_mapped_folders(SandboxConfig::new(), host_paths, sandbox_paths)
+        .logon_command(sandbox_paths.logon_command())
 }
 
 fn configure_mapped_folders(
@@ -347,6 +376,16 @@ fn configure_mapped_folders(
         .mapped_folder(
             MappedFolder::new(&host_paths.bin_dir)
                 .sandbox_folder(&sandbox_paths.bin_dir)
+                .read_only(true),
+        )
+        .mapped_folder(
+            MappedFolder::new(&host_paths.config_dir)
+                .sandbox_folder(&sandbox_paths.config_dir)
+                .read_only(true),
+        )
+        .mapped_folder(
+            MappedFolder::new(&host_paths.scripts_dir)
+                .sandbox_folder(&sandbox_paths.scripts_dir)
                 .read_only(true),
         )
         .mapped_folder(
@@ -459,5 +498,33 @@ impl SandboxGuard {
 impl Drop for SandboxGuard {
     fn drop(&mut self) {
         let _ = self.stop();
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SandboxBootstrapConfig {
+    environments: BTreeMap<String, String>,
+}
+
+impl SandboxBootstrapConfig {
+    fn new(sandbox_paths: &MappingPaths, scenario: Option<Scenario>) -> Self {
+        let mut environments = BTreeMap::new();
+        environments.extend(
+            [
+                ("FOTON_BASE_DIR", &sandbox_paths.base_dir),
+                ("FOTON_BIN_DIR", &sandbox_paths.bin_dir),
+                ("FOTON_FOTON_EXE", &sandbox_paths.foton_exe),
+                ("FOTON_XTASK_EXE", &sandbox_paths.xtask_exe),
+                ("FOTON_OUTPUT_DIR", &sandbox_paths.output_dir),
+                ("FOTON_REPORT", &sandbox_paths.report),
+                ("FOTON_COMPLETE_STAMP", &sandbox_paths.complete_stamp),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v.to_string())),
+        );
+        if let Some(scenario) = scenario {
+            environments.insert("FOTON_SCENARIO".to_owned(), scenario.to_string());
+        }
+        Self { environments }
     }
 }
