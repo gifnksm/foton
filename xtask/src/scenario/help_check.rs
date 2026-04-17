@@ -2,13 +2,13 @@ use std::process::Command;
 
 use color_eyre::eyre::{self, ensure};
 
-use crate::scenario::RunArgs;
+use crate::scenario::ScenarioParameters;
 
-pub(super) fn run(args: &RunArgs) -> eyre::Result<()> {
+pub(super) fn run(params: &ScenarioParameters) -> eyre::Result<()> {
     let res = super::exec_command(
         "foton",
-        &args.output_dir,
-        Command::new(&args.foton_exe).arg("--help"),
+        &params.output_dir,
+        Command::new(&params.foton_exe).arg("--help"),
     )?;
 
     ensure!(
