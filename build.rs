@@ -4,7 +4,7 @@ const SANDBOX_ENV_NAMES: &[&str] = &["GITHUB_ACTIONS", "FOTON_SANDBOX_TEST"];
 const SANDBOX_CFG_NAME: &str = "build_for_sandbox";
 
 fn main() {
-    println!("cargo::rustc-check-cfg=cfg(build_for_sandbox)");
+    println!("cargo::rustc-check-cfg=cfg({SANDBOX_CFG_NAME})");
     println!("cargo::rerun-if-changed=build.rs");
     for name in SANDBOX_ENV_NAMES {
         println!("cargo::rerun-if-env-changed={name}");
