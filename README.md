@@ -5,7 +5,7 @@
 [![Maintenance: actively-developed](https://img.shields.io/badge/maintenance-actively--developed-brightgreen.svg?style=flat-square)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-badges-section)
 [![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/foton.svg?style=flat-square)](#license)
 [![crates.io](https://img.shields.io/crates/v/foton.svg?logo=rust&style=flat-square)](https://crates.io/crates/foton)
-[![Rust: ^1.89.0](https://img.shields.io/badge/rust-^1.89.0-93450a.svg?logo=rust&style=flat-square)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field)
+[![Rust: ^1.95.0](https://img.shields.io/badge/rust-^1.95.0-93450a.svg?logo=rust&style=flat-square)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field)
 [![GitHub Actions: CI](https://img.shields.io/github/actions/workflow/status/gifnksm/foton/ci.yml.svg?label=CI&logo=github&style=flat-square)](https://github.com/gifnksm/foton/actions/workflows/ci.yml)
 [![Codecov](https://img.shields.io/codecov/c/github/gifnksm/foton.svg?label=codecov&logo=codecov&style=flat-square)](https://codecov.io/gh/gifnksm/foton)
 <!-- cargo-sync-rdme ]] -->
@@ -210,7 +210,7 @@ The database is expected to store:
 
 ## Minimum supported Rust version (MSRV)
 
-The minimum supported Rust version is **Rust 1.89.0**.
+The minimum supported Rust version is **Rust 1.95.0**.
 At least the last 3 versions of stable Rust are supported at any given time.
 
 While the crate is in a pre-release state (`0.x.x`), its MSRV may be bumped in a patch release.

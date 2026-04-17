@@ -1,7 +1,6 @@
 use std::{
-    fmt::{self, Display},
     io::BufReader,
-    process::{self, Command, Stdio},
+    process::{Command, Stdio},
     sync::mpsc::{self, RecvTimeoutError},
     time::{Duration, Instant},
 };
@@ -10,7 +9,6 @@ use cargo_metadata::{
     CrateType, Message,
     camino::{Utf8Path, Utf8PathBuf},
 };
-use chrono::{DateTime, Utc};
 use color_eyre::eyre::{self, OptionExt as _, WrapErr as _, bail, ensure};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher as _};
 use wsbx::{SandboxConfig, SandboxEnvironment, config::MappedFolder};
@@ -18,15 +16,9 @@ use wsbx::{SandboxConfig, SandboxEnvironment, config::MappedFolder};
 use crate::{
     bootstrap::{SandboxAction, SandboxBootstrapConfig},
     env_util, fs_util,
-    report::{ScenarioOutcome, ScenarioReport},
+    report::{RunId, RunKind, RunReport},
     scenario::Scenario,
 };
-
-#[derive(Debug, Clone, Copy)]
-enum SandboxConfigKind {
-    Plain,
-    Scenario(Scenario),
-}
 
 /// Mutually exclusive options that choose what kind of sandbox config to generate.
 #[derive(Debug, clap::Args)]
@@ -35,18 +27,48 @@ pub(crate) struct SandboxConfigKindArgs {
     /// Generate a plain sandbox config.
     #[clap(long)]
     plain: bool,
+    /// Generate a sandbox config that runs the foton tests at logon.
+    #[clap(long)]
+    test: bool,
     /// Generate a sandbox config that runs the specified scenario at logon.
     #[clap(long)]
     scenario: Option<Scenario>,
 }
 
 impl SandboxConfigKindArgs {
-    fn kind(&self) -> SandboxConfigKind {
+    fn kind(&self) -> RunKind {
         if let Some(scenario) = self.scenario {
-            return SandboxConfigKind::Scenario(scenario);
+            return RunKind::Scenario(scenario);
         }
         if self.plain {
-            return SandboxConfigKind::Plain;
+            return RunKind::Noop;
+        }
+        if self.test {
+            return RunKind::Test;
+        }
+        unreachable!()
+    }
+}
+
+/// Mutually exclusive options that choose what kind of sandbox config to run.
+#[derive(Debug, clap::Args)]
+#[group(required = true, multiple = false)]
+pub(crate) struct SandboxRunKindArgs {
+    /// Run the foton tests.
+    #[clap(long)]
+    test: bool,
+    /// Run the specified scenario.
+    #[clap(long)]
+    scenario: Option<Scenario>,
+}
+
+impl SandboxRunKindArgs {
+    fn kind(&self) -> RunKind {
+        if let Some(scenario) = self.scenario {
+            return RunKind::Scenario(scenario);
+        }
+        if self.test {
+            return RunKind::Test;
         }
         unreachable!()
     }
@@ -63,12 +85,11 @@ pub(crate) enum SandboxCommand {
         #[clap(long)]
         open: bool,
     },
-    /// Run a scenario in Windows Sandbox and wait for the result.
+    /// Run tests or a scenario in Windows Sandbox and wait for the result.
     Run {
-        /// Scenario to execute in Windows Sandbox.
-        #[clap(long)]
-        scenario: Scenario,
-        /// Timeout in seconds while waiting for scenario completion.
+        #[clap(flatten)]
+        kind_args: SandboxRunKindArgs,
+        /// Timeout in seconds while waiting for run completion.
         #[clap(long, default_value_t = 60)]
         timeout: u64,
     },
@@ -79,18 +100,19 @@ pub(crate) fn dispatch(command: &SandboxCommand) -> eyre::Result<()> {
         SandboxCommand::GenerateConfig { kind_args, open } => {
             generate_config(kind_args.kind(), *open)
         }
-        SandboxCommand::Run { scenario, timeout } => run(*scenario, Duration::from_secs(*timeout)),
+        SandboxCommand::Run { kind_args, timeout } => {
+            run(kind_args.kind(), Duration::from_secs(*timeout))
+        }
     }
 }
 
-fn generate_config(kind: SandboxConfigKind, open: bool) -> eyre::Result<()> {
+fn generate_config(kind: RunKind, open: bool) -> eyre::Result<()> {
     let run_id = RunId::new();
     let target_dir = env_util::cargo_target_dir()?;
     let host_paths = MappingPaths::host(&target_dir, kind, run_id);
     let sandbox_paths = MappingPaths::sandbox();
-    let bootstrap_config = build_bootstrap_config(&sandbox_paths, SandboxAction::Noop);
 
-    prepare_host_artifacts(&host_paths, &bootstrap_config)?;
+    prepare_host_artifacts(run_id, kind, &host_paths, &sandbox_paths)?;
 
     let config_path = host_paths.base_dir.join("sandbox.wsb");
     let config_str = sandbox_config(&host_paths, &sandbox_paths).to_pretty_os_string();
@@ -118,94 +140,35 @@ fn generate_config(kind: SandboxConfigKind, open: bool) -> eyre::Result<()> {
     Ok(())
 }
 
-fn run(scenario: Scenario, timeout: Duration) -> eyre::Result<()> {
+fn run(kind: RunKind, timeout: Duration) -> eyre::Result<()> {
     let run_id = RunId::new();
     let target_dir = env_util::cargo_target_dir()?;
-    let host_paths = MappingPaths::host_scenario(&target_dir, scenario, run_id);
+    let host_paths = MappingPaths::host(&target_dir, kind, run_id);
     let sandbox_paths = MappingPaths::sandbox();
-    let bootstrap_config = build_bootstrap_config(
-        &sandbox_paths,
-        SandboxAction::RunScenario {
-            scenario,
-            report: sandbox_paths.report.clone(),
-        },
-    );
 
-    prepare_host_artifacts(&host_paths, &bootstrap_config)?;
+    prepare_host_artifacts(run_id, kind, &host_paths, &sandbox_paths)?;
 
     let config = sandbox_config(&host_paths, &sandbox_paths);
 
     let (_report_watcher, watcher_rx) = create_output_dir_watcher(&host_paths)?;
 
-    eprintln!("Starting sandbox scenario run...");
-    eprintln!("  Scenario: {scenario}");
+    eprintln!("Starting sandbox...");
+    eprintln!("  Kind: {kind}");
     eprintln!("  Run ID: {run_id}");
     eprintln!("  Output dir: {}", host_paths.output_dir);
     eprintln!("  Timeout: {timeout:?}");
 
-    let mut sandbox = SandboxGuard::start(scenario, run_id, config)?;
+    let mut sandbox = SandboxGuard::start(kind, run_id, config)?;
     sandbox.connect()?;
-    eprintln!("Waiting for scenario completion...");
+    eprintln!("Waiting for run completion...");
     wait_for_completion_stamp(&host_paths, &watcher_rx, timeout)?;
     sandbox.stop()?;
 
-    let report: ScenarioReport = fs_util::read_json("report", &host_paths.report)?;
-
-    eprintln!("Scenario completed.");
-    eprintln!("  Scenario: {scenario}");
-    eprintln!("  Run ID: {run_id}");
-    eprintln!("  Output dir: {}", host_paths.output_dir);
-    eprintln!("  Report: {}", host_paths.report);
-
-    match report.outcome {
-        ScenarioOutcome::Success => eprintln!("  Result: Success"),
-        ScenarioOutcome::Failure { error, sources } => {
-            eprintln!("  Result: Failure");
-            eprintln!("  Error: {error}");
-            for source in sources {
-                eprintln!("    caused by: {source}");
-            }
-            eprintln!("Check captured stdout/stderr files in the output directory for details.");
-            bail!("scenario failed");
-        }
-    }
+    let report: RunReport = fs_util::read_json("report", &host_paths.report_json)?;
+    report.print_summary();
+    ensure!(report.is_success(), "run failed");
 
     Ok(())
-}
-
-impl Display for SandboxConfigKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SandboxConfigKind::Plain => write!(f, "plain"),
-            SandboxConfigKind::Scenario(scenario) => write!(f, "scenario/{scenario}"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct RunId {
-    timestamp: DateTime<Utc>,
-    pid: u32,
-}
-
-impl Display for RunId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}-{}",
-            self.timestamp.format("%Y%m%d-%H%M%S-%3f"),
-            self.pid,
-        )
-    }
-}
-
-impl RunId {
-    fn new() -> Self {
-        Self {
-            timestamp: Utc::now(),
-            pid: process::id(),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -217,7 +180,7 @@ struct MappingPaths {
     config_dir: Utf8PathBuf,
     bootstrap_config: Utf8PathBuf,
     output_dir: Utf8PathBuf,
-    report: Utf8PathBuf,
+    report_json: Utf8PathBuf,
     complete_stamp: Utf8PathBuf,
 }
 
@@ -229,8 +192,8 @@ impl MappingPaths {
         let config_dir = base_dir.join("config");
         let bootstrap_config = config_dir.join("bootstrap.config.json");
         let output_dir = base_dir.join("output");
-        let report = output_dir.join("report.json");
-        let complete_stamp = output_dir.join("complete.stamp");
+        let report = output_dir.join(".report.json");
+        let complete_stamp = output_dir.join(".complete.stamp");
         Self {
             base_dir,
             bin_dir,
@@ -239,16 +202,25 @@ impl MappingPaths {
             config_dir,
             bootstrap_config,
             output_dir,
-            report,
+            report_json: report,
             complete_stamp,
         }
     }
 
-    fn host_plain(target_dir: &Utf8Path, run_id: RunId) -> Self {
+    fn host_noop(target_dir: &Utf8Path, run_id: RunId) -> Self {
         Self::new(
             target_dir
                 .join("windows-sandbox")
                 .join("plain")
+                .join(run_id.to_string()),
+        )
+    }
+
+    fn host_test(target_dir: &Utf8Path, run_id: RunId) -> Self {
+        Self::new(
+            target_dir
+                .join("windows-sandbox")
+                .join("test")
                 .join(run_id.to_string()),
         )
     }
@@ -263,12 +235,11 @@ impl MappingPaths {
         )
     }
 
-    fn host(target_dir: &Utf8Path, kind: SandboxConfigKind, run_id: RunId) -> Self {
+    fn host(target_dir: &Utf8Path, kind: RunKind, run_id: RunId) -> Self {
         match kind {
-            SandboxConfigKind::Plain => Self::host_plain(target_dir, run_id),
-            SandboxConfigKind::Scenario(scenario) => {
-                Self::host_scenario(target_dir, scenario, run_id)
-            }
+            RunKind::Noop => Self::host_noop(target_dir, run_id),
+            RunKind::Test => Self::host_test(target_dir, run_id),
+            RunKind::Scenario(scenario) => Self::host_scenario(target_dir, scenario, run_id),
         }
     }
 
@@ -306,8 +277,9 @@ fn build_foton_exe() -> eyre::Result<Utf8PathBuf> {
             && artifact.target.is_bin()
             && artifact.target.crate_types.contains(&CrateType::Bin)
             && artifact.target.name == "foton"
+            && let Some(exe) = artifact.executable
         {
-            foton_exe = artifact.executable;
+            foton_exe = Some(exe);
         }
     }
 
@@ -318,9 +290,49 @@ fn build_foton_exe() -> eyre::Result<Utf8PathBuf> {
     Ok(foton_exe)
 }
 
+fn build_test_exes() -> eyre::Result<Vec<Utf8PathBuf>> {
+    let cargo_bin = env_util::cargo_bin()?;
+
+    let mut command = Command::new(cargo_bin)
+        .args([
+            "test",
+            "--no-run",
+            "-p",
+            "foton",
+            "--message-format=json-render-diagnostics",
+        ])
+        .env("FOTON_SANDBOX_TEST", "1")
+        .stdout(Stdio::piped())
+        .spawn()
+        .wrap_err("failed to spawn `cargo test --no-run -p foton`")?;
+
+    let mut test_exes = vec![];
+    let reader = BufReader::new(command.stdout.take().unwrap());
+    for message in Message::parse_stream(reader) {
+        let message = message.wrap_err("failed to parse cargo message")?;
+        if let Message::CompilerArtifact(artifact) = message
+            && artifact.target.name == "foton"
+            && let Some(exe) = artifact.executable
+        {
+            test_exes.push(exe);
+        }
+    }
+
+    let status = command.wait().wrap_err("failed to wait for cargo test")?;
+    ensure!(status.success(), "cargo test failed with status {status}");
+
+    ensure!(
+        !test_exes.is_empty(),
+        "cargo test did not produce any test executables for foton"
+    );
+    Ok(test_exes)
+}
+
 fn prepare_host_artifacts(
+    run_id: RunId,
+    kind: RunKind,
     host_paths: &MappingPaths,
-    bootstrap_config: &SandboxBootstrapConfig,
+    sandbox_paths: &MappingPaths,
 ) -> eyre::Result<()> {
     let xtask_exe = env_util::current_exe()?;
     let foton_exe = build_foton_exe()?;
@@ -333,10 +345,37 @@ fn prepare_host_artifacts(
     let _bytes = fs_util::copy("xtask.exe", &xtask_exe, &host_paths.xtask_exe)?;
     let _bytes = fs_util::copy("foton.exe", &foton_exe, &host_paths.foton_exe)?;
 
+    let action = match kind {
+        RunKind::Noop => SandboxAction::Noop,
+        RunKind::Test => {
+            let host_test_exes = build_test_exes()?;
+            let mut sandbox_test_exes = vec![];
+            for host_test_exe in host_test_exes {
+                let file_name = host_test_exe.file_name().unwrap();
+                let sandbox_test_exe = sandbox_paths.bin_dir.join(file_name);
+                sandbox_test_exes.push(sandbox_test_exe);
+                let _bytes = fs_util::copy(
+                    "test executable",
+                    &host_test_exe,
+                    host_paths.bin_dir.join(file_name),
+                )?;
+            }
+            SandboxAction::RunTests {
+                test_exes: sandbox_test_exes,
+                report_json: sandbox_paths.report_json.clone(),
+            }
+        }
+        RunKind::Scenario(scenario) => SandboxAction::RunScenario {
+            scenario,
+            report_json: sandbox_paths.report_json.clone(),
+        },
+    };
+    let bootstrap_config = build_bootstrap_config(run_id, sandbox_paths, action);
+
     fs_util::write_json(
         "bootstrap config",
         &host_paths.bootstrap_config,
-        bootstrap_config,
+        &bootstrap_config,
     )?;
 
     Ok(())
@@ -415,14 +454,14 @@ fn wait_for_completion_stamp(
 
 #[derive(Debug)]
 struct SandboxGuard {
-    scenario: Scenario,
+    kind: RunKind,
     run_id: RunId,
     sandbox: SandboxEnvironment,
     stopped: bool,
 }
 
 impl SandboxGuard {
-    fn start(scenario: Scenario, run_id: RunId, config: SandboxConfig) -> eyre::Result<Self> {
+    fn start(kind: RunKind, run_id: RunId, config: SandboxConfig) -> eyre::Result<Self> {
         eprintln!("Starting Windows Sandbox...");
         let sandbox = SandboxEnvironment::builder()
             .config(config)
@@ -430,7 +469,7 @@ impl SandboxGuard {
             .wrap_err("failed to start sandbox")?;
         eprintln!("Sandbox started. (Sandbox ID {})", sandbox.id());
         let sandbox = Self {
-            scenario,
+            kind,
             run_id,
             sandbox,
             stopped: false,
@@ -442,8 +481,8 @@ impl SandboxGuard {
         eprintln!("Connecting to sandbox...");
         self.sandbox.connect().wrap_err_with(|| {
             format!(
-                "failed to connect to sandbox (Scenario {}, Run ID {}, Sandbox ID {})",
-                self.scenario,
+                "failed to connect to sandbox (Kind {}, Run ID {}, Sandbox ID {})",
+                self.kind,
                 self.run_id,
                 self.sandbox.id(),
             )
@@ -459,8 +498,8 @@ impl SandboxGuard {
         eprintln!("Stopping sandbox...");
         self.sandbox.stop().wrap_err_with(|| {
             format!(
-                "failed to stop sandbox (Scenario {}, Run ID {}, Sandbox ID {})",
-                self.scenario,
+                "failed to stop sandbox (Kind {}, Run ID {}, Sandbox ID {})",
+                self.kind,
                 self.run_id,
                 self.sandbox.id(),
             )
@@ -477,6 +516,7 @@ impl Drop for SandboxGuard {
 }
 
 fn build_bootstrap_config(
+    run_id: RunId,
     sandbox_paths: &MappingPaths,
     action: SandboxAction,
 ) -> SandboxBootstrapConfig {
@@ -485,6 +525,7 @@ fn build_bootstrap_config(
         xtask_exe: sandbox_paths.xtask_exe.clone(),
         output_dir: sandbox_paths.output_dir.clone(),
         complete_stamp: sandbox_paths.complete_stamp.clone(),
+        run_id,
         action,
     }
 }

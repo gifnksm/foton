@@ -1,11 +1,12 @@
 use std::process::Command;
 
-use cargo_metadata::camino::Utf8PathBuf;
+use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use color_eyre::eyre::{self, WrapErr as _, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    fs_util,
+    fs_util, process_util,
+    report::{ExecResult, RunId, RunKind, RunReport},
     scenario::{self, Scenario},
 };
 
@@ -15,6 +16,7 @@ pub(crate) struct SandboxBootstrapConfig {
     pub(crate) xtask_exe: Utf8PathBuf,
     pub(crate) output_dir: Utf8PathBuf,
     pub(crate) complete_stamp: Utf8PathBuf,
+    pub(crate) run_id: RunId,
     pub(crate) action: SandboxAction,
 }
 
@@ -22,10 +24,24 @@ pub(crate) struct SandboxBootstrapConfig {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SandboxAction {
     Noop,
+    RunTests {
+        test_exes: Vec<Utf8PathBuf>,
+        report_json: Utf8PathBuf,
+    },
     RunScenario {
         scenario: Scenario,
-        report: Utf8PathBuf,
+        report_json: Utf8PathBuf,
     },
+}
+
+impl SandboxAction {
+    pub(crate) fn to_kind(&self) -> RunKind {
+        match self {
+            Self::Noop => RunKind::Noop,
+            Self::RunTests { .. } => RunKind::Test,
+            Self::RunScenario { scenario, .. } => RunKind::Scenario(*scenario),
+        }
+    }
 }
 
 /// Arguments for sandbox bootstrap execution.
@@ -81,15 +97,53 @@ fn dispatch_parent(args: &BootstrapArgs, config: &SandboxBootstrapConfig) -> eyr
 }
 
 fn dispatch_child(config: &SandboxBootstrapConfig) -> eyre::Result<()> {
-    match &config.action {
-        SandboxAction::Noop => Ok(()),
-        SandboxAction::RunScenario { scenario, report } => scenario::run(
-            *scenario,
-            &scenario::ScenarioParameters {
-                foton_exe: config.foton_exe.clone(),
-                output_dir: config.output_dir.clone(),
-                report: report.clone(),
-            },
+    let kind = config.action.to_kind();
+    let (report_json, (res, report)) = match &config.action {
+        SandboxAction::Noop => return Ok(()),
+        SandboxAction::RunTests {
+            test_exes,
+            report_json,
+        } => (
+            report_json,
+            RunReport::capture(config.run_id, kind, |exec_results| {
+                run_test(test_exes, &config.output_dir, exec_results)
+            }),
         ),
+        SandboxAction::RunScenario {
+            scenario,
+            report_json,
+        } => (
+            report_json,
+            RunReport::capture(config.run_id, kind, |exec_results| {
+                let params = scenario::ScenarioParameters {
+                    foton_exe: config.foton_exe.clone(),
+                    output_dir: config.output_dir.clone(),
+                    run_id: config.run_id,
+                };
+                scenario::run(*scenario, &params, exec_results)
+            }),
+        ),
+    };
+    fs_util::write_json("run report", report_json, &report)?;
+    res
+}
+
+fn run_test(
+    test_exes: &[Utf8PathBuf],
+    output_dir: &Utf8Path,
+    exec_results: &mut Vec<ExecResult>,
+) -> eyre::Result<()> {
+    for test_exe in test_exes {
+        let mut cmd = Command::new(test_exe);
+        let name = test_exe.file_stem().unwrap_or("test");
+        let res = process_util::exec_command(name, output_dir, &mut cmd)?;
+        let res = exec_results.push_mut(res);
+        if !res.success {
+            bail!(
+                "test executable `{test_exe}` failed with status {}",
+                res.exit_status
+            );
+        }
     }
+    Ok(())
 }
