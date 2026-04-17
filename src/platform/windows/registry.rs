@@ -258,6 +258,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(build_for_sandbox),
+        ignore = "registry should be isolated in sandbox tests. use `cargo xtask sandbox run --test` instead."
+    )]
     fn list_registered_package_fonts_returns_empty_for_missing_package() {
         with_registry_test(|app_id| {
             let pkgid = test_package_id("missing-list");
@@ -270,6 +274,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(build_for_sandbox),
+        ignore = "registry should be isolated in sandbox tests. use `cargo xtask sandbox run --test` instead."
+    )]
     fn unregister_package_fonts_ignores_missing_package() {
         with_registry_test(|app_id| {
             let pkgid = test_package_id("missing-unregister");
@@ -280,6 +288,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(build_for_sandbox),
+        ignore = "registry should be isolated in sandbox tests. use `cargo xtask sandbox run --test` instead."
+    )]
     fn register_list_and_unregister_package_fonts_roundtrip() {
         with_registry_test(|app_id| {
             let pkgid = test_package_id("roundtrip");
@@ -321,6 +333,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(build_for_sandbox),
+        ignore = "registry should be isolated in sandbox tests. use `cargo xtask sandbox run --test` instead."
+    )]
     fn list_registered_package_fonts_errors_on_non_string_value() {
         with_registry_test(|app_id| {
             let pkgid = test_package_id("invalid-value");
@@ -340,6 +356,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(build_for_sandbox),
+        ignore = "registry should be isolated in sandbox tests. use `cargo xtask sandbox run --test` instead."
+    )]
     fn unregister_package_fonts_removes_empty_parent_keys() {
         with_registry_test(|app_id| {
             let pkgid = test_package_id("cleanup-empty-parents");
@@ -375,6 +395,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(build_for_sandbox),
+        ignore = "registry should be isolated in sandbox tests. use `cargo xtask sandbox run --test` instead."
+    )]
     fn unregister_package_fonts_keeps_non_empty_parent_keys() {
         with_registry_test(|app_id| {
             let pkgid_v1 = test_package_id("cleanup-keep-parents");
@@ -408,6 +432,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(build_for_sandbox),
+        ignore = "registry should be isolated in sandbox tests. use `cargo xtask sandbox run --test` instead."
+    )]
     fn register_package_fonts_errors_when_package_version_already_exists() {
         with_registry_test(|app_id| {
             let pkgid = test_package_id("duplicate-register");
