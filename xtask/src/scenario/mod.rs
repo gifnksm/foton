@@ -5,6 +5,7 @@ use std::{
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use color_eyre::eyre::{self, WrapErr as _};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     fs_util,
@@ -13,8 +14,11 @@ use crate::{
 
 mod help_check;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, derive_more::Display)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, derive_more::Display, Serialize, Deserialize,
+)]
 #[display(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum Scenario {
     HelpCheck,
 }
@@ -25,7 +29,7 @@ pub(crate) enum ScenarioCommand {
     /// Run a scenario and write its outputs to the specified directory.
     Run {
         /// Scenario to run.
-        #[clap(long, env = "FOTON_SCENARIO")]
+        #[clap(long)]
         scenario: Scenario,
         #[clap(flatten)]
         args: RunArgs,
@@ -36,47 +40,53 @@ pub(crate) enum ScenarioCommand {
 #[derive(clap::Args)]
 pub(crate) struct RunArgs {
     /// Path to the `foton` executable to run inside the scenario.
-    #[clap(long, env = "FOTON_FOTON_EXE")]
+    #[clap(long)]
     foton_exe: Utf8PathBuf,
     /// Directory where scenario outputs are written.
-    #[clap(long, env = "FOTON_OUTPUT_DIR")]
+    #[clap(long)]
     output_dir: Utf8PathBuf,
     /// Optional path to the JSON report file.
     ///
     /// If omitted, `<output-dir>/report.json` is used.
-    #[clap(long, env = "FOTON_REPORT")]
+    #[clap(long)]
     report: Option<Utf8PathBuf>,
-    /// Optional path to the completion stamp file.
-    ///
-    /// If omitted, `<output-dir>/complete.stamp` is used.
-    #[clap(long, env = "FOTON_COMPLETE_STAMP")]
-    complete_stamp: Option<Utf8PathBuf>,
 }
 
 pub(crate) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()> {
     match command {
-        ScenarioCommand::Run { scenario, args } => run(*scenario, args),
+        ScenarioCommand::Run { scenario, args } => run(*scenario, &args.parameters()),
     }
 }
 
-pub(crate) fn run(scenario: Scenario, args: &RunArgs) -> eyre::Result<()> {
-    let report_path = args
-        .report
-        .clone()
-        .unwrap_or_else(|| args.output_dir.join("report.json"));
-    let complete_stamp_path = args
-        .complete_stamp
-        .clone()
-        .unwrap_or_else(|| args.output_dir.join("complete.stamp"));
+impl RunArgs {
+    fn parameters(&self) -> ScenarioParameters {
+        ScenarioParameters {
+            foton_exe: self.foton_exe.clone(),
+            output_dir: self.output_dir.clone(),
+            report: self
+                .report
+                .clone()
+                .unwrap_or_else(|| self.output_dir.join("report.json")),
+        }
+    }
+}
 
-    fs_util::create_dir_all("output directory", &args.output_dir)?;
+#[derive(Debug)]
+pub(crate) struct ScenarioParameters {
+    pub(crate) foton_exe: Utf8PathBuf,
+    pub(crate) output_dir: Utf8PathBuf,
+    pub(crate) report: Utf8PathBuf,
+}
+
+pub(crate) fn run(scenario: Scenario, params: &ScenarioParameters) -> eyre::Result<()> {
+    fs_util::create_dir_all("output directory", &params.output_dir)?;
 
     let res = match scenario {
-        Scenario::HelpCheck => help_check::run(args),
+        Scenario::HelpCheck => help_check::run(params),
     };
 
-    write_scenario_report(scenario, &report_path, &res)?;
-    let _ = fs_util::create_file("complete stamp", complete_stamp_path)?;
+    write_scenario_report(scenario, &params.report, &res)?;
+
     res
 }
 

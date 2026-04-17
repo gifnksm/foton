@@ -6,6 +6,7 @@ use color_eyre::eyre;
 
 use crate::{sandbox::SandboxCommand, scenario::ScenarioCommand};
 
+mod bootstrap;
 mod env_util;
 mod fs_util;
 mod report;
@@ -33,6 +34,13 @@ enum GlobalCommand {
         #[clap(subcommand)]
         command: ScenarioCommand,
     },
+    /// Bootstrap helpers.
+    #[clap(hide = true)]
+    Bootstrap {
+        /// Bootstrap arguments.
+        #[clap(flatten)]
+        command: bootstrap::BootstrapArgs,
+    },
 }
 
 fn main() -> eyre::Result<()> {
@@ -43,6 +51,7 @@ fn main() -> eyre::Result<()> {
     match command {
         GlobalCommand::Sandbox { command } => sandbox::dispatch(&command)?,
         GlobalCommand::Scenario { command } => scenario::dispatch(&command)?,
+        GlobalCommand::Bootstrap { command } => bootstrap::dispatch(&command)?,
     }
 
     Ok(())

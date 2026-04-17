@@ -40,11 +40,15 @@ Scenario results are written to the specified output directory.
 Files:
 
 - `report.json`
-- `complete.stamp`
+- `bootstrap.stdout.txt`
+- `bootstrap.stderr.txt`
+- `bootstrap.status.txt`
 - `<index>.<name>.stdout.txt`
 - `<index>.<name>.stderr.txt`
 - `<index>.<name>.status.txt`
 
+The `bootstrap.*.txt` files capture the sandbox bootstrap command itself.
+`complete.stamp` is produced by the sandbox bootstrap flow to signal that bootstrap has finished, regardless of success or failure. It is not written by direct `cargo xtask scenario run ...` executions.
 The numbered files are generated per executed command in run order.
 
 ## Notes
