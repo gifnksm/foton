@@ -1,3 +1,6 @@
+#[cfg(not(windows))]
+compile_error!("foton is supported on Windows only.");
+
 use clap::Parser as _;
 use color_eyre::eyre;
 
