@@ -1,4 +1,4 @@
-use color_eyre::eyre;
+use color_eyre::eyre::{self, WrapErr as _};
 
 use crate::{
     cli::message::warn,
@@ -29,7 +29,12 @@ fn try_install(app_id: &str, package: &Package) -> eyre::Result<()> {
     let registered_fonts = package
         .entries()
         .iter()
-        .map(|entry| RegisteredFont::new(entry.name(), package.base_path().join(entry.file_name())))
+        .map(|entry| {
+            RegisteredFont::new(
+                entry.title(),
+                package.dirs().fonts_dir().join(entry.file_name()),
+            )
+        })
         .collect::<eyre::Result<Vec<_>>>()?;
     registry::register_package_fonts(app_id, package.id(), &registered_fonts)?;
     for entry in &registered_fonts {
@@ -46,18 +51,27 @@ fn try_install(app_id: &str, package: &Package) -> eyre::Result<()> {
 }
 
 pub(crate) fn uninstall_package_fonts(app_id: &str, package: &Package) -> eyre::Result<()> {
-    let registered_fonts = package
-        .entries()
-        .iter()
-        .map(|entry| RegisteredFont::new(entry.name(), package.base_path().join(entry.file_name())))
-        .collect::<eyre::Result<Vec<_>>>()?;
-    for entry in registered_fonts {
-        session::unload_font(entry.path());
+    let entries = match registry::list_registered_package_fonts(app_id, package.id()) {
+        Ok(entries) => Some(entries),
+        Err(err) => {
+            let err = err.wrap_err("failed to list registered fonts for package during uninstall");
+            warn!("{}", err.format_error_chain());
+            None
+        }
+    };
+    if let Some(entries) = entries {
+        for entry in entries {
+            session::unload_font(entry.path());
+        }
     }
-    registry::unregister_package_fonts(app_id, package.id())?;
+
+    let res = registry::unregister_package_fonts(app_id, package.id())
+        .wrap_err("failed to unregister package fonts from registry");
+
     if let Err(err) = session::broadcast_font_change() {
         let err = err.wrap_err("failed to broadcast font change after uninstall; applications may continue to use stale font information until refresh");
         warn!("{}", err.format_error_chain());
     }
-    Ok(())
+
+    res
 }

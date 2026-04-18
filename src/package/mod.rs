@@ -1,15 +1,46 @@
 use std::{
-    ffi::{OsStr, OsString},
     fmt::{self, Display},
-    path::{Path, PathBuf},
+    path::{self, Path, PathBuf},
+    sync::LazyLock,
 };
 
 use color_eyre::eyre::{self, ensure};
+use regex::Regex;
+use reqwest::Url;
+use semver::Version;
+
+use crate::util::hash::Sha256Digest;
 
 #[derive(Debug, Clone)]
 pub(crate) struct PackageId {
-    pub(crate) name: String,
-    pub(crate) version: String,
+    name: String,
+    version: Version,
+}
+
+impl PackageId {
+    pub(crate) fn new<N, V>(name: N, version: V) -> eyre::Result<Self>
+    where
+        N: Into<String>,
+        V: Into<Version>,
+    {
+        static NAME_REGEX: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^[a-zA-Z][-_0-9a-zA-Z]+$").unwrap());
+
+        let name = name.into();
+        let version = version.into();
+
+        ensure!(NAME_REGEX.is_match(&name), "invalid package name: {name}");
+
+        Ok(Self { name, version })
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub(crate) fn version(&self) -> &Version {
+        &self.version
+    }
 }
 
 impl Display for PackageId {
@@ -19,42 +50,79 @@ impl Display for PackageId {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct PackageSpec {
+    pub(crate) id: PackageId,
+    pub(crate) url: Url,
+    pub(crate) sha256: Sha256Digest,
+}
+
+#[derive(Debug, Clone)]
+#[expect(clippy::struct_field_names)]
+pub(crate) struct PackageDirs {
+    name_dir: PathBuf,
+    version_dir: PathBuf,
+    fonts_dir: PathBuf,
+}
+
+impl PackageDirs {
+    pub(crate) fn new<P>(app_data_dir: P, pkg_id: &PackageId) -> eyre::Result<Self>
+    where
+        P: Into<PathBuf>,
+    {
+        let app_data_dir = app_data_dir.into();
+        ensure!(
+            app_data_dir.is_absolute(),
+            "data directory path must be absolute: {}",
+            app_data_dir.display()
+        );
+        let package_base_dir = app_data_dir.join("packages");
+        let name_dir = package_base_dir.join(pkg_id.name());
+        let version_dir = name_dir.join(pkg_id.version().to_string());
+        let fonts_dir = version_dir.join("fonts");
+        Ok(Self {
+            name_dir,
+            version_dir,
+            fonts_dir,
+        })
+    }
+
+    pub(crate) fn name_dir(&self) -> &Path {
+        &self.name_dir
+    }
+
+    pub(crate) fn version_dir(&self) -> &Path {
+        &self.version_dir
+    }
+
+    pub(crate) fn fonts_dir(&self) -> &Path {
+        &self.fonts_dir
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct Package {
     id: PackageId,
-    base_path: PathBuf,
+    dirs: PackageDirs,
     entries: Vec<FontEntry>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct FontEntry {
-    name: String,
-    file_name: OsString,
+    title: String,
+    file_name: String,
 }
 
 impl Package {
-    pub(crate) fn new<P>(id: PackageId, base_path: P, entries: Vec<FontEntry>) -> eyre::Result<Self>
-    where
-        P: Into<PathBuf>,
-    {
-        let base_path = base_path.into();
-        ensure!(
-            base_path.is_absolute(),
-            "base path must be absolute: {}",
-            base_path.display()
-        );
-        Ok(Self {
-            id,
-            base_path,
-            entries,
-        })
+    pub(crate) fn new(id: PackageId, dirs: PackageDirs, entries: Vec<FontEntry>) -> Self {
+        Self { id, dirs, entries }
     }
 
     pub(crate) fn id(&self) -> &PackageId {
         &self.id
     }
 
-    pub(crate) fn base_path(&self) -> &Path {
-        &self.base_path
+    pub(crate) fn dirs(&self) -> &PackageDirs {
+        &self.dirs
     }
 
     pub(crate) fn entries(&self) -> &[FontEntry] {
@@ -63,42 +131,39 @@ impl Package {
 }
 
 impl FontEntry {
-    pub(crate) fn new<N, F>(name: N, file_name: F) -> eyre::Result<Self>
+    pub(crate) fn new<T, F>(title: T, file_name: F) -> eyre::Result<Self>
     where
-        N: Into<String>,
-        F: Into<OsString>,
+        T: Into<String>,
+        F: Into<String>,
     {
-        let name = name.into();
+        let title = title.into();
         let file_name = file_name.into();
         validate_font_file_name(&file_name)?;
-        Ok(Self { name, file_name })
+        Ok(Self { title, file_name })
     }
 
-    pub(crate) fn name(&self) -> &str {
-        &self.name
+    pub(crate) fn title(&self) -> &str {
+        &self.title
     }
 
-    pub(crate) fn file_name(&self) -> &OsStr {
+    pub(crate) fn file_name(&self) -> &str {
         &self.file_name
     }
 }
 
-fn validate_font_file_name(file_name: &OsStr) -> eyre::Result<()> {
+fn validate_font_file_name(file_name: &str) -> eyre::Result<()> {
     let path = Path::new(file_name);
     ensure!(
         !path.as_os_str().is_empty(),
         "font file name must not be empty"
     );
-    let file_name_str = file_name.to_string_lossy();
     ensure!(
-        !file_name_str.contains(['\\', '/']),
-        "font file name must not contain path separators: {}",
-        file_name.display(),
+        !file_name.contains(path::is_separator),
+        "font file name must not contain path separators: {file_name}",
     );
     ensure!(
-        file_name != OsStr::new(".") && file_name != OsStr::new(".."),
-        "font file name must not be `.` or `..`: {}",
-        file_name.display(),
+        file_name != "." && file_name != "..",
+        "font file name must not be `.` or `..`: {file_name}"
     );
     Ok(())
 }
@@ -108,32 +173,54 @@ mod tests {
     use super::*;
 
     fn test_package_id() -> PackageId {
-        PackageId {
-            name: "example-package".to_string(),
-            version: "0.1.0".to_string(),
+        PackageId::new("example-package", Version::new(0, 1, 0)).unwrap()
+    }
+
+    #[test]
+    fn package_dirs_new_accepts_absolute_base_path() {
+        let pkg_dirs = PackageDirs::new(r"C:\path\to\package", &test_package_id()).unwrap();
+        assert_eq!(
+            pkg_dirs.name_dir(),
+            Path::new(r"C:\path\to\package\packages\example-package")
+        );
+        assert_eq!(
+            pkg_dirs.version_dir(),
+            Path::new(r"C:\path\to\package\packages\example-package\0.1.0")
+        );
+        assert_eq!(
+            pkg_dirs.fonts_dir(),
+            Path::new(r"C:\path\to\package\packages\example-package\0.1.0\fonts")
+        );
+    }
+
+    #[test]
+    fn package_dirs_new_rejects_relative_base_path() {
+        let _ = PackageDirs::new(r"relative\package", &test_package_id()).unwrap_err();
+    }
+
+    #[test]
+    fn package_id_new_accepts_valid_names() {
+        for name in ["hackgen", "HackGen", "hackgen-nerd", "hackgen_nerd", "a0"] {
+            let pkg_id = PackageId::new(name, Version::new(0, 1, 0))
+                .expect("valid package name should be accepted");
+            assert_eq!(pkg_id.name(), name);
         }
     }
 
     #[test]
-    fn package_new_accepts_absolute_base_path() {
-        let package = Package::new(
-            test_package_id(),
-            r"C:\path\to\package",
-            vec![FontEntry::new("Example Font", "example-font.ttf").unwrap()],
-        )
-        .expect("absolute base path should be accepted");
-
-        assert_eq!(package.base_path(), Path::new(r"C:\path\to\package"));
-    }
-
-    #[test]
-    fn package_new_rejects_relative_base_path() {
-        let _ = Package::new(
-            test_package_id(),
-            r"relative\package",
-            vec![FontEntry::new("Example Font", "example-font.ttf").unwrap()],
-        )
-        .expect_err("relative base path should be rejected");
+    fn package_id_new_rejects_invalid_names() {
+        for name in [
+            "",
+            "0hackgen",
+            "-hackgen",
+            "_hackgen",
+            "hackgen/nerd",
+            r"hackgen\nerd",
+            "hackgen:nerd",
+        ] {
+            let _ = PackageId::new(name, Version::new(0, 1, 0))
+                .expect_err("invalid package name should be rejected");
+        }
     }
 
     #[test]
@@ -141,8 +228,8 @@ mod tests {
         let entry = FontEntry::new("Example Font", "example-font.ttf")
             .expect("plain file name should work");
 
-        assert_eq!(entry.name(), "Example Font");
-        assert_eq!(entry.file_name(), OsStr::new("example-font.ttf"));
+        assert_eq!(entry.title(), "Example Font");
+        assert_eq!(entry.file_name(), "example-font.ttf");
     }
 
     #[test]
