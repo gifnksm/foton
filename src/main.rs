@@ -1,16 +1,21 @@
 #[cfg(not(windows))]
 compile_error!("foton is supported on Windows only.");
 
-use std::{env, io, path::PathBuf, process};
+use std::{env, io, process};
 
 use clap::{CommandFactory as _, Parser as _};
 use clap_complete::{Generator, Shell};
 use color_eyre::eyre;
 
-use crate::platform::windows::registry::{self, FontEntry};
+use crate::{
+    package::{FontEntry, Package},
+    platform::windows::{install, registry},
+};
 
+mod cli;
 mod package;
 mod platform;
+mod util;
 
 const APP_ID: &str = "io.github.gifnksm.foton";
 
@@ -33,7 +38,7 @@ fn main() -> eyre::Result<()> {
 
     let _args = App::parse();
 
-    run_test()?;
+    run_smoke_test()?;
 
     Ok(())
 }
@@ -62,25 +67,21 @@ fn generate_man(output_dir: &str) {
     clap_mangen::generate_to(App::command(), output_dir).unwrap();
 }
 
-fn run_test() -> eyre::Result<()> {
+fn run_smoke_test() -> eyre::Result<()> {
     let pkgid = package::PackageId {
         name: "example-package".to_string(),
         version: "0.1.0".to_string(),
     };
+    let entries = vec![FontEntry::new("Example Font", r"example-font.ttf")?];
+    let package = Package::new(pkgid, r"C:\path\to\package", entries)?;
 
-    registry::register_package_fonts(
-        APP_ID,
-        &pkgid,
-        &[FontEntry {
-            name: "Example Font".to_string(),
-            path: PathBuf::from(r"C:\path\to\example-font.ttf"),
-        }],
-    )?;
+    install::install_package_fonts(APP_ID, &package)?;
 
-    for entry in registry::list_registered_package_fonts(APP_ID, &pkgid)? {
-        println!("{}: {}", entry.name, entry.path.display());
+    for font in registry::list_registered_package_fonts(APP_ID, package.id())? {
+        println!("{}: {}", font.name(), font.path().display());
     }
 
-    registry::unregister_package_fonts(APP_ID, &pkgid)?;
+    install::uninstall_package_fonts(APP_ID, &package)?;
+
     Ok(())
 }

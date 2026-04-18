@@ -1,8 +1,9 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use color_eyre::eyre::{self, WrapErr as _};
+use color_eyre::eyre::{self, WrapErr as _, ensure};
 use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
-use windows_registry::{CURRENT_USER, HSTRING, Value};
+use windows_core::HSTRING;
+use windows_registry::{CURRENT_USER, Value};
 
 use crate::package::PackageId;
 
@@ -35,25 +36,48 @@ fn err_is_not_found(err: &windows_result::Error) -> bool {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct FontEntry {
-    pub(crate) name: String,
-    pub(crate) path: PathBuf,
+pub(crate) struct RegisteredFont {
+    name: String,
+    path: PathBuf,
 }
 
-impl FontEntry {
+impl AsRef<RegisteredFont> for RegisteredFont {
+    fn as_ref(&self) -> &RegisteredFont {
+        self
+    }
+}
+
+impl RegisteredFont {
+    pub(crate) fn new<N, P>(name: N, path: P) -> eyre::Result<Self>
+    where
+        N: Into<String>,
+        P: Into<PathBuf>,
+    {
+        let name = name.into();
+        let path = path.into();
+        ensure!(path.is_absolute(), "registered font path must be absolute");
+        Ok(Self { name, path })
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
     fn from_reg(name: String, path: Value) -> eyre::Result<Self> {
         let path = HSTRING::try_from(path)
             .wrap_err_with(|| format!("failed to convert registry value `{name}` to string"))?;
         let path = PathBuf::from(path.to_os_string());
-        Ok(Self { name, path })
+        Self::new(name, path).wrap_err("invalid registry entry for registered font")
     }
 
-    #[must_use]
     fn reg_name(&self) -> &str {
         &self.name
     }
 
-    #[must_use]
     fn reg_value(&self) -> Value {
         Value::from(&HSTRING::from(self.path.as_path()))
     }
@@ -62,7 +86,7 @@ impl FontEntry {
 pub(crate) fn list_registered_package_fonts(
     app_id: &str,
     pkgid: &PackageId,
-) -> eyre::Result<Vec<FontEntry>> {
+) -> eyre::Result<Vec<RegisteredFont>> {
     let path = package_version_registry_key(app_id, pkgid);
 
     let key = match CURRENT_USER.open(&path) {
@@ -81,18 +105,19 @@ pub(crate) fn list_registered_package_fonts(
         .wrap_err_with(|| {
             format!("failed to read registry value of key `{path}` for package `{pkgid}`")
         })?
-        .map(|(font_name, font_path)| {
-            let entry = FontEntry::from_reg(font_name, font_path)?;
-            Ok(entry)
-        })
+        .map(|(name, path)| RegisteredFont::from_reg(name, path))
         .collect()
 }
 
-pub(crate) fn register_package_fonts(
+pub(crate) fn register_package_fonts<I, F>(
     app_id: &str,
     pkgid: &PackageId,
-    entries: &[FontEntry],
-) -> eyre::Result<()> {
+    fonts: I,
+) -> eyre::Result<()>
+where
+    I: IntoIterator<Item = F>,
+    F: AsRef<RegisteredFont>,
+{
     let path = package_version_registry_key(app_id, pkgid);
 
     match CURRENT_USER.open(&path) {
@@ -111,12 +136,13 @@ pub(crate) fn register_package_fonts(
         format!("failed to create registry key `{path}` for package `{pkgid}`")
     })?;
 
-    for entry in entries {
-        key.set_value(entry.reg_name(), &entry.reg_value())
+    for font in fonts {
+        let font = font.as_ref();
+        key.set_value(font.reg_name(), &font.reg_value())
             .wrap_err_with(|| {
                 format!(
                     "failed to set registry value for key `{path}` and font `{}`",
-                    entry.name
+                    font.name(),
                 )
             })?;
     }
@@ -296,15 +322,17 @@ mod tests {
         with_registry_test(|app_id| {
             let pkgid = test_package_id("roundtrip");
 
-            let expected_entries = vec![
-                FontEntry {
-                    name: "Example Font A (TrueType)".to_string(),
-                    path: PathBuf::from(r"C:\path\to\example-font-a.ttf"),
-                },
-                FontEntry {
-                    name: "Example Font B (TrueType)".to_string(),
-                    path: PathBuf::from(r"C:\path\to\example-font-b.ttf"),
-                },
+            let expected_entries = [
+                RegisteredFont::new(
+                    "Example Font A (TrueType)",
+                    r"C:\path\to\example-font-a.ttf",
+                )
+                .unwrap(),
+                RegisteredFont::new(
+                    "Example Font B (TrueType)",
+                    r"C:\path\to\example-font-b.ttc",
+                )
+                .unwrap(),
             ];
 
             register_package_fonts(app_id, &pkgid, &expected_entries)
@@ -312,15 +340,15 @@ mod tests {
 
             let mut actual_entries = list_registered_package_fonts(app_id, &pkgid)
                 .expect("listing registered package fonts should succeed");
-            actual_entries.sort_by(|lhs, rhs| lhs.name.cmp(&rhs.name));
+            actual_entries.sort_by(|lhs, rhs| lhs.name().cmp(rhs.name()));
 
             let mut expected_entries = expected_entries;
-            expected_entries.sort_by(|lhs, rhs| lhs.name.cmp(&rhs.name));
+            expected_entries.sort_by(|lhs, rhs| lhs.name().cmp(rhs.name()));
 
             assert_eq!(actual_entries.len(), expected_entries.len());
             for (actual, expected) in actual_entries.iter().zip(expected_entries.iter()) {
-                assert_eq!(actual.name, expected.name);
-                assert_eq!(actual.path, expected.path);
+                assert_eq!(actual.name(), expected.name());
+                assert_eq!(actual.path(), expected.path());
             }
 
             unregister_package_fonts(app_id, &pkgid)
@@ -367,10 +395,10 @@ mod tests {
             register_package_fonts(
                 app_id,
                 &pkgid,
-                &[FontEntry {
-                    name: "Example Font (TrueType)".to_string(),
-                    path: PathBuf::from(r"C:\path\to\example-font.ttf"),
-                }],
+                [
+                    RegisteredFont::new("Example Font (TrueType)", r"C:\path\to\example-font.ttf")
+                        .unwrap(),
+                ],
             )
             .expect("registering package fonts should succeed");
 
@@ -407,10 +435,11 @@ mod tests {
                 version: format!("{}-other", pkgid_v1.version),
             };
 
-            let entries = [FontEntry {
-                name: "Example Font (TrueType)".to_string(),
-                path: PathBuf::from(r"C:\path\to\example-font.ttf"),
-            }];
+            let entries =
+                [
+                    RegisteredFont::new("Example Font (TrueType)", r"C:\path\to\example-font.ttf")
+                        .unwrap(),
+                ];
 
             register_package_fonts(app_id, &pkgid_v1, &entries)
                 .expect("registering first package fonts should succeed");
@@ -439,10 +468,11 @@ mod tests {
     fn register_package_fonts_errors_when_package_version_already_exists() {
         with_registry_test(|app_id| {
             let pkgid = test_package_id("duplicate-register");
-            let entries = [FontEntry {
-                name: "Example Font (TrueType)".to_string(),
-                path: PathBuf::from(r"C:\path\to\example-font.ttf"),
-            }];
+            let entries =
+                [
+                    RegisteredFont::new("Example Font (TrueType)", r"C:\path\to\example-font.ttf")
+                        .unwrap(),
+                ];
 
             let path = package_version_registry_key(app_id, &pkgid);
             let key = CURRENT_USER
@@ -456,5 +486,21 @@ mod tests {
             let message = format!("{err:?}");
             assert!(message.contains("already exists"));
         });
+    }
+
+    #[test]
+    fn registered_font_new_accepts_absolute_path() {
+        let font = RegisteredFont::new("Example Font (TrueType)", r"C:\path\to\example-font.ttf")
+            .expect("absolute path should be accepted");
+
+        assert_eq!(font.name(), "Example Font (TrueType)");
+        assert_eq!(font.path(), Path::new(r"C:\path\to\example-font.ttf"));
+    }
+
+    #[test]
+    fn registered_font_new_rejects_non_absolute_paths() {
+        for path in [r"relative\example-font.ttf", ""] {
+            let _ = RegisteredFont::new("Example Font (TrueType)", path).unwrap_err();
+        }
     }
 }

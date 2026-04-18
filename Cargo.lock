@@ -343,6 +343,7 @@ dependencies = [
  "clap_mangen",
  "color-eyre",
  "windows",
+ "windows-core",
  "windows-registry",
  "windows-result",
 ]
