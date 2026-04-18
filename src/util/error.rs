@@ -36,3 +36,16 @@ where
         Ok(())
     }
 }
+
+pub(crate) trait IgnoreNotFound {
+    fn ignore_not_found(self) -> Self;
+}
+
+impl IgnoreNotFound for std::io::Result<()> {
+    fn ignore_not_found(self) -> Self {
+        match self {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            other => other,
+        }
+    }
+}

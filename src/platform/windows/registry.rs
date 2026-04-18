@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf},
+};
 
 use color_eyre::eyre::{self, WrapErr as _, ensure};
 use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
@@ -9,7 +12,11 @@ use crate::package::PackageId;
 
 const USER_FONTS_REGISTRY_BASE_KEY: &str = r"Software\Microsoft\Windows NT\CurrentVersion\Fonts";
 
-fn assert_registry_path_segment(kind: &str, segment: &str) {
+fn assert_registry_path_segment<S>(kind: &str, segment: S)
+where
+    S: Display,
+{
+    let segment = segment.to_string();
     assert!(
         !segment.contains(['\\', '\0']) && !segment.chars().any(char::is_control),
         "invalid registry path segment for {kind}: {segment:?}"
@@ -21,21 +28,25 @@ fn app_registry_key(app_id: &str) -> String {
     format!(r"{USER_FONTS_REGISTRY_BASE_KEY}\{app_id}")
 }
 
-fn package_registry_key(app_id: &str, pkgid: &PackageId) -> String {
-    assert_registry_path_segment("package name", &pkgid.name);
-    format!(r"{}\{}", app_registry_key(app_id), pkgid.name)
+fn package_registry_key(app_id: &str, pkg_id: &PackageId) -> String {
+    assert_registry_path_segment("package name", pkg_id.name());
+    format!(r"{}\{}", app_registry_key(app_id), pkg_id.name())
 }
 
-fn package_version_registry_key(app_id: &str, pkgid: &PackageId) -> String {
-    assert_registry_path_segment("package version", &pkgid.version);
-    format!(r"{}\{}", package_registry_key(app_id, pkgid), pkgid.version)
+fn package_version_registry_key(app_id: &str, pkg_id: &PackageId) -> String {
+    assert_registry_path_segment("package version", pkg_id.version());
+    format!(
+        r"{}\{}",
+        package_registry_key(app_id, pkg_id),
+        pkg_id.version()
+    )
 }
 
 fn err_is_not_found(err: &windows_result::Error) -> bool {
     err.code() == ERROR_FILE_NOT_FOUND.to_hresult()
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct RegisteredFont {
     name: String,
     path: PathBuf,
@@ -85,9 +96,9 @@ impl RegisteredFont {
 
 pub(crate) fn list_registered_package_fonts(
     app_id: &str,
-    pkgid: &PackageId,
+    pkg_id: &PackageId,
 ) -> eyre::Result<Vec<RegisteredFont>> {
-    let path = package_version_registry_key(app_id, pkgid);
+    let path = package_version_registry_key(app_id, pkg_id);
 
     let key = match CURRENT_USER.open(&path) {
         Ok(key) => key,
@@ -96,14 +107,14 @@ pub(crate) fn list_registered_package_fonts(
         }
         Err(err) => {
             return Err(err).wrap_err_with(|| {
-                format!("failed to open registry key `{path}` for package `{pkgid}`")
+                format!("failed to open registry key `{path}` for package `{pkg_id}`")
             });
         }
     };
 
     key.values()
         .wrap_err_with(|| {
-            format!("failed to read registry value of key `{path}` for package `{pkgid}`")
+            format!("failed to read registry value of key `{path}` for package `{pkg_id}`")
         })?
         .map(|(name, path)| RegisteredFont::from_reg(name, path))
         .collect()
@@ -111,29 +122,29 @@ pub(crate) fn list_registered_package_fonts(
 
 pub(crate) fn register_package_fonts<I, F>(
     app_id: &str,
-    pkgid: &PackageId,
+    pkg_id: &PackageId,
     fonts: I,
 ) -> eyre::Result<()>
 where
     I: IntoIterator<Item = F>,
     F: AsRef<RegisteredFont>,
 {
-    let path = package_version_registry_key(app_id, pkgid);
+    let path = package_version_registry_key(app_id, pkg_id);
 
     match CURRENT_USER.open(&path) {
         Ok(_) => {
-            eyre::bail!("registry key `{path}` already exists for package `{pkgid}`");
+            eyre::bail!("registry key `{path}` already exists for package `{pkg_id}`");
         }
         Err(err) if err_is_not_found(&err) => {}
         Err(err) => {
             return Err(err).wrap_err_with(|| {
-                format!("failed to check registry key `{path}` for package `{pkgid}`")
+                format!("failed to check registry key `{path}` for package `{pkg_id}`")
             });
         }
     }
 
     let key = CURRENT_USER.create(&path).wrap_err_with(|| {
-        format!("failed to create registry key `{path}` for package `{pkgid}`")
+        format!("failed to create registry key `{path}` for package `{pkg_id}`")
     })?;
 
     for font in fonts {
@@ -150,24 +161,24 @@ where
     Ok(())
 }
 
-pub(crate) fn unregister_package_fonts(app_id: &str, pkgid: &PackageId) -> eyre::Result<()> {
-    let path = package_version_registry_key(app_id, pkgid);
+pub(crate) fn unregister_package_fonts(app_id: &str, pkg_id: &PackageId) -> eyre::Result<()> {
+    let path = package_version_registry_key(app_id, pkg_id);
 
     if let Err(err) = CURRENT_USER.remove_tree(&path) {
         if err_is_not_found(&err) {
             return Ok(());
         }
         return Err(err).wrap_err_with(|| {
-            format!("failed to delete registry key `{path}` for package `{pkgid}`")
+            format!("failed to delete registry key `{path}` for package `{pkg_id}`")
         });
     }
 
     for parent_path in [
-        package_registry_key(app_id, pkgid),
+        package_registry_key(app_id, pkg_id),
         app_registry_key(app_id),
     ] {
         remove_key_if_empty(&parent_path).wrap_err_with(|| {
-            format!("failed to clean up parent registry key `{parent_path}` for package `{pkgid}`")
+            format!("failed to clean up parent registry key `{parent_path}` for package `{pkg_id}`")
         })?;
     }
 
@@ -220,6 +231,8 @@ mod tests {
         sync::atomic::{AtomicUsize, Ordering},
     };
 
+    use semver::{BuildMetadata, Version};
+
     use super::*;
 
     struct RegistryTestGuard {
@@ -251,10 +264,9 @@ mod tests {
     }
 
     fn test_package_id(name: &str) -> PackageId {
-        PackageId {
-            name: format!("registry-test-{name}"),
-            version: format!("pid-{}", process::id()),
-        }
+        let name = format!("registry-test-{name}");
+        let version = Version::parse(&format!("0.1.0+pid-{}", process::id())).unwrap();
+        PackageId::new(name, version).unwrap()
     }
 
     fn cleanup_app_root(app_id: &str) {
@@ -290,9 +302,9 @@ mod tests {
     )]
     fn list_registered_package_fonts_returns_empty_for_missing_package() {
         with_registry_test(|app_id| {
-            let pkgid = test_package_id("missing-list");
+            let pkg_id = test_package_id("missing-list");
 
-            let entries = list_registered_package_fonts(app_id, &pkgid)
+            let entries = list_registered_package_fonts(app_id, &pkg_id)
                 .expect("listing missing package fonts should succeed");
 
             assert!(entries.is_empty());
@@ -306,9 +318,9 @@ mod tests {
     )]
     fn unregister_package_fonts_ignores_missing_package() {
         with_registry_test(|app_id| {
-            let pkgid = test_package_id("missing-unregister");
+            let pkg_id = test_package_id("missing-unregister");
 
-            unregister_package_fonts(app_id, &pkgid)
+            unregister_package_fonts(app_id, &pkg_id)
                 .expect("unregistering missing package fonts should succeed");
         });
     }
@@ -320,7 +332,7 @@ mod tests {
     )]
     fn register_list_and_unregister_package_fonts_roundtrip() {
         with_registry_test(|app_id| {
-            let pkgid = test_package_id("roundtrip");
+            let pkg_id = test_package_id("roundtrip");
 
             let expected_entries = [
                 RegisteredFont::new(
@@ -335,10 +347,10 @@ mod tests {
                 .unwrap(),
             ];
 
-            register_package_fonts(app_id, &pkgid, &expected_entries)
+            register_package_fonts(app_id, &pkg_id, &expected_entries)
                 .expect("registering package fonts should succeed");
 
-            let mut actual_entries = list_registered_package_fonts(app_id, &pkgid)
+            let mut actual_entries = list_registered_package_fonts(app_id, &pkg_id)
                 .expect("listing registered package fonts should succeed");
             actual_entries.sort_by(|lhs, rhs| lhs.name().cmp(rhs.name()));
 
@@ -351,10 +363,10 @@ mod tests {
                 assert_eq!(actual.path(), expected.path());
             }
 
-            unregister_package_fonts(app_id, &pkgid)
+            unregister_package_fonts(app_id, &pkg_id)
                 .expect("unregistering registered package fonts should succeed");
 
-            let entries_after_unregister = list_registered_package_fonts(app_id, &pkgid)
+            let entries_after_unregister = list_registered_package_fonts(app_id, &pkg_id)
                 .expect("listing package fonts after unregister should succeed");
             assert!(entries_after_unregister.is_empty());
         });
@@ -367,16 +379,16 @@ mod tests {
     )]
     fn list_registered_package_fonts_errors_on_non_string_value() {
         with_registry_test(|app_id| {
-            let pkgid = test_package_id("invalid-value");
+            let pkg_id = test_package_id("invalid-value");
 
-            let path = package_version_registry_key(app_id, &pkgid);
+            let path = package_version_registry_key(app_id, &pkg_id);
             let key = CURRENT_USER
                 .create(&path)
                 .expect("failed to create test registry key");
             key.set_u32("Invalid Font", 42)
                 .expect("failed to write invalid registry value");
 
-            let err = list_registered_package_fonts(app_id, &pkgid)
+            let err = list_registered_package_fonts(app_id, &pkg_id)
                 .expect_err("listing package fonts with non-string value should fail");
             let message = format!("{err:?}");
             assert!(message.contains("failed to convert registry value `Invalid Font`"));
@@ -390,11 +402,11 @@ mod tests {
     )]
     fn unregister_package_fonts_removes_empty_parent_keys() {
         with_registry_test(|app_id| {
-            let pkgid = test_package_id("cleanup-empty-parents");
+            let pkg_id = test_package_id("cleanup-empty-parents");
 
             register_package_fonts(
                 app_id,
-                &pkgid,
+                &pkg_id,
                 [
                     RegisteredFont::new("Example Font (TrueType)", r"C:\path\to\example-font.ttf")
                         .unwrap(),
@@ -402,16 +414,13 @@ mod tests {
             )
             .expect("registering package fonts should succeed");
 
+            assert_eq!(list_key_names(&app_registry_key(app_id)), [pkg_id.name()]);
             assert_eq!(
-                list_key_names(&app_registry_key(app_id)),
-                vec![pkgid.name.clone()]
-            );
-            assert_eq!(
-                list_key_names(&package_registry_key(app_id, &pkgid)),
-                vec![pkgid.version.clone()]
+                list_key_names(&package_registry_key(app_id, &pkg_id)),
+                [pkg_id.version().to_string()]
             );
 
-            unregister_package_fonts(app_id, &pkgid)
+            unregister_package_fonts(app_id, &pkg_id)
                 .expect("unregistering registered package fonts should succeed");
 
             assert!(list_key_names(&app_registry_key(app_id)).is_empty());
@@ -429,11 +438,10 @@ mod tests {
     )]
     fn unregister_package_fonts_keeps_non_empty_parent_keys() {
         with_registry_test(|app_id| {
-            let pkgid_v1 = test_package_id("cleanup-keep-parents");
-            let pkgid_v2 = PackageId {
-                name: pkgid_v1.name.clone(),
-                version: format!("{}-other", pkgid_v1.version),
-            };
+            let pkg_id_v1 = test_package_id("cleanup-keep-parents");
+            let mut v2 = pkg_id_v1.version().clone();
+            v2.build = BuildMetadata::new(&format!("{}-other", v2.build.as_str())).unwrap();
+            let pkg_id_v2 = PackageId::new(pkg_id_v1.name(), v2).unwrap();
 
             let entries =
                 [
@@ -441,21 +449,21 @@ mod tests {
                         .unwrap(),
                 ];
 
-            register_package_fonts(app_id, &pkgid_v1, &entries)
+            register_package_fonts(app_id, &pkg_id_v1, &entries)
                 .expect("registering first package fonts should succeed");
-            register_package_fonts(app_id, &pkgid_v2, &entries)
+            register_package_fonts(app_id, &pkg_id_v2, &entries)
                 .expect("registering second package fonts should succeed");
 
-            unregister_package_fonts(app_id, &pkgid_v1)
+            unregister_package_fonts(app_id, &pkg_id_v1)
                 .expect("unregistering first package fonts should succeed");
 
             assert_eq!(
                 list_key_names(&app_registry_key(app_id)),
-                vec![pkgid_v1.name.clone()]
+                [pkg_id_v1.name()]
             );
             assert_eq!(
-                list_key_names(&package_registry_key(app_id, &pkgid_v1)),
-                vec![pkgid_v2.version.clone()]
+                list_key_names(&package_registry_key(app_id, &pkg_id_v1)),
+                [pkg_id_v2.version().to_string()]
             );
         });
     }
@@ -467,21 +475,21 @@ mod tests {
     )]
     fn register_package_fonts_errors_when_package_version_already_exists() {
         with_registry_test(|app_id| {
-            let pkgid = test_package_id("duplicate-register");
+            let pkg_id = test_package_id("duplicate-register");
             let entries =
                 [
                     RegisteredFont::new("Example Font (TrueType)", r"C:\path\to\example-font.ttf")
                         .unwrap(),
                 ];
 
-            let path = package_version_registry_key(app_id, &pkgid);
+            let path = package_version_registry_key(app_id, &pkg_id);
             let key = CURRENT_USER
                 .create(&path)
                 .expect("failed to create existing test registry key");
             key.set_value(entries[0].reg_name(), &entries[0].reg_value())
                 .expect("failed to seed existing registry value");
 
-            let err = register_package_fonts(app_id, &pkgid, &entries)
+            let err = register_package_fonts(app_id, &pkg_id, &entries)
                 .expect_err("registering duplicate package version should fail");
             let message = format!("{err:?}");
             assert!(message.contains("already exists"));
