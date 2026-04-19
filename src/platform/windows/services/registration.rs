@@ -1,6 +1,6 @@
 use crate::{
     package::{Package, PackageId},
-    platform::windows::{
+    platform::windows::primitives::{
         registry::{self, RegisteredFont, RegistryError},
         session::{self, SessionError},
     },
