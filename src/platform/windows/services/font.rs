@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     package::FontEntry,
-    platform::windows::font_inspector::{FontInspector, FontInspectorError},
+    platform::windows::primitives::font_inspector::{FontInspector, FontInspectorError},
     util::path::FileName,
 };
 

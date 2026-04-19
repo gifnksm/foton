@@ -11,10 +11,7 @@ use zip::ZipArchive;
 
 use crate::{
     package::{FontEntry, Package, PackageDirs, PackageSpec},
-    platform::windows::{
-        font_validator::FontValidator,
-        install::{self as platform_install},
-    },
+    platform::windows::services::{font::FontValidator, registration},
     util::{
         app_dirs::AppDirs,
         fs::{self as fs_util},
@@ -42,8 +39,8 @@ pub(crate) fn install_package(
         }
     };
 
-    if let Err(err) = platform_install::install_package_fonts(reporter, app_id, &package) {
-        let _ = platform_install::uninstall_package_fonts(reporter, app_id, &spec.id)
+    if let Err(err) = registration::install_package_fonts(reporter, app_id, &package) {
+        let _ = registration::uninstall_package_fonts(reporter, app_id, &spec.id)
             .report_err_as_error(reporter);
         let _ = remove_package_dirs(reporter, &pkg_dirs).wrap_err_with(|| {
                 format!("failed to remove package directory after install failure: {}; manual cleanup may be required", pkg_dirs.version_dir().display())
@@ -59,7 +56,7 @@ pub(crate) fn uninstall_package(
     app_id: &str,
     package: &Package,
 ) -> eyre::Result<()> {
-    platform_install::uninstall_package_fonts(reporter, app_id, package.id())?;
+    registration::uninstall_package_fonts(reporter, app_id, package.id())?;
     remove_package_dirs(reporter, package.dirs())?;
     Ok(())
 }

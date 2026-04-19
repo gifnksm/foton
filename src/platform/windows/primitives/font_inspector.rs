@@ -3,12 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::platform::windows::{
+use crate::platform::windows::primitives::{
     direct_write::{DirectWriteError, DirectWriteFactory},
-    property_store::{PropertyStore, PropertyStoreError},
+    property_store::{PropertyStore, PropertyStoreError, PropertyStoreKey},
 };
-
-use super::property_store::PropertyStoreKey;
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
 pub(crate) enum FontInspectorError {
