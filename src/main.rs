@@ -10,7 +10,7 @@ use reqwest::Url;
 use semver::Version;
 
 use crate::{
-    package::{PackageId, PackageSpec},
+    package::{PackageId, PackageName, PackageSpec},
     platform::windows,
     util::{app_dirs::AppDirs, hash::Sha256Digest},
 };
@@ -80,8 +80,9 @@ fn generate_man(output_dir: &str) {
 }
 
 fn run_smoke_test(app_id: &str, app_dirs: &AppDirs) -> eyre::Result<()> {
-    let pkg_id = PackageId::new("hackgen", Version::new(2, 10, 0))
-        .wrap_err("failed to create package ID")?;
+    let name = PackageName::new("hackgen").unwrap();
+    let version = Version::new(2, 10, 0);
+    let pkg_id = PackageId::new(name, version);
     let spec = PackageSpec {
         id: pkg_id,
         url: Url::parse(
