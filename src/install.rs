@@ -15,9 +15,10 @@ use crate::{
     platform::windows::install::{self as platform_install, FontValidator},
     util::{
         app_dirs::AppDirs,
-        error::{IgnoreError as _, MessageResultExt as _},
+        error::{EyreIgnoreError as _, IgnoreError as _, MessageResultExt as _},
         fs::{self as fs_util},
         hash,
+        path::{AbsolutePath, FileName},
     },
 };
 
@@ -26,7 +27,7 @@ pub(crate) fn install_package(
     spec: &PackageSpec,
     app_dirs: &AppDirs,
 ) -> eyre::Result<Package> {
-    let pkg_dirs = PackageDirs::new(app_dirs.data_dir(), &spec.id)?;
+    let pkg_dirs = PackageDirs::new(app_dirs.data_dir(), &spec.id);
 
     match try_install_package(app_id, spec, &pkg_dirs) {
         Ok(package) => Ok(package),
@@ -108,7 +109,7 @@ fn download_archive(spec: &PackageSpec) -> eyre::Result<Bytes> {
     Ok(content)
 }
 
-fn extract_archive(bytes: Bytes, fonts_dir: &Path) -> eyre::Result<Vec<String>> {
+fn extract_archive(bytes: Bytes, fonts_dir: &AbsolutePath) -> eyre::Result<Vec<FileName>> {
     let mut files = vec![];
     let reader = Cursor::new(bytes);
     let mut archive = ZipArchive::new(reader)?;
@@ -138,6 +139,12 @@ fn extract_archive(bytes: Bytes, fonts_dir: &Path) -> eyre::Result<Vec<String>> 
             .file_name()
             .ok_or_else(|| eyre!("failed to get file name for archive entry with index {i}"))?
             .to_owned();
+        let file_name = FileName::new(&file_name).ok_or_else(|| {
+            eyre!(
+                "invalid file name `{}` in archive entry with index {i}",
+                file_name.to_string_lossy(),
+            )
+        })?;
         let fs_path = fonts_dir.join(&file_name);
 
         let mut file = File::options()
@@ -157,24 +164,27 @@ fn extract_archive(bytes: Bytes, fonts_dir: &Path) -> eyre::Result<Vec<String>> 
         file.flush()
             .wrap_err_with(|| format!("failed to flush font file: {}", fs_path.display()))?;
 
-        files.push(file_name.into_string().unwrap());
+        files.push(file_name);
     }
     Ok(files)
 }
 
 struct ValidationResult {
-    unsupported_fonts: Vec<String>,
+    unsupported_fonts: Vec<FileName>,
     valid_entries: Vec<FontEntry>,
 }
 
-fn validate_fonts(fonts_dir: &Path, file_names: &[String]) -> eyre::Result<ValidationResult> {
+fn validate_fonts(
+    fonts_dir: &AbsolutePath,
+    file_names: &[FileName],
+) -> eyre::Result<ValidationResult> {
     let mut unsupported_fonts = vec![];
     let mut valid_entries = vec![];
     let mut valid_entry_titles = HashSet::new();
     let validator = FontValidator::new()?;
     for file_name in file_names {
         let Some(entry) = validator.validate_font(fonts_dir, file_name)? else {
-            unsupported_fonts.push(file_name.to_owned());
+            unsupported_fonts.push(file_name.clone());
             continue;
         };
         if !valid_entry_titles.insert(entry.title().to_lowercase()) {
@@ -188,7 +198,7 @@ fn validate_fonts(fonts_dir: &Path, file_names: &[String]) -> eyre::Result<Valid
     })
 }
 
-fn prune_invalid_fonts(fonts_dir: &Path, invalid_files: &[String]) {
+fn prune_invalid_fonts(fonts_dir: &AbsolutePath, invalid_files: &[FileName]) {
     for file_name in invalid_files {
         let path = fonts_dir.join(file_name);
         warn!("removing invalid font file: {}", path.display());
@@ -206,7 +216,7 @@ mod tests {
     use tempfile::TempDir;
     use zip::write::SimpleFileOptions;
 
-    use crate::package::PackageId;
+    use crate::package::{PackageId, PackageName};
 
     fn build_zip(entries: &[(&str, &[u8])]) -> Bytes {
         let mut cursor = Cursor::new(Vec::new());
@@ -225,18 +235,20 @@ mod tests {
         Bytes::from(cursor.into_inner())
     }
 
-    fn extract_to_tempdir(bytes: Bytes) -> eyre::Result<(TempDir, Vec<String>)> {
+    fn extract_to_tempdir(bytes: Bytes) -> eyre::Result<(TempDir, Vec<FileName>)> {
         let tempdir = tempfile::tempdir().expect("failed to create temp dir");
-        let files = extract_archive(bytes, tempdir.path())?;
+        let fonts_dir = AbsolutePath::new(tempdir.path()).unwrap();
+        let files = extract_archive(bytes, &fonts_dir)?;
         Ok((tempdir, files))
     }
 
     fn make_package_dirs() -> (TempDir, PackageDirs) {
         let tempdir = tempfile::tempdir().expect("failed to create temp dir");
-        let pkg_id =
-            PackageId::new("hackgen", Version::new(2, 10, 0)).expect("failed to create package id");
-        let pkg_dirs =
-            PackageDirs::new(tempdir.path(), &pkg_id).expect("failed to create package dirs");
+        let app_data_dir = AbsolutePath::new(tempdir.path()).unwrap();
+        let name = PackageName::new("hackgen").unwrap();
+        let version = Version::new(2, 10, 0);
+        let pkg_id = PackageId::new(name, version);
+        let pkg_dirs = PackageDirs::new(app_data_dir, &pkg_id);
         (tempdir, pkg_dirs)
     }
 
@@ -262,14 +274,7 @@ mod tests {
         let (_tempdir, files) =
             extract_to_tempdir(bytes).expect("font files should be extracted successfully");
 
-        assert_eq!(
-            files,
-            vec![
-                String::from("font.ttf"),
-                String::from("font.ttc"),
-                String::from("font.otf"),
-            ]
-        );
+        assert_eq!(files, vec!["font.ttf", "font.ttc", "font.otf"]);
     }
 
     #[test]

@@ -1,15 +1,18 @@
 use std::path::Path;
 
-use color_eyre::eyre::{self, WrapErr as _};
+use color_eyre::eyre::{self, WrapErr as _, eyre};
 
 use crate::{
     package::{FontEntry, Package},
     platform::windows::{
-        font_info::{self, FontInspector},
+        font_inspector::FontInspector,
         registry::{self, RegisteredFont},
         session,
     },
-    util::error::{IgnoreError as _, MessageResultExt as _},
+    util::{
+        error::{EyreIgnoreError as _, MessageEyreResultExt as _},
+        path::FileName,
+    },
 };
 
 pub(crate) fn install_package_fonts(app_id: &str, package: &Package) -> eyre::Result<()> {
@@ -30,17 +33,8 @@ fn try_install(app_id: &str, package: &Package) -> eyre::Result<()> {
     let registered_fonts = package
         .entries()
         .iter()
-        .map(|entry| {
-            RegisteredFont::new(entry.title(), fonts_dir.join(entry.file_name())).wrap_err_with(
-                || {
-                    format!(
-                        "failed to create RegisteredFont for `{}`; this is a bug",
-                        entry.title()
-                    )
-                },
-            )
-        })
-        .collect::<eyre::Result<Vec<_>>>()?;
+        .map(|entry| RegisteredFont::new(entry.title(), fonts_dir.join(entry.file_name())))
+        .collect::<Vec<_>>();
 
     registry::register_package_fonts(app_id, package.id(), &registered_fonts)
         .wrap_err("failed to register fonts in the registry")?;
@@ -90,11 +84,15 @@ impl FontValidator {
         Ok(Self { inspector })
     }
 
-    pub(crate) fn validate_font(
+    pub(crate) fn validate_font<P>(
         &self,
-        fonts_dir: &Path,
-        file_name: &str,
-    ) -> eyre::Result<Option<FontEntry>> {
+        fonts_dir: P,
+        file_name: &FileName,
+    ) -> eyre::Result<Option<FontEntry>>
+    where
+        P: AsRef<Path>,
+    {
+        let fonts_dir = fonts_dir.as_ref();
         let path = fonts_dir.join(file_name);
         let supported = self
             .inspector
@@ -110,10 +108,19 @@ impl FontValidator {
             return Ok(None);
         }
 
-        let title = font_info::get_font_title(&path)
+        let title = self
+            .inspector
+            .get_font_title(&path)
             .wrap_err_with(|| format!("failed to get font title for file: {}", path.display()))?
-            .unwrap_or_else(|| file_name.to_owned());
+            .unwrap_or_else(|| file_name.to_os_string());
 
-        Ok(Some(FontEntry::new(title, file_name)?))
+        let title = title.to_str().ok_or_else(|| {
+            eyre!(
+                "failed to convert font title to string for file: {}; the title may contain invalid UTF-8",
+                path.display()
+            )
+        })?;
+
+        Ok(Some(FontEntry::new(title, file_name)))
     }
 }

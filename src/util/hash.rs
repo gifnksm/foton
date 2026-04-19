@@ -1,6 +1,5 @@
 use std::{fmt::Display, str::FromStr};
 
-use color_eyre::eyre::{self, WrapErr as _, eyre};
 use sha2::{Digest as _, Sha256};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -15,23 +14,37 @@ impl Display for Sha256Digest {
     }
 }
 
+#[derive(Debug, derive_more::Display, derive_more::Error)]
+pub(crate) enum Sha256DigestParseError {
+    #[display("invalid length for sha256 digest: {length}")]
+    InvalidLength { length: usize },
+    #[display("invalid character in sha256 digest: `{ch:?}`")]
+    InvalidCharacter { ch: char },
+}
+
 impl FromStr for Sha256Digest {
-    type Err = eyre::Report;
+    type Err = Sha256DigestParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.strip_prefix("sha256:").unwrap_or(s);
 
         if s.len() != 64 {
-            return Err(eyre!("invalid length for sha256 digest: {}", s.len()));
+            return Err(Self::Err::InvalidLength { length: s.len() });
         }
 
+        let mut chars = s.chars();
         let mut bytes = [0; 32];
-        for (i, byte) in bytes.iter_mut().enumerate() {
-            let hex = s
-                .get(i * 2..i * 2 + 2)
-                .ok_or_else(|| eyre!("invalid hex byte in sha256 digest: {s}"))?;
-            *byte = u8::from_str_radix(hex, 16)
-                .wrap_err_with(|| format!("invalid hex byte in sha256 digest: {hex}"))?;
+        for byte in &mut bytes {
+            let (Some(c1), Some(c2)) = (chars.next(), chars.next()) else {
+                return Err(Self::Err::InvalidLength { length: s.len() });
+            };
+            let Some(h1) = c1.to_digit(16) else {
+                return Err(Self::Err::InvalidCharacter { ch: c1 });
+            };
+            let Some(h2) = c2.to_digit(16) else {
+                return Err(Self::Err::InvalidCharacter { ch: c2 });
+            };
+            *byte = u8::try_from(h1 << 4 | h2).unwrap();
         }
         Ok(Self(bytes))
     }
