@@ -1,9 +1,5 @@
 use std::fmt::{self, Display, Formatter};
 
-use color_eyre::eyre;
-
-use crate::cli::message::{error, warn};
-
 pub(crate) trait FormatErrorChain {
     fn format_error_chain(&self) -> impl Display + '_;
 }
@@ -51,72 +47,5 @@ impl IgnoreNotFound for std::io::Result<()> {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
             other => other,
         }
-    }
-}
-
-pub(crate) trait IgnoreError {
-    fn ignore_err_with_warn(self);
-}
-
-impl<E> IgnoreError for Result<(), E>
-where
-    E: std::error::Error,
-{
-    fn ignore_err_with_warn(self) {
-        if let Err(err) = self {
-            warn!("{}", err.format_error_chain());
-        }
-    }
-}
-
-pub(crate) trait EyreIgnoreError {
-    fn ignore_err_with_error(self);
-    fn ignore_err_with_warn(self);
-}
-
-impl EyreIgnoreError for eyre::Result<()> {
-    fn ignore_err_with_error(self) {
-        if let Err(err) = self {
-            error!("{}", err.format_error_chain());
-        }
-    }
-
-    fn ignore_err_with_warn(self) {
-        if let Err(err) = self {
-            warn!("{}", err.format_error_chain());
-        }
-    }
-}
-
-pub(crate) trait MessageResultExt {
-    type Item;
-
-    fn ok_with_warn(self) -> Option<Self::Item>;
-}
-
-impl<T, E> MessageResultExt for Result<T, E>
-where
-    E: std::error::Error,
-{
-    type Item = T;
-
-    fn ok_with_warn(self) -> Option<Self::Item> {
-        self.inspect_err(|err| warn!("{}", err.format_error_chain()))
-            .ok()
-    }
-}
-
-pub(crate) trait MessageEyreResultExt {
-    type Item;
-
-    fn ok_with_warn(self) -> Option<Self::Item>;
-}
-
-impl<T> MessageEyreResultExt for eyre::Result<T> {
-    type Item = T;
-
-    fn ok_with_warn(self) -> Option<Self::Item> {
-        self.inspect_err(|err| warn!("{}", err.format_error_chain()))
-            .ok()
     }
 }

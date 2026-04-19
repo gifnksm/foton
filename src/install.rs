@@ -10,49 +10,69 @@ use color_eyre::eyre::{self, WrapErr as _, bail, ensure, eyre};
 use zip::ZipArchive;
 
 use crate::{
-    cli::message::warn,
     package::{FontEntry, Package, PackageDirs, PackageSpec},
-    platform::windows::install::{self as platform_install, FontValidator},
+    platform::windows::{
+        font_validator::FontValidator,
+        install::{self as platform_install},
+    },
     util::{
         app_dirs::AppDirs,
-        error::{EyreIgnoreError as _, IgnoreError as _, MessageResultExt as _},
         fs::{self as fs_util},
         hash,
         path::{AbsolutePath, FileName},
+        reporter::{ReportErrorExt as _, ReportEyreErrorExt as _, Reporter},
     },
 };
 
 pub(crate) fn install_package(
+    reporter: &mut Reporter<'_>,
     app_id: &str,
     spec: &PackageSpec,
     app_dirs: &AppDirs,
 ) -> eyre::Result<Package> {
     let pkg_dirs = PackageDirs::new(app_dirs.data_dir(), &spec.id);
 
-    match try_install_package(app_id, spec, &pkg_dirs) {
-        Ok(package) => Ok(package),
+    let package = match stage_package(reporter, spec, &pkg_dirs) {
+        Ok(package) => package,
         Err(err) => {
-            remove_package_dirs(&pkg_dirs).wrap_err_with(|| {
+            let _ = remove_package_dirs(reporter, &pkg_dirs).wrap_err_with(|| {
                 format!("failed to remove package directory after install failure: {}; manual cleanup may be required", pkg_dirs.version_dir().display())
-            }).ignore_err_with_warn();
-            Err(err)
+            }).report_err_as_warn(reporter);
+            return Err(err);
         }
+    };
+
+    if let Err(err) = platform_install::install_package_fonts(reporter, app_id, &package) {
+        let _ = platform_install::uninstall_package_fonts(reporter, app_id, &spec.id)
+            .report_err_as_error(reporter);
+        let _ = remove_package_dirs(reporter, &pkg_dirs).wrap_err_with(|| {
+                format!("failed to remove package directory after install failure: {}; manual cleanup may be required", pkg_dirs.version_dir().display())
+            }).report_err_as_warn(reporter);
+        return Err(err.into());
     }
+
+    Ok(package)
 }
 
-pub(crate) fn uninstall_package(app_id: &str, package: &Package) -> eyre::Result<()> {
-    platform_install::uninstall_package_fonts(app_id, package)?;
-    remove_package_dirs(package.dirs())?;
+pub(crate) fn uninstall_package(
+    reporter: &mut Reporter<'_>,
+    app_id: &str,
+    package: &Package,
+) -> eyre::Result<()> {
+    platform_install::uninstall_package_fonts(reporter, app_id, package.id())?;
+    remove_package_dirs(reporter, package.dirs())?;
     Ok(())
 }
 
-fn remove_package_dirs(pkg_dirs: &PackageDirs) -> eyre::Result<()> {
+fn remove_package_dirs(reporter: &mut Reporter<'_>, pkg_dirs: &PackageDirs) -> eyre::Result<()> {
     fs_util::remove_dir_all_if_exists(pkg_dirs.fonts_dir())?;
 
     // remove the package version / package name directory if it's empty after uninstall, ignoring errors
     let ancestors = [pkg_dirs.version_dir(), pkg_dirs.name_dir()];
     for ancestor in ancestors {
-        if let Some(res) = fs_util::remove_dir_if_empty(ancestor).ok_with_warn()
+        if let Some(res) = fs_util::remove_dir_if_empty(ancestor)
+            .report_err_as_warn(reporter)
+            .ok()
             && res.is_not_empty()
         {
             return Ok(());
@@ -62,8 +82,8 @@ fn remove_package_dirs(pkg_dirs: &PackageDirs) -> eyre::Result<()> {
     Ok(())
 }
 
-fn try_install_package(
-    app_id: &str,
+fn stage_package(
+    reporter: &mut Reporter<'_>,
     spec: &PackageSpec,
     pkg_dirs: &PackageDirs,
 ) -> eyre::Result<Package> {
@@ -79,15 +99,13 @@ fn try_install_package(
         unsupported_fonts,
         valid_entries,
     } = validate_fonts(package_fonts_dir, &file_paths)?;
-    prune_invalid_fonts(package_fonts_dir, &unsupported_fonts);
+    prune_invalid_fonts(reporter, package_fonts_dir, &unsupported_fonts);
 
     if valid_entries.is_empty() {
         bail!("no valid font files found in package");
     }
 
     let package = Package::new(spec.id.clone(), pkg_dirs.clone(), valid_entries);
-    platform_install::install_package_fonts(app_id, &package)?;
-
     Ok(package)
 }
 
@@ -198,11 +216,15 @@ fn validate_fonts(
     })
 }
 
-fn prune_invalid_fonts(fonts_dir: &AbsolutePath, invalid_files: &[FileName]) {
+fn prune_invalid_fonts(
+    reporter: &mut Reporter<'_>,
+    fonts_dir: &AbsolutePath,
+    invalid_files: &[FileName],
+) {
     for file_name in invalid_files {
         let path = fonts_dir.join(file_name);
-        warn!("removing invalid font file: {}", path.display());
-        fs_util::remove_file(&path).ignore_err_with_warn();
+        reporter.report_warn(eyre!("removing invalid font file: {}", path.display()).as_ref());
+        let _ = fs_util::remove_file(&path).report_err_as_warn(reporter);
     }
 }
 
@@ -279,10 +301,12 @@ mod tests {
 
     #[test]
     fn remove_package_dirs_removes_empty_package_directories() {
+        let mut reporter = Reporter::message_reporter();
         let (_tempdir, pkg_dirs) = make_package_dirs();
         fs::create_dir_all(pkg_dirs.fonts_dir()).expect("failed to create fonts dir");
 
-        remove_package_dirs(&pkg_dirs).expect("empty package directories should be removed");
+        remove_package_dirs(&mut reporter, &pkg_dirs)
+            .expect("empty package directories should be removed");
 
         assert!(!pkg_dirs.fonts_dir().exists());
         assert!(!pkg_dirs.version_dir().exists());
@@ -291,12 +315,13 @@ mod tests {
 
     #[test]
     fn remove_package_dirs_stops_when_parent_directory_is_not_empty() {
+        let mut reporter = Reporter::message_reporter();
         let (_tempdir, pkg_dirs) = make_package_dirs();
         fs::create_dir_all(pkg_dirs.fonts_dir()).expect("failed to create fonts dir");
         let sibling = pkg_dirs.name_dir().join("other-version");
         fs::create_dir(&sibling).expect("failed to create sibling version dir");
 
-        remove_package_dirs(&pkg_dirs)
+        remove_package_dirs(&mut reporter, &pkg_dirs)
             .expect("cleanup should succeed when package parent remains non-empty");
 
         assert!(!pkg_dirs.fonts_dir().exists());
@@ -307,9 +332,11 @@ mod tests {
 
     #[test]
     fn remove_package_dirs_ignores_missing_directories() {
+        let mut reporter = Reporter::message_reporter();
         let (_tempdir, pkg_dirs) = make_package_dirs();
 
-        remove_package_dirs(&pkg_dirs).expect("missing package directories should be ignored");
+        remove_package_dirs(&mut reporter, &pkg_dirs)
+            .expect("missing package directories should be ignored");
 
         assert!(!pkg_dirs.fonts_dir().exists());
         assert!(!pkg_dirs.version_dir().exists());
