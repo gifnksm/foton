@@ -2,7 +2,7 @@ use std::process::Command;
 
 use color_eyre::eyre::{self, ensure};
 
-use crate::{process_util, report::ExecResult, scenario::ScenarioParameters};
+use crate::{report::ExecResult, scenario::ScenarioParameters, util::process as process_util};
 
 pub(super) fn run(
     params: &ScenarioParameters,

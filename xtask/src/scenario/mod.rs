@@ -3,8 +3,8 @@ use color_eyre::eyre;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    fs_util,
     report::{ExecResult, RunId, RunKind, RunReport},
+    util::fs as fs_util,
 };
 
 mod help_check;

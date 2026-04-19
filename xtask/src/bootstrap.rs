@@ -5,9 +5,9 @@ use color_eyre::eyre::{self, WrapErr as _, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    fs_util, process_util,
     report::{ExecResult, RunId, RunKind, RunReport},
     scenario::{self, Scenario},
+    util::{fs as fs_util, process as process_util},
 };
 
 #[derive(Debug, Serialize, Deserialize)]

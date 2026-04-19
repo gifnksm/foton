@@ -13,7 +13,7 @@ pub(crate) fn load_font(font_path: &Path) -> eyre::Result<()> {
     // UTF-16 string that is kept alive for the duration of the call.
     let added = unsafe { Gdi::AddFontResourceW(&HSTRING::from(font_path)) };
     if added == 0 {
-        eyre::bail!("Failed to load font: {}", font_path.display());
+        eyre::bail!("failed to load font: {}", font_path.display());
     }
     Ok(())
 }
@@ -35,5 +35,5 @@ pub(crate) fn broadcast_font_change() -> eyre::Result<()> {
     unsafe {
         WindowsAndMessaging::SendNotifyMessageW(HWND_BROADCAST, WM_FONTCHANGE, WPARAM(0), LPARAM(0))
     }
-    .wrap_err("Failed to broadcast font change")
+    .wrap_err("failed to broadcast font change")
 }

@@ -15,9 +15,9 @@ use wsbx::{SandboxConfig, SandboxEnvironment, config::MappedFolder};
 
 use crate::{
     bootstrap::{SandboxAction, SandboxBootstrapConfig},
-    env_util, fs_util,
     report::{RunId, RunKind, RunReport},
     scenario::Scenario,
+    util::{env as env_util, fs as fs_util},
 };
 
 /// Mutually exclusive options that choose what kind of sandbox config to generate.
