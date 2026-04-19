@@ -94,11 +94,6 @@ fn run_smoke_test(app_id: &str, app_dirs: &AppDirs) -> eyre::Result<()> {
     };
 
     let package = install::install_package(app_id, &spec, app_dirs)?;
-
-    for font in windows::registry::list_registered_package_fonts(app_id, package.id())? {
-        println!("{}: {}", font.name(), font.path().display());
-    }
-
     install::uninstall_package(app_id, &package)?;
 
     Ok(())

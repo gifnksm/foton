@@ -1,6 +1,6 @@
 use std::{
     collections::HashSet,
-    fs::{self, File},
+    fs::File,
     io::{self, Cursor, Write as _},
     path::Path,
 };
@@ -12,10 +12,11 @@ use zip::ZipArchive;
 use crate::{
     cli::message::warn,
     package::{FontEntry, Package, PackageDirs, PackageSpec},
-    platform::windows::{self, font_info::FontInspector},
+    platform::windows::install::{self as platform_install, FontValidator},
     util::{
         app_dirs::AppDirs,
-        error::{FormatErrorChain as _, IgnoreNotFound as _},
+        error::{IgnoreError as _, MessageResultExt as _},
+        fs::{self as fs_util},
         hash,
     },
 };
@@ -30,56 +31,31 @@ pub(crate) fn install_package(
     match try_install_package(app_id, spec, &pkg_dirs) {
         Ok(package) => Ok(package),
         Err(err) => {
-            if let Err(rollback_err) = remove_package_dirs(&pkg_dirs) {
-                let rollback_err = eyre!(rollback_err).wrap_err(format!(
-                    "failed to remove package directory after install failure: {}; manual cleanup may be required",
-                    pkg_dirs.version_dir().display()
-                ));
-                warn!("{}", rollback_err.format_error_chain());
-            }
+            remove_package_dirs(&pkg_dirs).wrap_err_with(|| {
+                format!("failed to remove package directory after install failure: {}; manual cleanup may be required", pkg_dirs.version_dir().display())
+            }).ignore_err_with_warn();
             Err(err)
         }
     }
 }
 
 pub(crate) fn uninstall_package(app_id: &str, package: &Package) -> eyre::Result<()> {
-    windows::install::uninstall_package_fonts(app_id, package)?;
+    platform_install::uninstall_package_fonts(app_id, package)?;
     remove_package_dirs(package.dirs())?;
     Ok(())
 }
 
 fn remove_package_dirs(pkg_dirs: &PackageDirs) -> eyre::Result<()> {
-    fs::remove_dir_all(pkg_dirs.fonts_dir())
-        .ignore_not_found()
-        .wrap_err_with(|| {
-            format!(
-                "failed to remove package directory: {}",
-                pkg_dirs.fonts_dir().display()
-            )
-        })?;
+    fs_util::remove_dir_all_if_exists(pkg_dirs.fonts_dir())?;
 
     // remove the package version / package name directory if it's empty after uninstall, ignoring errors
-    if let Err(err) = fs::remove_dir(pkg_dirs.version_dir()).ignore_not_found() {
-        if err.kind() == io::ErrorKind::DirectoryNotEmpty {
+    let ancestors = [pkg_dirs.version_dir(), pkg_dirs.name_dir()];
+    for ancestor in ancestors {
+        if let Some(res) = fs_util::remove_dir_if_empty(ancestor).ok_with_warn()
+            && res.is_not_empty()
+        {
             return Ok(());
         }
-        let err = eyre!(err).wrap_err(format!(
-            "failed to remove package directory: {}",
-            pkg_dirs.version_dir().display()
-        ));
-        warn!("{}", err.format_error_chain());
-        return Ok(());
-    }
-
-    if let Err(err) = fs::remove_dir(pkg_dirs.name_dir()).ignore_not_found() {
-        if err.kind() != io::ErrorKind::DirectoryNotEmpty {
-            let err = eyre!(err).wrap_err(format!(
-                "failed to remove package directory: {}",
-                pkg_dirs.name_dir().display()
-            ));
-            warn!("{}", err.format_error_chain());
-        }
-        return Ok(());
     }
 
     Ok(())
@@ -90,24 +66,9 @@ fn try_install_package(
     spec: &PackageSpec,
     pkg_dirs: &PackageDirs,
 ) -> eyre::Result<Package> {
-    fs::create_dir_all(pkg_dirs.name_dir()).wrap_err_with(|| {
-        format!(
-            "failed to create package name directory: {}",
-            pkg_dirs.name_dir().display()
-        )
-    })?;
-    fs::create_dir(pkg_dirs.version_dir()).wrap_err_with(|| {
-        format!(
-            "failed to create package version directory: {}",
-            pkg_dirs.version_dir().display()
-        )
-    })?;
-    fs::create_dir(pkg_dirs.fonts_dir()).wrap_err_with(|| {
-        format!(
-            "failed to create package fonts directory: {}",
-            pkg_dirs.fonts_dir().display()
-        )
-    })?;
+    fs_util::create_dir_all(pkg_dirs.name_dir())?;
+    fs_util::create_dir(pkg_dirs.version_dir())?;
+    fs_util::create_dir(pkg_dirs.fonts_dir())?;
 
     let bytes = download_archive(spec)?;
     let package_fonts_dir = pkg_dirs.fonts_dir();
@@ -124,7 +85,7 @@ fn try_install_package(
     }
 
     let package = Package::new(spec.id.clone(), pkg_dirs.clone(), valid_entries);
-    windows::install::install_package_fonts(app_id, &package)?;
+    platform_install::install_package_fonts(app_id, &package)?;
 
     Ok(package)
 }
@@ -210,9 +171,9 @@ fn validate_fonts(fonts_dir: &Path, file_names: &[String]) -> eyre::Result<Valid
     let mut unsupported_fonts = vec![];
     let mut valid_entries = vec![];
     let mut valid_entry_titles = HashSet::new();
-    let inspector = FontInspector::new()?;
+    let validator = FontValidator::new()?;
     for file_name in file_names {
-        let Some(entry) = validate_font(&inspector, fonts_dir, file_name)? else {
+        let Some(entry) = validator.validate_font(fonts_dir, file_name)? else {
             unsupported_fonts.push(file_name.to_owned());
             continue;
         };
@@ -227,36 +188,11 @@ fn validate_fonts(fonts_dir: &Path, file_names: &[String]) -> eyre::Result<Valid
     })
 }
 
-fn validate_font(
-    inspector: &FontInspector,
-    fonts_dir: &Path,
-    file_name: &str,
-) -> eyre::Result<Option<FontEntry>> {
-    let path = fonts_dir.join(file_name);
-    let supported = inspector.is_supported_font_file(&path).wrap_err_with(|| {
-        format!(
-            "failed to check if font file is supported: {}",
-            path.display()
-        )
-    })?;
-    if !supported {
-        return Ok(None);
-    }
-
-    let title = windows::font_info::get_font_title(&path)
-        .wrap_err_with(|| format!("failed to get font title for file: {}", path.display()))?
-        .unwrap_or_else(|| file_name.to_owned());
-    Ok(Some(FontEntry::new(title, file_name)?))
-}
-
 fn prune_invalid_fonts(fonts_dir: &Path, invalid_files: &[String]) {
     for file_name in invalid_files {
         let path = fonts_dir.join(file_name);
         warn!("removing invalid font file: {}", path.display());
-        if let Err(err) = fs::remove_file(&path) {
-            let err = eyre!(err).wrap_err(format!("failed to remove file: {}", path.display()));
-            warn!("{}", err.format_error_chain());
-        }
+        fs_util::remove_file(&path).ignore_err_with_warn();
     }
 }
 
@@ -264,7 +200,13 @@ fn prune_invalid_fonts(fonts_dir: &Path, invalid_files: &[String]) {
 mod tests {
     use super::*;
 
+    use std::fs;
+
+    use semver::Version;
+    use tempfile::TempDir;
     use zip::write::SimpleFileOptions;
+
+    use crate::package::PackageId;
 
     fn build_zip(entries: &[(&str, &[u8])]) -> Bytes {
         let mut cursor = Cursor::new(Vec::new());
@@ -283,10 +225,19 @@ mod tests {
         Bytes::from(cursor.into_inner())
     }
 
-    fn extract_to_tempdir(bytes: Bytes) -> eyre::Result<(tempfile::TempDir, Vec<String>)> {
+    fn extract_to_tempdir(bytes: Bytes) -> eyre::Result<(TempDir, Vec<String>)> {
         let tempdir = tempfile::tempdir().expect("failed to create temp dir");
         let files = extract_archive(bytes, tempdir.path())?;
         Ok((tempdir, files))
+    }
+
+    fn make_package_dirs() -> (TempDir, PackageDirs) {
+        let tempdir = tempfile::tempdir().expect("failed to create temp dir");
+        let pkg_id =
+            PackageId::new("hackgen", Version::new(2, 10, 0)).expect("failed to create package id");
+        let pkg_dirs =
+            PackageDirs::new(tempdir.path(), &pkg_id).expect("failed to create package dirs");
+        (tempdir, pkg_dirs)
     }
 
     #[test]
@@ -319,5 +270,44 @@ mod tests {
                 String::from("font.otf"),
             ]
         );
+    }
+
+    #[test]
+    fn remove_package_dirs_removes_empty_package_directories() {
+        let (_tempdir, pkg_dirs) = make_package_dirs();
+        fs::create_dir_all(pkg_dirs.fonts_dir()).expect("failed to create fonts dir");
+
+        remove_package_dirs(&pkg_dirs).expect("empty package directories should be removed");
+
+        assert!(!pkg_dirs.fonts_dir().exists());
+        assert!(!pkg_dirs.version_dir().exists());
+        assert!(!pkg_dirs.name_dir().exists());
+    }
+
+    #[test]
+    fn remove_package_dirs_stops_when_parent_directory_is_not_empty() {
+        let (_tempdir, pkg_dirs) = make_package_dirs();
+        fs::create_dir_all(pkg_dirs.fonts_dir()).expect("failed to create fonts dir");
+        let sibling = pkg_dirs.name_dir().join("other-version");
+        fs::create_dir(&sibling).expect("failed to create sibling version dir");
+
+        remove_package_dirs(&pkg_dirs)
+            .expect("cleanup should succeed when package parent remains non-empty");
+
+        assert!(!pkg_dirs.fonts_dir().exists());
+        assert!(!pkg_dirs.version_dir().exists());
+        assert!(pkg_dirs.name_dir().exists());
+        assert!(sibling.exists());
+    }
+
+    #[test]
+    fn remove_package_dirs_ignores_missing_directories() {
+        let (_tempdir, pkg_dirs) = make_package_dirs();
+
+        remove_package_dirs(&pkg_dirs).expect("missing package directories should be ignored");
+
+        assert!(!pkg_dirs.fonts_dir().exists());
+        assert!(!pkg_dirs.version_dir().exists());
+        assert!(!pkg_dirs.name_dir().exists());
     }
 }

@@ -7,12 +7,10 @@ use color_eyre::eyre;
 use crate::{sandbox::SandboxCommand, scenario::ScenarioCommand};
 
 mod bootstrap;
-mod env_util;
-mod fs_util;
-mod process_util;
 mod report;
 mod sandbox;
 mod scenario;
+mod util;
 
 /// Development helpers for `foton`.
 #[derive(clap::Parser)]

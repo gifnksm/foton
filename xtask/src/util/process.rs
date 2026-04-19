@@ -6,7 +6,7 @@ use std::{
 use cargo_metadata::camino::Utf8Path;
 use color_eyre::eyre::{self, WrapErr as _};
 
-use crate::{fs_util, report::ExecResult};
+use crate::{report::ExecResult, util::fs as fs_util};
 
 pub(crate) fn exec_command<S>(
     name: S,

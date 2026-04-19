@@ -694,6 +694,7 @@ dependencies = [
  "clap_complete_nushell",
  "clap_mangen",
  "color-eyre",
+ "derive_more",
  "directories",
  "regex",
  "reqwest",
