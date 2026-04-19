@@ -12,7 +12,7 @@ use semver::Version;
 use crate::{
     package::{PackageId, PackageName, PackageSpec},
     platform::windows,
-    util::{app_dirs::AppDirs, hash::Sha256Digest},
+    util::{app_dirs::AppDirs, hash::Sha256Digest, reporter::Reporter},
 };
 
 mod cli;
@@ -47,9 +47,10 @@ fn main() -> eyre::Result<()> {
     let app_dirs = AppDirs::from_directories()?;
 
     let _guard = windows::com::init()?;
+    let mut reporter = Reporter::message_reporter();
 
     if smoke_test {
-        run_smoke_test(APP_ID, &app_dirs)?;
+        run_smoke_test(&mut reporter, APP_ID, &app_dirs)?;
     }
 
     Ok(())
@@ -79,7 +80,11 @@ fn generate_man(output_dir: &str) {
     clap_mangen::generate_to(Args::command(), output_dir).unwrap();
 }
 
-fn run_smoke_test(app_id: &str, app_dirs: &AppDirs) -> eyre::Result<()> {
+fn run_smoke_test(
+    reporter: &mut Reporter<'_>,
+    app_id: &str,
+    app_dirs: &AppDirs,
+) -> eyre::Result<()> {
     let name = PackageName::new("hackgen").unwrap();
     let version = Version::new(2, 10, 0);
     let pkg_id = PackageId::new(name, version);
@@ -94,8 +99,8 @@ fn run_smoke_test(app_id: &str, app_dirs: &AppDirs) -> eyre::Result<()> {
         )?,
     };
 
-    let package = install::install_package(app_id, &spec, app_dirs)?;
-    install::uninstall_package(app_id, &package)?;
+    let package = install::install_package(reporter, app_id, &spec, app_dirs)?;
+    install::uninstall_package(reporter, app_id, &package)?;
 
     Ok(())
 }
