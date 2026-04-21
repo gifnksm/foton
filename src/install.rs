@@ -27,8 +27,11 @@ pub(crate) fn install_package(
     spec: &PackageSpec,
     app_dirs: &AppDirs,
 ) -> eyre::Result<Package> {
+    reporter.report_step(format_args!("Installing {}...", spec.id));
+
     let pkg_dirs = PackageDirs::new(app_dirs.data_dir(), &spec.id);
 
+    reporter.report_step(format_args!("Staging package files..."));
     let package = match stage_package(reporter, spec, &pkg_dirs) {
         Ok(package) => package,
         Err(err) => {
@@ -39,9 +42,9 @@ pub(crate) fn install_package(
         }
     };
 
+    reporter.report_step(format_args!("Registering fonts..."));
     if let Err(err) = registration::install_package_fonts(reporter, app_id, &package) {
-        let _ = registration::uninstall_package_fonts(reporter, app_id, &spec.id)
-            .report_err_as_error(reporter);
+        let _ = registration::uninstall_package_fonts(reporter, app_id, &spec.id);
         let _ = remove_package_dirs(reporter, &pkg_dirs).wrap_err_with(|| {
                 format!("failed to remove package directory after install failure: {}; manual cleanup may be required", pkg_dirs.version_dir().display())
             }).report_err_as_warn(reporter);
@@ -56,8 +59,13 @@ pub(crate) fn uninstall_package(
     app_id: &str,
     package: &Package,
 ) -> eyre::Result<()> {
+    reporter.report_step(format_args!("Uninstalling {}...", package.id()));
+
+    reporter.report_step(format_args!("Unregistering fonts..."));
     registration::uninstall_package_fonts(reporter, app_id, package.id())?;
+    reporter.report_step(format_args!("Removing package files..."));
     remove_package_dirs(reporter, package.dirs())?;
+
     Ok(())
 }
 
@@ -88,9 +96,9 @@ fn stage_package(
     fs_util::create_dir(pkg_dirs.version_dir())?;
     fs_util::create_dir(pkg_dirs.fonts_dir())?;
 
-    let bytes = download_archive(spec)?;
+    let bytes = download_archive(reporter, spec)?;
     let package_fonts_dir = pkg_dirs.fonts_dir();
-    let file_paths = extract_archive(bytes, package_fonts_dir)?;
+    let file_paths = extract_archive(reporter, bytes, package_fonts_dir)?;
 
     let ValidationResult {
         unsupported_fonts,
@@ -102,11 +110,18 @@ fn stage_package(
         bail!("no valid font files found in package");
     }
 
+    reporter.report_info(format_args!(
+        "{} valid font(s) found in package",
+        valid_entries.len()
+    ));
+
     let package = Package::new(spec.id.clone(), pkg_dirs.clone(), valid_entries);
     Ok(package)
 }
 
-fn download_archive(spec: &PackageSpec) -> eyre::Result<Bytes> {
+fn download_archive(reporter: &mut Reporter<'_>, spec: &PackageSpec) -> eyre::Result<Bytes> {
+    reporter.report_step(format_args!("Downloading {} archive...", spec.id));
+
     // TODO: Enforce a maximum downloaded response size, using Content-Length when available
     // and a running byte count while reading the response body.
     let response = reqwest::blocking::get(spec.url.clone())
@@ -124,7 +139,16 @@ fn download_archive(spec: &PackageSpec) -> eyre::Result<Bytes> {
     Ok(content)
 }
 
-fn extract_archive(bytes: Bytes, fonts_dir: &AbsolutePath) -> eyre::Result<Vec<FileName>> {
+fn extract_archive(
+    reporter: &mut Reporter<'_>,
+    bytes: Bytes,
+    fonts_dir: &AbsolutePath,
+) -> eyre::Result<Vec<FileName>> {
+    reporter.report_step(format_args!(
+        "Extracting archive to {}...",
+        fonts_dir.display()
+    ));
+
     let mut files = vec![];
     let reader = Cursor::new(bytes);
     let mut archive = ZipArchive::new(reader)?;
@@ -255,9 +279,10 @@ mod tests {
     }
 
     fn extract_to_tempdir(bytes: Bytes) -> eyre::Result<(TempDir, Vec<FileName>)> {
+        let mut reporter = Reporter::message_reporter();
         let tempdir = tempfile::tempdir().expect("failed to create temp dir");
         let fonts_dir = AbsolutePath::new(tempdir.path()).unwrap();
-        let files = extract_archive(bytes, &fonts_dir)?;
+        let files = extract_archive(&mut reporter, bytes, &fonts_dir)?;
         Ok((tempdir, files))
     }
 

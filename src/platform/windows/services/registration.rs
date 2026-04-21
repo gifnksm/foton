@@ -64,8 +64,12 @@ pub(crate) fn install_package_fonts(
         .map(|entry| RegisteredFont::new(entry.title(), fonts_dir.join(entry.file_name())))
         .collect::<Vec<_>>();
 
+    // Report fatal errors at the point of failure so they stay ordered relative to
+    // warnings emitted by later best-effort steps in this function. Callers should
+    // return the error without reporting it again.
     registry::register_package_fonts(app_id, package.id(), &registered_fonts)
-        .map_err(|source| PlatformInstallError::RegisterFontsInRegistry { source })?;
+        .map_err(|source| PlatformInstallError::RegisterFontsInRegistry { source })
+        .report_err_as_error(reporter)?;
 
     for entry in &registered_fonts {
         let _ = session::load_font(entry.path())
@@ -99,6 +103,9 @@ pub(crate) fn uninstall_package_fonts(
         }
     }
 
+    // Report fatal errors at the point of failure so they stay ordered relative to
+    // warnings emitted by later best-effort steps in this function. Callers should
+    // return the error without reporting it again.
     let res = registry::unregister_package_fonts(app_id, pkg_id)
         .map_err(|source| PlatformInstallError::UnregisterFontsFromRegistry { source })
         .report_err_as_error(reporter);
