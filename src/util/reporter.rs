@@ -3,7 +3,6 @@ use std::{
     sync::LazyLock,
 };
 
-use color_eyre::eyre;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
 
 use crate::{
@@ -167,9 +166,9 @@ impl<'c> Reporter<'c> {
         ProgressBar::with_draw_target(len, ProgressDrawTarget::stderr()).with_style(style)
     }
 
-    pub(crate) fn with_download_progress_bar<T, F>(&self, len: Option<u64>, f: F) -> eyre::Result<T>
+    pub(crate) fn with_download_progress_bar<T, E, F>(&self, len: Option<u64>, f: F) -> Result<T, E>
     where
-        F: FnOnce(&ProgressBar) -> eyre::Result<T>,
+        F: FnOnce(&ProgressBar) -> Result<T, E>,
     {
         let pb = self.download_progress_bar(len);
         let res = f(&pb);
@@ -200,19 +199,6 @@ where
     fn report_err_as_warn(self, reporter: &mut Reporter<'_>) -> Self {
         if let Err(err) = &self {
             reporter.report_warn(err as DynError<'_>);
-        }
-        self
-    }
-}
-
-pub(crate) trait ReportEyreErrorExt {
-    fn report_err_as_warn(self, reporter: &mut Reporter<'_>) -> Self;
-}
-
-impl<T> ReportEyreErrorExt for Result<T, eyre::Report> {
-    fn report_err_as_warn(self, reporter: &mut Reporter<'_>) -> Self {
-        if let Err(err) = &self {
-            reporter.report_warn(err.as_ref());
         }
         self
     }

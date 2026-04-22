@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    ffi::{OsStr, OsString},
+    ffi::{OsStr, OsString, os_str},
     path::{Path, PathBuf},
 };
 
@@ -25,6 +25,10 @@ impl FileName {
 
     pub(crate) fn to_os_string(&self) -> OsString {
         self.0.clone()
+    }
+
+    pub(crate) fn display(&self) -> os_str::Display<'_> {
+        self.0.display()
     }
 }
 

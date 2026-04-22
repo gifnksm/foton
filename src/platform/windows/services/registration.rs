@@ -11,22 +11,7 @@ use crate::{
 };
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
-pub(crate) enum PlatformInstallError {
-    #[display("failed to register package fonts in the registry")]
-    RegisterFontsInRegistry {
-        #[error(source)]
-        source: RegistryError,
-    },
-    #[display("failed to unregister package fonts from the registry")]
-    UnregisterFontsFromRegistry {
-        #[error(source)]
-        source: RegistryError,
-    },
-    #[display("failed to list registered package fonts for the package")]
-    ListInstalledFonts {
-        #[error(source)]
-        source: RegistryError,
-    },
+pub(crate) enum RegistrationWarning {
     #[display(
         "failed to load font into current session: {path}; the font was registered persistently but may not be available until next logon",
         path = path.display()
@@ -35,6 +20,11 @@ pub(crate) enum PlatformInstallError {
         path: AbsolutePath,
         #[error(source)]
         source: SessionError,
+    },
+    #[display("failed to list registered package fonts for the package")]
+    ListInstalledFonts {
+        #[error(source)]
+        source: RegistryError,
     },
     #[display(
         "failed to broadcast font change after install; applications may not see the new font immediately"
@@ -52,11 +42,25 @@ pub(crate) enum PlatformInstallError {
     },
 }
 
-pub(crate) fn install_package_fonts(
+#[derive(Debug, derive_more::Display, derive_more::Error)]
+pub(crate) enum RegistrationError {
+    #[display("failed to register package fonts in the registry")]
+    RegisterFontsInRegistry {
+        #[error(source)]
+        source: RegistryError,
+    },
+    #[display("failed to unregister package fonts from the registry")]
+    UnregisterFontsFromRegistry {
+        #[error(source)]
+        source: RegistryError,
+    },
+}
+
+pub(crate) fn register_package_fonts(
     reporter: &mut Reporter<'_>,
     app_id: &str,
     package: &Package,
-) -> Result<(), PlatformInstallError> {
+) -> Result<(), RegistrationError> {
     let fonts_dir = package.dirs().fonts_dir();
     let registered_fonts = package
         .entries()
@@ -68,32 +72,32 @@ pub(crate) fn install_package_fonts(
     // warnings emitted by later best-effort steps in this function. Callers should
     // return the error without reporting it again.
     registry::register_package_fonts(app_id, package.id(), &registered_fonts)
-        .map_err(|source| PlatformInstallError::RegisterFontsInRegistry { source })
+        .map_err(|source| RegistrationError::RegisterFontsInRegistry { source })
         .report_err_as_error(reporter)?;
 
     for entry in &registered_fonts {
         let _ = session::load_font(entry.path())
             .map_err(|source| {
                 let path = entry.path().clone();
-                PlatformInstallError::LoadFont { path, source }
+                RegistrationWarning::LoadFont { path, source }
             })
             .report_err_as_warn(reporter);
     }
 
     let _ = session::broadcast_font_change()
-        .map_err(|source| PlatformInstallError::BroadcastFontAfterInstall { source })
+        .map_err(|source| RegistrationWarning::BroadcastFontAfterInstall { source })
         .report_err_as_warn(reporter);
 
     Ok(())
 }
 
-pub(crate) fn uninstall_package_fonts(
+pub(crate) fn unregister_package_fonts(
     reporter: &mut Reporter<'_>,
     app_id: &str,
     pkg_id: &PackageId,
-) -> Result<(), PlatformInstallError> {
+) -> Result<(), RegistrationError> {
     let entries = registry::list_registered_package_fonts(app_id, pkg_id)
-        .map_err(|source| PlatformInstallError::ListInstalledFonts { source })
+        .map_err(|source| RegistrationWarning::ListInstalledFonts { source })
         .report_err_as_warn(reporter)
         .ok();
 
@@ -107,11 +111,11 @@ pub(crate) fn uninstall_package_fonts(
     // warnings emitted by later best-effort steps in this function. Callers should
     // return the error without reporting it again.
     let res = registry::unregister_package_fonts(app_id, pkg_id)
-        .map_err(|source| PlatformInstallError::UnregisterFontsFromRegistry { source })
+        .map_err(|source| RegistrationError::UnregisterFontsFromRegistry { source })
         .report_err_as_error(reporter);
 
     let _ = session::broadcast_font_change()
-        .map_err(|source| PlatformInstallError::BroadcastFontAfterUninstall { source })
+        .map_err(|source| RegistrationWarning::BroadcastFontAfterUninstall { source })
         .report_err_as_warn(reporter);
 
     res

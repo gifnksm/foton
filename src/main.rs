@@ -10,14 +10,14 @@ use reqwest::Url;
 use semver::Version;
 
 use crate::{
-    install::InstallConfig,
+    command::InstallConfig,
     package::{PackageId, PackageName, PackageSpec},
     platform::windows,
     util::{app_dirs::AppDirs, hash::Sha256Digest, reporter::Reporter},
 };
 
 mod cli;
-mod install;
+mod command;
 mod package;
 mod platform;
 mod util;
@@ -106,8 +106,8 @@ fn run_smoke_test(
         )?,
     };
 
-    let package = install::install_package(reporter, app_id, &spec, app_dirs, &config)?;
-    install::uninstall_package(reporter, app_id, &package)?;
+    let package = command::install_package(reporter, app_id, &spec, app_dirs, &config)?;
+    command::uninstall_package(reporter, app_id, &package)?;
 
     Ok(())
 }
