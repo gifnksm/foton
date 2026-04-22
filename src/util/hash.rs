@@ -66,12 +66,12 @@ mod tests {
         let expected = Sha256Digest::from_str(
             "ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7",
         )
-        .expect("unprefixed digest should parse");
+        .unwrap();
 
         let actual = Sha256Digest::from_str(
             "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7",
         )
-        .expect("prefixed digest should parse");
+        .unwrap();
 
         assert_eq!(actual, expected);
         assert_eq!(
@@ -89,7 +89,7 @@ mod tests {
             "ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788dbz",
             "éd182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7",
         ] {
-            let _ = Sha256Digest::from_str(input).expect_err("invalid digest should be rejected");
+            let _ = Sha256Digest::from_str(input).unwrap_err();
         }
     }
 }

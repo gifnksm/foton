@@ -151,7 +151,7 @@ impl<'c> Reporter<'c> {
             )
             .unwrap()
             .with_key("eta", |state: &ProgressState, w: &mut dyn fmt::Write| {
-                write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap();
+                let _ = write!(w, "{:.1}s", state.eta().as_secs_f64());
             })
             .progress_chars("#>-")
         });
@@ -165,6 +165,19 @@ impl<'c> Reporter<'c> {
             None => UNKNOWN_LEN_STYLE.clone(),
         };
         ProgressBar::with_draw_target(len, ProgressDrawTarget::stderr()).with_style(style)
+    }
+
+    pub(crate) fn with_download_progress_bar<T, F>(&self, len: Option<u64>, f: F) -> eyre::Result<T>
+    where
+        F: FnOnce(&ProgressBar) -> eyre::Result<T>,
+    {
+        let pb = self.download_progress_bar(len);
+        let res = f(&pb);
+        match &res {
+            Ok(_) => pb.finish(),
+            Err(_) => pb.abandon(),
+        }
+        res
     }
 }
 

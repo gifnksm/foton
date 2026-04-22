@@ -87,7 +87,7 @@ fn run_smoke_test(
     app_dirs: &AppDirs,
 ) -> eyre::Result<()> {
     let config = InstallConfig {
-        max_archive_size_bytes: 100 * 1024 * 1024 * 1024, // 100 MiB
+        max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
         max_extracted_files: 50,
         max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
     };

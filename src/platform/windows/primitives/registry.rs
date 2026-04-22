@@ -390,8 +390,7 @@ mod tests {
         with_registry_test(|app_id| {
             let pkg_id = test_package_id("missing-list");
 
-            let entries = list_registered_package_fonts(app_id, &pkg_id)
-                .expect("listing missing package fonts should succeed");
+            let entries = list_registered_package_fonts(app_id, &pkg_id).unwrap();
 
             assert!(entries.is_empty());
         });
@@ -406,8 +405,7 @@ mod tests {
         with_registry_test(|app_id| {
             let pkg_id = test_package_id("missing-unregister");
 
-            unregister_package_fonts(app_id, &pkg_id)
-                .expect("unregistering missing package fonts should succeed");
+            unregister_package_fonts(app_id, &pkg_id).unwrap();
         });
     }
 
@@ -431,11 +429,9 @@ mod tests {
                 ),
             ];
 
-            register_package_fonts(app_id, &pkg_id, &expected_entries)
-                .expect("registering package fonts should succeed");
+            register_package_fonts(app_id, &pkg_id, &expected_entries).unwrap();
 
-            let mut actual_entries = list_registered_package_fonts(app_id, &pkg_id)
-                .expect("listing registered package fonts should succeed");
+            let mut actual_entries = list_registered_package_fonts(app_id, &pkg_id).unwrap();
             actual_entries.sort_by(|lhs, rhs| lhs.title().cmp(rhs.title()));
 
             let mut expected_entries = expected_entries;
@@ -447,11 +443,9 @@ mod tests {
                 assert_eq!(actual.path(), expected.path());
             }
 
-            unregister_package_fonts(app_id, &pkg_id)
-                .expect("unregistering registered package fonts should succeed");
+            unregister_package_fonts(app_id, &pkg_id).unwrap();
 
-            let entries_after_unregister = list_registered_package_fonts(app_id, &pkg_id)
-                .expect("listing package fonts after unregister should succeed");
+            let entries_after_unregister = list_registered_package_fonts(app_id, &pkg_id).unwrap();
             assert!(entries_after_unregister.is_empty());
         });
     }
@@ -466,14 +460,10 @@ mod tests {
             let pkg_id = test_package_id("invalid-value");
 
             let path = package_version_registry_key(app_id, &pkg_id);
-            let key = CURRENT_USER
-                .create(&path)
-                .expect("failed to create test registry key");
-            key.set_u32("Invalid Font", 42)
-                .expect("failed to write invalid registry value");
+            let key = CURRENT_USER.create(&path).unwrap();
+            key.set_u32("Invalid Font", 42).unwrap();
 
-            let err = list_registered_package_fonts(app_id, &pkg_id)
-                .expect_err("listing package fonts with non-string value should fail");
+            let err = list_registered_package_fonts(app_id, &pkg_id).unwrap_err();
             match err {
                 RegistryError::InvalidEntryFound {
                     path: err_path,
@@ -511,7 +501,7 @@ mod tests {
                     AbsolutePath::new(r"C:\path\to\example-font.ttf").unwrap(),
                 )],
             )
-            .expect("registering package fonts should succeed");
+            .unwrap();
 
             assert_eq!(
                 list_key_names(&app_registry_key(app_id)),
@@ -522,13 +512,10 @@ mod tests {
                 [pkg_id.version().to_string()]
             );
 
-            unregister_package_fonts(app_id, &pkg_id)
-                .expect("unregistering registered package fonts should succeed");
+            unregister_package_fonts(app_id, &pkg_id).unwrap();
 
             assert!(list_key_names(&app_registry_key(app_id)).is_empty());
-            let err = CURRENT_USER
-                .open(app_registry_key(app_id))
-                .expect_err("app registry key should be removed when it becomes empty");
+            let err = CURRENT_USER.open(app_registry_key(app_id)).unwrap_err();
             assert!(err_is_not_found(&err));
         });
     }
@@ -550,13 +537,10 @@ mod tests {
                 AbsolutePath::new(r"C:\path\to\example-font.ttf").unwrap(),
             )];
 
-            register_package_fonts(app_id, &pkg_id_v1, &entries)
-                .expect("registering first package fonts should succeed");
-            register_package_fonts(app_id, &pkg_id_v2, &entries)
-                .expect("registering second package fonts should succeed");
+            register_package_fonts(app_id, &pkg_id_v1, &entries).unwrap();
+            register_package_fonts(app_id, &pkg_id_v2, &entries).unwrap();
 
-            unregister_package_fonts(app_id, &pkg_id_v1)
-                .expect("unregistering first package fonts should succeed");
+            unregister_package_fonts(app_id, &pkg_id_v1).unwrap();
 
             assert_eq!(
                 list_key_names(&app_registry_key(app_id)),
@@ -583,14 +567,11 @@ mod tests {
             )];
 
             let path = package_version_registry_key(app_id, &pkg_id);
-            let key = CURRENT_USER
-                .create(&path)
-                .expect("failed to create existing test registry key");
+            let key = CURRENT_USER.create(&path).unwrap();
             key.set_value(entries[0].reg_name(), &entries[0].reg_value())
-                .expect("failed to seed existing registry value");
+                .unwrap();
 
-            let err = register_package_fonts(app_id, &pkg_id, &entries)
-                .expect_err("registering duplicate package version should fail");
+            let err = register_package_fonts(app_id, &pkg_id, &entries).unwrap_err();
             match err {
                 RegistryError::PackageKeyAlreadyExists { path: err_path } => {
                     assert_eq!(err_path, path);
