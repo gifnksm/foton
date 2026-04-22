@@ -1,6 +1,10 @@
-use std::fmt::{self, Display};
+use std::{
+    fmt::{self, Display},
+    sync::LazyLock,
+};
 
 use color_eyre::eyre;
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
 
 use crate::{
     cli::message::{error, info, step, warn},
@@ -137,6 +141,43 @@ impl<'c> Reporter<'c> {
         V: Into<ReportValue<'a>>,
     {
         self.report(Report::warn(value));
+    }
+
+    #[expect(clippy::unused_self)]
+    pub(crate) fn download_progress_bar(&self, len: Option<u64>) -> ProgressBar {
+        static KNOWN_LEN_STYLE: LazyLock<ProgressStyle> = LazyLock::new(|| {
+            ProgressStyle::with_template(
+                "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})",
+            )
+            .unwrap()
+            .with_key("eta", |state: &ProgressState, w: &mut dyn fmt::Write| {
+                let _ = write!(w, "{:.1}s", state.eta().as_secs_f64());
+            })
+            .progress_chars("#>-")
+        });
+        static UNKNOWN_LEN_STYLE: LazyLock<ProgressStyle> = LazyLock::new(|| {
+            ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] {bytes} downloaded")
+                .unwrap()
+        });
+
+        let style = match len {
+            Some(_) => KNOWN_LEN_STYLE.clone(),
+            None => UNKNOWN_LEN_STYLE.clone(),
+        };
+        ProgressBar::with_draw_target(len, ProgressDrawTarget::stderr()).with_style(style)
+    }
+
+    pub(crate) fn with_download_progress_bar<T, F>(&self, len: Option<u64>, f: F) -> eyre::Result<T>
+    where
+        F: FnOnce(&ProgressBar) -> eyre::Result<T>,
+    {
+        let pb = self.download_progress_bar(len);
+        let res = f(&pb);
+        match &res {
+            Ok(_) => pb.finish(),
+            Err(_) => pb.abandon(),
+        }
+        res
     }
 }
 

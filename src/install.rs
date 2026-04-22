@@ -1,12 +1,12 @@
 use std::{
     collections::HashSet,
     fs::File,
-    io::{self, Cursor, Write as _},
+    io::{self, Read, Seek as _, Write as _},
     path::Path,
 };
 
-use bytes::Bytes;
 use color_eyre::eyre::{self, WrapErr as _, bail, ensure, eyre};
+use sha2::{Digest as _, Sha256};
 use zip::ZipArchive;
 
 use crate::{
@@ -15,24 +15,33 @@ use crate::{
     util::{
         app_dirs::AppDirs,
         fs::{self as fs_util},
-        hash,
+        hash::Sha256Digest,
         path::{AbsolutePath, FileName},
         reporter::{ReportErrorExt as _, ReportEyreErrorExt as _, Reporter},
     },
 };
+
+#[derive(Debug)]
+#[expect(clippy::struct_field_names)]
+pub(crate) struct InstallConfig {
+    pub(crate) max_archive_size_bytes: u64,
+    pub(crate) max_extracted_files: usize,
+    pub(crate) max_extracted_file_size_bytes: u64,
+}
 
 pub(crate) fn install_package(
     reporter: &mut Reporter<'_>,
     app_id: &str,
     spec: &PackageSpec,
     app_dirs: &AppDirs,
+    config: &InstallConfig,
 ) -> eyre::Result<Package> {
     reporter.report_step(format_args!("Installing {}...", spec.id));
 
     let pkg_dirs = PackageDirs::new(app_dirs.data_dir(), &spec.id);
 
     reporter.report_step(format_args!("Staging package files..."));
-    let package = match stage_package(reporter, spec, &pkg_dirs) {
+    let package = match stage_package(reporter, spec, &pkg_dirs, config) {
         Ok(package) => package,
         Err(err) => {
             let _ = remove_package_dirs(reporter, &pkg_dirs).wrap_err_with(|| {
@@ -91,14 +100,15 @@ fn stage_package(
     reporter: &mut Reporter<'_>,
     spec: &PackageSpec,
     pkg_dirs: &PackageDirs,
+    config: &InstallConfig,
 ) -> eyre::Result<Package> {
     fs_util::create_dir_all(pkg_dirs.name_dir())?;
     fs_util::create_dir(pkg_dirs.version_dir())?;
     fs_util::create_dir(pkg_dirs.fonts_dir())?;
 
-    let bytes = download_archive(reporter, spec)?;
+    let file = download_archive(reporter, spec, config)?;
     let package_fonts_dir = pkg_dirs.fonts_dir();
-    let file_paths = extract_archive(reporter, bytes, package_fonts_dir)?;
+    let file_paths = extract_archive(reporter, file, package_fonts_dir, config)?;
 
     let ValidationResult {
         unsupported_fonts,
@@ -119,30 +129,86 @@ fn stage_package(
     Ok(package)
 }
 
-fn download_archive(reporter: &mut Reporter<'_>, spec: &PackageSpec) -> eyre::Result<Bytes> {
+fn download_archive(
+    reporter: &mut Reporter<'_>,
+    spec: &PackageSpec,
+    config: &InstallConfig,
+) -> eyre::Result<File> {
     reporter.report_step(format_args!("Downloading {} archive...", spec.id));
 
-    // TODO: Enforce a maximum downloaded response size, using Content-Length when available
-    // and a running byte count while reading the response body.
-    let response = reqwest::blocking::get(spec.url.clone())
+    let mut response = reqwest::blocking::get(spec.url.clone())
         .wrap_err_with(|| format!("failed to download font archive from {}", spec.url))?
         .error_for_status()
         .wrap_err_with(|| format!("failed to download font archive from {}", spec.url))?;
-    let content = response.bytes().wrap_err("failed to get response body")?;
-    let digest = hash::digest_from_bytes(content.iter().as_slice());
+
+    let len = response.content_length();
+    if let Some(len) = len
+        && len > config.max_archive_size_bytes
+    {
+        bail!(
+            "server-reported archive size {len} exceeds maximum allowed size of {}",
+            config.max_archive_size_bytes
+        );
+    }
+    let (mut output, digest) = reporter.with_download_progress_bar(len, |pb| {
+        stream_archive_to_tempfile(&mut response, config, pb)
+    })?;
     ensure!(
         digest == spec.sha256,
-        "downloaded file hash mismatch: expected {}, got {}",
+        "downloaded archive hash mismatch for {}: expected {}, got {}",
+        spec.id,
         spec.sha256,
         digest
     );
-    Ok(content)
+    output
+        .rewind()
+        .wrap_err("failed to rewind temporary file for downloaded archive")?;
+    Ok(output)
+}
+
+fn stream_archive_to_tempfile<R>(
+    reader: &mut R,
+    config: &InstallConfig,
+    pb: &indicatif::ProgressBar,
+) -> eyre::Result<(File, Sha256Digest)>
+where
+    R: Read,
+{
+    let mut output =
+        tempfile::tempfile().wrap_err("failed to create temporary file for downloaded archive")?;
+    let mut buffer = [0; 8096];
+    let mut hasher = Sha256::new();
+    let mut total_size = 0;
+    loop {
+        let n = reader
+            .read(&mut buffer)
+            .wrap_err("failed to read response body while downloading archive")?;
+        total_size += n as u64;
+        if total_size > config.max_archive_size_bytes {
+            bail!(
+                "downloaded archive size exceeds maximum allowed size of {}",
+                config.max_archive_size_bytes
+            );
+        }
+        if n == 0 {
+            break;
+        }
+        let chunk = &buffer[..n];
+        hasher.update(chunk);
+        output
+            .write_all(chunk)
+            .wrap_err("failed to write chunk to temporary file for downloaded archive")?;
+        pb.inc(chunk.len() as u64);
+    }
+    let digest = Sha256Digest::new(hasher.finalize());
+    Ok((output, digest))
 }
 
 fn extract_archive(
     reporter: &mut Reporter<'_>,
-    bytes: Bytes,
+    file: File,
     fonts_dir: &AbsolutePath,
+    config: &InstallConfig,
 ) -> eyre::Result<Vec<FileName>> {
     reporter.report_step(format_args!(
         "Extracting archive to {}...",
@@ -150,11 +216,8 @@ fn extract_archive(
     ));
 
     let mut files = vec![];
-    let reader = Cursor::new(bytes);
-    let mut archive = ZipArchive::new(reader)?;
+    let mut archive = ZipArchive::new(file)?;
 
-    // TODO: Enforce limits on extracted file count, per-file extracted size, and total
-    // extracted size to guard against unexpectedly large or malicious ZIP archives.
     for i in 0..archive.len() {
         let mut archive_file = archive
             .by_index(i)
@@ -162,7 +225,6 @@ fn extract_archive(
         if !archive_file.is_file() {
             continue;
         }
-
         let archive_path = Path::new(archive_file.name());
         let ext = archive_path.extension();
         let is_font = ext.is_some_and(|e| {
@@ -172,6 +234,14 @@ fn extract_archive(
         });
         if !is_font {
             continue;
+        }
+        if archive_file.size() > config.max_extracted_file_size_bytes {
+            bail!(
+                "archive entry `{}` has extracted size {} exceeding the maximum allowed size of {}",
+                archive_file.name(),
+                archive_file.size(),
+                config.max_extracted_file_size_bytes,
+            );
         }
 
         let file_name = archive_path
@@ -185,6 +255,13 @@ fn extract_archive(
             )
         })?;
         let fs_path = fonts_dir.join(&file_name);
+
+        if files.len() >= config.max_extracted_files {
+            bail!(
+                "archive contains more than {} extractable font files",
+                config.max_extracted_files
+            );
+        }
 
         let mut file = File::options()
             .write(true)
@@ -253,41 +330,53 @@ fn prune_invalid_fonts(
 mod tests {
     use super::*;
 
-    use std::fs;
+    use std::{fs, io::Cursor};
 
+    use indicatif::ProgressBar;
     use semver::Version;
     use tempfile::TempDir;
-    use zip::write::SimpleFileOptions;
+    use zip::{ZipWriter, write::SimpleFileOptions};
 
     use crate::package::{PackageId, PackageName};
 
-    fn build_zip(entries: &[(&str, &[u8])]) -> Bytes {
-        let mut cursor = Cursor::new(Vec::new());
+    fn build_zip(entries: &[(&str, &[u8])]) -> File {
+        let mut file = tempfile::tempfile().unwrap();
         {
-            let mut writer = zip::ZipWriter::new(&mut cursor);
+            let mut writer = ZipWriter::new(&mut file);
             for (name, contents) in entries {
                 writer
                     .start_file(name, SimpleFileOptions::default())
-                    .expect("failed to start zip entry");
-                writer
-                    .write_all(contents)
-                    .expect("failed to write zip entry");
+                    .unwrap();
+                writer.write_all(contents).unwrap();
             }
-            writer.finish().expect("failed to finish zip archive");
+            writer.finish().unwrap();
         }
-        Bytes::from(cursor.into_inner())
+        file.rewind().unwrap();
+        file
     }
 
-    fn extract_to_tempdir(bytes: Bytes) -> eyre::Result<(TempDir, Vec<FileName>)> {
+    fn extract_to_tempdir_with_config(
+        archive: File,
+        config: &InstallConfig,
+    ) -> eyre::Result<(TempDir, Vec<FileName>)> {
         let mut reporter = Reporter::message_reporter();
-        let tempdir = tempfile::tempdir().expect("failed to create temp dir");
+        let tempdir = tempfile::tempdir().unwrap();
         let fonts_dir = AbsolutePath::new(tempdir.path()).unwrap();
-        let files = extract_archive(&mut reporter, bytes, &fonts_dir)?;
+        let files = extract_archive(&mut reporter, archive, &fonts_dir, config)?;
         Ok((tempdir, files))
     }
 
+    fn extract_to_tempdir(archive: File) -> eyre::Result<(TempDir, Vec<FileName>)> {
+        let config = InstallConfig {
+            max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
+            max_extracted_files: 1000,
+            max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
+        };
+        extract_to_tempdir_with_config(archive, &config)
+    }
+
     fn make_package_dirs() -> (TempDir, PackageDirs) {
-        let tempdir = tempfile::tempdir().expect("failed to create temp dir");
+        let tempdir = tempfile::tempdir().unwrap();
         let app_data_dir = AbsolutePath::new(tempdir.path()).unwrap();
         let name = PackageName::new("hackgen").unwrap();
         let version = Version::new(2, 10, 0);
@@ -298,16 +387,16 @@ mod tests {
 
     #[test]
     fn extract_archive_rejects_duplicate_font_file_names() {
-        let bytes = build_zip(&[("a/font.ttf", b"font-a"), ("b/font.ttf", b"font-b")]);
+        let archive = build_zip(&[("a/font.ttf", b"font-a"), ("b/font.ttf", b"font-b")]);
 
-        let err = extract_to_tempdir(bytes).expect_err("duplicate font file names should fail");
+        let err = extract_to_tempdir(archive).unwrap_err();
 
         assert!(format!("{err:?}").contains("extracted font file already exists"));
     }
 
     #[test]
     fn extract_archive_filters_non_font_files() {
-        let bytes = build_zip(&[
+        let archive = build_zip(&[
             ("font.ttf", b"font"),
             ("font.ttc", b"collection"),
             ("font.otf", b"otf"),
@@ -315,20 +404,66 @@ mod tests {
             ("dir/", b""),
         ]);
 
-        let (_tempdir, files) =
-            extract_to_tempdir(bytes).expect("font files should be extracted successfully");
+        let (_tempdir, files) = extract_to_tempdir(archive).unwrap();
 
         assert_eq!(files, vec!["font.ttf", "font.ttc", "font.otf"]);
+    }
+
+    #[test]
+    fn extract_archive_rejects_more_than_max_extracted_files() {
+        let archive = build_zip(&[("a.ttf", b"font-a"), ("b.ttf", b"font-b")]);
+        let config = InstallConfig {
+            max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
+            max_extracted_files: 1,
+            max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
+        };
+
+        let err = extract_to_tempdir_with_config(archive, &config).unwrap_err();
+
+        assert!(format!("{err:?}").contains("archive contains more than 1 extractable font files"));
+    }
+
+    #[test]
+    fn extract_archive_rejects_entries_exceeding_max_extracted_file_size() {
+        let archive = build_zip(&[("font.ttf", b"font")]);
+        let config = InstallConfig {
+            max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
+            max_extracted_files: 1000,
+            max_extracted_file_size_bytes: 3,
+        };
+
+        let err = extract_to_tempdir_with_config(archive, &config).unwrap_err();
+
+        assert!(format!("{err:?}").contains(
+            "archive entry `font.ttf` has extracted size 4 exceeding the maximum allowed size of 3"
+        ));
+    }
+
+    #[test]
+    fn stream_archive_to_tempfile_rejects_download_size_exceeding_limit() {
+        let mut reader = Cursor::new(b"font".to_vec());
+        let config = InstallConfig {
+            max_archive_size_bytes: 3,
+            max_extracted_files: 1000,
+            max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
+        };
+        let pb = ProgressBar::hidden();
+
+        let err = stream_archive_to_tempfile(&mut reader, &config, &pb).unwrap_err();
+
+        assert!(
+            format!("{err:?}")
+                .contains("downloaded archive size exceeds maximum allowed size of 3")
+        );
     }
 
     #[test]
     fn remove_package_dirs_removes_empty_package_directories() {
         let mut reporter = Reporter::message_reporter();
         let (_tempdir, pkg_dirs) = make_package_dirs();
-        fs::create_dir_all(pkg_dirs.fonts_dir()).expect("failed to create fonts dir");
+        fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
 
-        remove_package_dirs(&mut reporter, &pkg_dirs)
-            .expect("empty package directories should be removed");
+        remove_package_dirs(&mut reporter, &pkg_dirs).unwrap();
 
         assert!(!pkg_dirs.fonts_dir().exists());
         assert!(!pkg_dirs.version_dir().exists());
@@ -339,12 +474,11 @@ mod tests {
     fn remove_package_dirs_stops_when_parent_directory_is_not_empty() {
         let mut reporter = Reporter::message_reporter();
         let (_tempdir, pkg_dirs) = make_package_dirs();
-        fs::create_dir_all(pkg_dirs.fonts_dir()).expect("failed to create fonts dir");
+        fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
         let sibling = pkg_dirs.name_dir().join("other-version");
-        fs::create_dir(&sibling).expect("failed to create sibling version dir");
+        fs::create_dir(&sibling).unwrap();
 
-        remove_package_dirs(&mut reporter, &pkg_dirs)
-            .expect("cleanup should succeed when package parent remains non-empty");
+        remove_package_dirs(&mut reporter, &pkg_dirs).unwrap();
 
         assert!(!pkg_dirs.fonts_dir().exists());
         assert!(!pkg_dirs.version_dir().exists());
@@ -357,8 +491,7 @@ mod tests {
         let mut reporter = Reporter::message_reporter();
         let (_tempdir, pkg_dirs) = make_package_dirs();
 
-        remove_package_dirs(&mut reporter, &pkg_dirs)
-            .expect("missing package directories should be ignored");
+        remove_package_dirs(&mut reporter, &pkg_dirs).unwrap();
 
         assert!(!pkg_dirs.fonts_dir().exists());
         assert!(!pkg_dirs.version_dir().exists());

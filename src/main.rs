@@ -10,6 +10,7 @@ use reqwest::Url;
 use semver::Version;
 
 use crate::{
+    install::InstallConfig,
     package::{PackageId, PackageName, PackageSpec},
     platform::windows,
     util::{app_dirs::AppDirs, hash::Sha256Digest, reporter::Reporter},
@@ -85,6 +86,12 @@ fn run_smoke_test(
     app_id: &str,
     app_dirs: &AppDirs,
 ) -> eyre::Result<()> {
+    let config = InstallConfig {
+        max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
+        max_extracted_files: 50,
+        max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
+    };
+
     let name = PackageName::new("hackgen").unwrap();
     let version = Version::new(2, 10, 0);
     let pkg_id = PackageId::new(name, version);
@@ -99,7 +106,7 @@ fn run_smoke_test(
         )?,
     };
 
-    let package = install::install_package(reporter, app_id, &spec, app_dirs)?;
+    let package = install::install_package(reporter, app_id, &spec, app_dirs, &config)?;
     install::uninstall_package(reporter, app_id, &package)?;
 
     Ok(())
