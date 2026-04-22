@@ -1,7 +1,5 @@
 use std::{fmt::Display, str::FromStr};
 
-use sha2::{Digest as _, Sha256};
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Sha256Digest([u8; 32]);
 
@@ -11,6 +9,15 @@ impl Display for Sha256Digest {
             write!(f, "{byte:02x}")?;
         }
         Ok(())
+    }
+}
+
+impl Sha256Digest {
+    pub(crate) fn new<B>(bytes: B) -> Self
+    where
+        B: Into<[u8; 32]>,
+    {
+        Self(bytes.into())
     }
 }
 
@@ -50,13 +57,6 @@ impl FromStr for Sha256Digest {
     }
 }
 
-pub(crate) fn digest_from_bytes(bytes: &[u8]) -> Sha256Digest {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    let digest = hasher.finalize();
-    Sha256Digest(digest.into())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,15 +91,5 @@ mod tests {
         ] {
             let _ = Sha256Digest::from_str(input).expect_err("invalid digest should be rejected");
         }
-    }
-
-    #[test]
-    fn digest_from_bytes_matches_known_sha256() {
-        let digest = digest_from_bytes(b"abc");
-
-        assert_eq!(
-            digest.to_string(),
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        );
     }
 }
