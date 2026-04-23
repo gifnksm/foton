@@ -4,12 +4,14 @@ use std::{
 };
 
 use reqwest::{Url, blocking::Response};
-use sha2::{Digest as _, Sha256};
 
 use crate::{
     command::install::InstallConfig,
-    package::{PackageId, PackageSpec},
-    util::{hash::Sha256Digest, reporter::Reporter},
+    package::{PackageId, PackageSource},
+    util::{
+        hash::{GenericDigest, GenericHasher},
+        reporter::Reporter,
+    },
 };
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
@@ -28,11 +30,11 @@ pub(crate) enum DownloadError {
         "actual downloaded archive size {downloaded_size} exceeds maximum allowed size of {max_size}"
     )]
     DownloadedSizeExceedsMax { downloaded_size: u64, max_size: u64 },
-    #[display("downloaded archive hash mismatch for {id}: expected {expected}, got {got}")]
+    #[display("downloaded archive hash mismatch for {pkg_id}: expected {expected}, got {got}")]
     HashMismatch {
-        id: PackageId,
-        expected: Sha256Digest,
-        got: Sha256Digest,
+        pkg_id: PackageId,
+        expected: GenericDigest,
+        got: GenericDigest,
     },
     #[display("failed to create temporary file for downloaded archive")]
     CreateTempFile {
@@ -58,14 +60,15 @@ pub(crate) enum DownloadError {
 
 pub(in crate::command::install) fn download_archive(
     reporter: &mut Reporter<'_>,
-    spec: &PackageSpec,
+    pkg_id: &PackageId,
+    source: &PackageSource,
     config: &InstallConfig,
 ) -> Result<File, Box<DownloadError>> {
-    let mut response = reqwest::blocking::get(spec.url.clone())
+    let mut response = reqwest::blocking::get(source.url.clone())
         .and_then(Response::error_for_status)
-        .map_err(|source| {
-            let url = spec.url.clone();
-            DownloadError::Get { url, source }
+        .map_err(|err| {
+            let url = source.url.clone();
+            DownloadError::Get { url, source: err }
         })?;
 
     let len = response.content_length();
@@ -79,30 +82,36 @@ pub(in crate::command::install) fn download_archive(
         }
         .into());
     }
+    let hasher = source.hash.hasher();
     let (output, digest) = reporter.with_download_progress_bar(len, |pb| {
-        stream_archive_to_tempfile(&mut response, config, pb)
+        stream_archive_to_tempfile(&mut response, hasher, config, pb)
     })?;
-    if digest != spec.sha256 {
-        let id = spec.id.clone();
-        let expected = spec.sha256.clone();
+    if digest != source.hash {
+        let pkg_id = pkg_id.clone();
+        let expected = source.hash.clone();
         let got = digest;
-        return Err(DownloadError::HashMismatch { id, expected, got }.into());
+        return Err(DownloadError::HashMismatch {
+            pkg_id,
+            expected,
+            got,
+        }
+        .into());
     }
     Ok(output)
 }
 
 fn stream_archive_to_tempfile<R>(
     reader: &mut R,
+    mut hasher: GenericHasher,
     config: &InstallConfig,
     pb: &indicatif::ProgressBar,
-) -> Result<(File, Sha256Digest), Box<DownloadError>>
+) -> Result<(File, GenericDigest), Box<DownloadError>>
 where
     R: Read,
 {
     let mut output =
         tempfile::tempfile().map_err(|source| DownloadError::CreateTempFile { source })?;
     let mut buffer = [0; 8096];
-    let mut hasher = Sha256::new();
     let mut total_size = 0;
     loop {
         let n = reader
@@ -126,7 +135,7 @@ where
             .map_err(|source| DownloadError::WriteTempFile { source })?;
         pb.inc(chunk.len() as u64);
     }
-    let digest = Sha256Digest::new(hasher.finalize());
+    let digest = hasher.finalize();
     output
         .rewind()
         .map_err(|source| DownloadError::Rewind { source })?;
@@ -138,6 +147,7 @@ mod tests {
     use std::io::Cursor;
 
     use indicatif::ProgressBar;
+    use sha2::{Digest as _, Sha256};
 
     use super::*;
 
@@ -151,7 +161,8 @@ mod tests {
         };
         let pb = ProgressBar::hidden();
 
-        let err = stream_archive_to_tempfile(&mut reader, &config, &pb).unwrap_err();
+        let hasher = Sha256::new().into();
+        let err = stream_archive_to_tempfile(&mut reader, hasher, &config, &pb).unwrap_err();
 
         assert!(matches!(
             *err,

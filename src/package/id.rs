@@ -2,23 +2,34 @@ use std::fmt::{self, Display};
 
 use semver::Version;
 
-use crate::package::PackageName;
+use crate::package::{PackageName, PackageNamespace};
 
 #[derive(Debug, Clone)]
 pub(crate) struct PackageId {
+    namespace: PackageNamespace,
     name: PackageName,
     version: Version,
 }
 
 impl PackageId {
-    pub(crate) fn new<N, V>(name: N, version: V) -> Self
+    pub(crate) fn new<NS, N, V>(namespace: NS, name: N, version: V) -> Self
     where
+        NS: Into<PackageNamespace>,
         N: Into<PackageName>,
         V: Into<Version>,
     {
+        let namespace = namespace.into();
         let name = name.into();
         let version = version.into();
-        Self { name, version }
+        Self {
+            namespace,
+            name,
+            version,
+        }
+    }
+
+    pub(crate) fn namespace(&self) -> &PackageNamespace {
+        &self.namespace
     }
 
     pub(crate) fn name(&self) -> &PackageName {
@@ -32,6 +43,6 @@ impl PackageId {
 
 impl Display for PackageId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}@{}", self.name, self.version)
+        write!(f, "{}/{}@{}", self.namespace, self.name, self.version)
     }
 }

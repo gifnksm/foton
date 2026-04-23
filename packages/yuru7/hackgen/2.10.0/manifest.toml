@@ -1,0 +1,12 @@
+[package]
+namespace = "yuru7"
+name = "hackgen"
+version = "2.10.0"
+description = "Hack と源柔ゴシックを合成したプログラミングフォント 白源 (はくげん／HackGen)"
+homepage = "https://github.com/yuru7/HackGen"
+repository = "https://github.com/yuru7/HackGen"
+
+[[sources]]
+url = "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip"
+hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
+include = ["*/*.ttf"]

@@ -2,7 +2,7 @@ use reqwest::Url;
 
 use crate::{
     command::install::steps::{DownloadError, ExtractError, ValidationError},
-    package::{self, Package, PackageDirs, PackageId, PackageSpec},
+    package::{self, Package, PackageDirs, PackageId, PackageManifest},
     platform::windows::services::registration::{self, RegistrationError},
     util::{
         app_dirs::AppDirs,
@@ -71,20 +71,21 @@ mod steps;
 pub(crate) fn install_package(
     reporter: &mut Reporter<'_>,
     app_id: &str,
-    spec: &PackageSpec,
+    manifest: &PackageManifest,
     app_dirs: &AppDirs,
     config: &InstallConfig,
 ) -> Result<Package, Box<InstallError>> {
-    reporter.report_step(format_args!("Installing {}...", spec.id));
+    let pkg_id = manifest.metadata.id();
+    reporter.report_step(format_args!("Installing {pkg_id}..."));
 
-    let pkg_dirs = PackageDirs::new(app_dirs.data_dir(), &spec.id);
+    let pkg_dirs = PackageDirs::new(app_dirs.data_dir(), &pkg_id);
 
     package::create_new_package_dirs(&pkg_dirs).map_err(|source| {
-        let pkg_id = spec.id.clone();
+        let pkg_id = pkg_id.clone();
         InstallError::CreatePackageDirs { pkg_id, source }
     })?;
 
-    let package = match stage_package(reporter, &pkg_dirs, spec, config) {
+    let package = match stage_package(reporter, &pkg_dirs, manifest, config) {
         Ok(package) => package,
         Err(err) => {
             let _ = package::remove_package_dirs(&pkg_dirs)
@@ -99,12 +100,12 @@ pub(crate) fn install_package(
 
     reporter.report_step(format_args!("Registering fonts..."));
     let res = registration::register_package_fonts(reporter, app_id, &package).map_err(|source| {
-        let pkg_id = spec.id.clone();
+        let pkg_id = pkg_id.clone();
         InstallError::Registration { pkg_id, source }
     });
 
     if let Err(err) = res {
-        let _ = registration::unregister_package_fonts(reporter, app_id, &spec.id);
+        let _ = registration::unregister_package_fonts(reporter, app_id, &pkg_id);
         let _ = package::remove_package_dirs(&pkg_dirs)
             .map_err(|source| {
                 let pkg_dirs = pkg_dirs.clone();
@@ -120,39 +121,49 @@ pub(crate) fn install_package(
 fn stage_package(
     reporter: &mut Reporter<'_>,
     pkg_dirs: &PackageDirs,
-    spec: &PackageSpec,
+    manifest: &PackageManifest,
     config: &InstallConfig,
 ) -> Result<Package, Box<InstallError>> {
-    reporter.report_step(format_args!("Downloading {} archive...", spec.id));
-    let file = steps::download_archive(reporter, spec, config).map_err(|source| {
-        let pkg_id = spec.id.clone();
-        let url = spec.url.clone();
-        InstallError::Download {
-            pkg_id,
-            url,
-            source,
-        }
-    })?;
-
+    let pkg_id = manifest.metadata.id();
     let package_fonts_dir = pkg_dirs.fonts_dir();
-    reporter.report_step(format_args!(
-        "Extracting archive to {}...",
-        package_fonts_dir.display()
-    ));
-    let file_paths = steps::extract_archive(file, package_fonts_dir, config).map_err(|source| {
-        let pkg_id = spec.id.clone();
-        InstallError::Extract { pkg_id, source }
-    })?;
+
+    let mut file_paths = vec![];
+
+    for source in &manifest.sources {
+        reporter.report_step(format_args!("Downloading {}...", source.url));
+        let file = steps::download_archive(reporter, &pkg_id, source, config).map_err(|err| {
+            let pkg_id = pkg_id.clone();
+            let url = source.url.clone();
+            InstallError::Download {
+                pkg_id,
+                url,
+                source: err,
+            }
+        })?;
+
+        reporter.report_step(format_args!(
+            "Extracting archive to {}...",
+            package_fonts_dir.display()
+        ));
+        file_paths.extend(
+            steps::extract_archive(file, &source.include, package_fonts_dir, config).map_err(
+                |source| {
+                    let pkg_id = pkg_id.clone();
+                    InstallError::Extract { pkg_id, source }
+                },
+            )?,
+        );
+    }
 
     reporter.report_step(format_args!("Validating fonts..."));
     let valid_entries = steps::validate_and_prune_fonts(reporter, package_fonts_dir, &file_paths)
         .map_err(|source| {
-        let pkg_id = spec.id.clone();
+        let pkg_id = pkg_id.clone();
         InstallError::Validation { pkg_id, source }
     })?;
 
     if valid_entries.is_empty() {
-        let pkg_id = spec.id.clone();
+        let pkg_id = pkg_id.clone();
         return Err(InstallError::NoValidFonts { pkg_id }.into());
     }
 
@@ -161,6 +172,6 @@ fn stage_package(
         valid_entries.len()
     ));
 
-    let package = Package::new(spec.id.clone(), pkg_dirs.clone(), valid_entries);
+    let package = Package::new(pkg_id, pkg_dirs.clone(), valid_entries);
     Ok(package)
 }

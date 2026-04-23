@@ -10,29 +10,29 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct PackageName(String);
+pub(crate) struct PackageNamespace(String);
 
-const PACKAGE_NAME_REGEX_STR: &str = r"^[a-zA-Z][-_0-9a-zA-Z]*$";
+const PACKAGE_NAMESPACE_REGEX_STR: &str = r"^[a-zA-Z][-_0-9a-zA-Z]*$";
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
-pub(crate) enum PackageNameError {
+pub(crate) enum PackageNamespaceError {
     #[display(
-        "invalid package name `{name}`: must start with an ASCII letter and contain only ASCII letters, digits, `-` or `_`"
+        "invalid package namespace `{name}`: must start with an ASCII letter and contain only ASCII letters, digits, `-` or `_`"
     )]
     InvalidFormat { name: String },
 }
 
-impl PackageName {
-    pub(crate) fn new<N>(name: N) -> Result<Self, PackageNameError>
+impl PackageNamespace {
+    pub(crate) fn new<N>(name: N) -> Result<Self, PackageNamespaceError>
     where
         N: Into<String>,
     {
-        static NAME_REGEX: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(PACKAGE_NAME_REGEX_STR).unwrap());
+        static NAMESPACE_REGEX: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(PACKAGE_NAMESPACE_REGEX_STR).unwrap());
 
         let name = name.into();
-        if !NAME_REGEX.is_match(&name) {
-            return Err(PackageNameError::InvalidFormat { name });
+        if !NAMESPACE_REGEX.is_match(&name) {
+            return Err(PackageNamespaceError::InvalidFormat { name });
         }
         Ok(Self(name))
     }
@@ -43,71 +43,71 @@ impl PackageName {
     }
 }
 
-impl FromStr for PackageName {
-    type Err = PackageNameError;
+impl FromStr for PackageNamespace {
+    type Err = PackageNamespaceError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::new(s)
     }
 }
 
-impl TryFrom<&str> for PackageName {
-    type Error = PackageNameError;
+impl TryFrom<&str> for PackageNamespace {
+    type Error = PackageNamespaceError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Self::new(value)
     }
 }
 
-impl TryFrom<String> for PackageName {
-    type Error = PackageNameError;
+impl TryFrom<String> for PackageNamespace {
+    type Error = PackageNamespaceError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Self::new(value)
     }
 }
 
-impl From<&PackageName> for PackageName {
-    fn from(name: &PackageName) -> Self {
+impl From<&PackageNamespace> for PackageNamespace {
+    fn from(name: &PackageNamespace) -> Self {
         name.clone()
     }
 }
 
-impl Display for PackageName {
+impl Display for PackageNamespace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.0, f)
     }
 }
 
-impl AsRef<str> for PackageName {
+impl AsRef<str> for PackageNamespace {
     fn as_ref(&self) -> &str {
         &self.0
     }
 }
 
-impl AsRef<OsStr> for PackageName {
+impl AsRef<OsStr> for PackageNamespace {
     fn as_ref(&self) -> &OsStr {
         self.0.as_ref()
     }
 }
 
-impl AsRef<Path> for PackageName {
+impl AsRef<Path> for PackageNamespace {
     fn as_ref(&self) -> &Path {
         self.0.as_ref()
     }
 }
 
-macro_rules! impl_partial_eq_for_package_name {
+macro_rules! impl_partial_eq_for_package_namespace {
     ($($ty:ty),* $(,)?) => {
         $(
-            impl PartialEq<$ty> for PackageName {
+            impl PartialEq<$ty> for PackageNamespace {
                 fn eq(&self, other: &$ty) -> bool {
                     self.0 == *other
                 }
             }
 
-            impl PartialEq<PackageName> for $ty {
-                fn eq(&self, other: &PackageName) -> bool {
+            impl PartialEq<PackageNamespace> for $ty {
+                fn eq(&self, other: &PackageNamespace) -> bool {
                     *self == other.0
                 }
             }
@@ -115,21 +115,21 @@ macro_rules! impl_partial_eq_for_package_name {
     };
 }
 
-impl_partial_eq_for_package_name!(String, str, &str);
+impl_partial_eq_for_package_namespace!(String, str, &str);
 
-impl PartialEq<&PackageName> for PackageName {
-    fn eq(&self, other: &&PackageName) -> bool {
+impl PartialEq<&PackageNamespace> for PackageNamespace {
+    fn eq(&self, other: &&PackageNamespace) -> bool {
         self.0 == other.0
     }
 }
 
-impl PartialEq<PackageName> for &PackageName {
-    fn eq(&self, other: &PackageName) -> bool {
+impl PartialEq<PackageNamespace> for &PackageNamespace {
+    fn eq(&self, other: &PackageNamespace) -> bool {
         self.0 == other.0
     }
 }
 
-impl Serialize for PackageName {
+impl Serialize for PackageNamespace {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -138,7 +138,7 @@ impl Serialize for PackageName {
     }
 }
 
-impl<'de> Deserialize<'de> for PackageName {
+impl<'de> Deserialize<'de> for PackageNamespace {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -153,7 +153,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn package_name_new_accepts_valid_names() {
+    fn package_namespace_new_accepts_valid_names() {
         for name_str in [
             "hackgen",
             "HackGen",
@@ -162,13 +162,13 @@ mod tests {
             "a0",
             "x",
         ] {
-            let name = PackageName::new(name_str).unwrap();
+            let name = PackageNamespace::new(name_str).unwrap();
             assert_eq!(name, name_str);
         }
     }
 
     #[test]
-    fn package_name_new_rejects_invalid_names() {
+    fn package_namespace_new_rejects_invalid_names() {
         for name in [
             "",
             "0hackgen",
@@ -178,7 +178,7 @@ mod tests {
             r"hackgen\nerd",
             "hackgen:nerd",
         ] {
-            PackageName::new(name).unwrap_err();
+            PackageNamespace::new(name).unwrap_err();
         }
     }
 }

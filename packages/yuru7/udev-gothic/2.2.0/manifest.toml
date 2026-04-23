@@ -1,0 +1,12 @@
+[package]
+namespace = "yuru7"
+name = "udev-gothic"
+version = "2.2.0"
+description = "UDEV Gothic は、ユニバーサルデザインフォントのBIZ UDゴシックと、 開発者向けフォントの JetBrains Mono を合成した、プログラミング向けフォントです。"
+homepage = "https://github.com/yuru7/udev-gothic"
+repository = "https://github.com/yuru7/udev-gothic"
+
+[[sources]]
+url = "https://github.com/yuru7/udev-gothic/releases/download/v2.2.0/UDEVGothic_v2.2.0.zip"
+hash = "sha256:c104c171f6ed8922ca52d74cd915a271e427f1e884e51431aae71d99e8b3b47b"
+include = ["*/*.ttf"]

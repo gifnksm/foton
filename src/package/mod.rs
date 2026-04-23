@@ -1,11 +1,12 @@
 use crate::util::path::FileName;
 
-pub(crate) use self::{dirs::*, id::*, name::*, spec::*};
+pub(crate) use self::{dirs::*, id::*, manifest::*, name::*, namespace::*};
 
 mod dirs;
 mod id;
+mod manifest;
 mod name;
-mod spec;
+mod namespace;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Package {
