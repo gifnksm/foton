@@ -2,9 +2,10 @@ use std::{
     ffi::OsString,
     fs::File,
     io::{self, Write as _},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
+use glob::MatchOptions;
 use zip::{ZipArchive, result::ZipError};
 
 use crate::{
@@ -71,9 +72,16 @@ pub(crate) enum ExtractError {
 
 pub(in crate::command::install) fn extract_archive(
     file: File,
+    include: &[glob::Pattern],
     fonts_dir: &AbsolutePath,
     config: &InstallConfig,
 ) -> Result<Vec<FileName>, Box<ExtractError>> {
+    const MATCH_OPTIONS: MatchOptions = MatchOptions {
+        case_sensitive: false,
+        require_literal_separator: true,
+        require_literal_leading_dot: true,
+    };
+
     let mut files = vec![];
     let mut archive =
         ZipArchive::new(file).map_err(|source| ExtractError::ReadArchive { source })?;
@@ -87,19 +95,18 @@ pub(in crate::command::install) fn extract_archive(
         if !archive_file.is_file() {
             continue;
         }
-        let archive_path = Path::new(archive_file.name());
-        let ext = archive_path.extension();
-        let is_font = ext.is_some_and(|e| {
-            e.eq_ignore_ascii_case("ttf")
-                || e.eq_ignore_ascii_case("ttc")
-                || e.eq_ignore_ascii_case("otf")
-        });
-        if !is_font {
+        let Some(archive_path) = archive_file.enclosed_name() else {
+            continue;
+        };
+        let matches = include
+            .iter()
+            .any(|pattern| pattern.matches_path_with(&archive_path, MATCH_OPTIONS));
+        if !matches {
             continue;
         }
         if archive_file.size() > config.max_extracted_file_size_bytes {
             return Err(ExtractError::ExtractedFileExceedsMaxSize {
-                file_path: archive_path.to_owned(),
+                file_path: archive_path.clone(),
                 file_size: archive_file.size(),
                 max_size: config.max_extracted_file_size_bytes,
             }
@@ -172,30 +179,80 @@ mod tests {
         file
     }
 
-    fn extract_to_tempdir_with_config(
+    fn default_include() -> Vec<glob::Pattern> {
+        vec![
+            glob::Pattern::new("**/*.ttf").unwrap(),
+            glob::Pattern::new("**/*.ttc").unwrap(),
+            glob::Pattern::new("**/*.otf").unwrap(),
+        ]
+    }
+
+    fn default_config() -> InstallConfig {
+        InstallConfig {
+            max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
+            max_extracted_files: 1000,
+            max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
+        }
+    }
+
+    fn extract_to_tempdir(
         archive: File,
+        include: &[glob::Pattern],
         config: &InstallConfig,
     ) -> Result<(TempDir, Vec<FileName>), Box<ExtractError>> {
         let tempdir = tempfile::tempdir().unwrap();
         let fonts_dir = AbsolutePath::new(tempdir.path()).unwrap();
-        let files = extract_archive(archive, &fonts_dir, config)?;
+        let files = extract_archive(archive, include, &fonts_dir, config)?;
         Ok((tempdir, files))
     }
 
-    fn extract_to_tempdir(archive: File) -> Result<(TempDir, Vec<FileName>), Box<ExtractError>> {
-        let config = InstallConfig {
-            max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
-            max_extracted_files: 1000,
-            max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
-        };
-        extract_to_tempdir_with_config(archive, &config)
+    #[test]
+    fn extract_archive_does_not_match_plain_globs_across_directories() {
+        let archive = build_zip(&[("a/font.ttf", b"font")]);
+        let include = [glob::Pattern::new("*.ttf").unwrap()];
+
+        let (_tempdir, files) = {
+            let include: &[glob::Pattern] = &include;
+            extract_to_tempdir(archive, include, &default_config())
+        }
+        .unwrap();
+
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn extract_archive_matches_single_directory_globs_against_nested_paths() {
+        let archive = build_zip(&[("a/font.ttf", b"font")]);
+        let include = [glob::Pattern::new("*/*.ttf").unwrap()];
+
+        let (_tempdir, files) = {
+            let include: &[glob::Pattern] = &include;
+            extract_to_tempdir(archive, include, &default_config())
+        }
+        .unwrap();
+
+        assert_eq!(files, vec!["font.ttf"]);
+    }
+
+    #[test]
+    fn extract_archive_matches_recursive_globs_against_nested_paths() {
+        let archive = build_zip(&[("a/b/font.ttf", b"font")]);
+        let include = [glob::Pattern::new("**/*.ttf").unwrap()];
+
+        let (_tempdir, files) = {
+            let include: &[glob::Pattern] = &include;
+            extract_to_tempdir(archive, include, &default_config())
+        }
+        .unwrap();
+
+        assert_eq!(files, vec!["font.ttf"]);
     }
 
     #[test]
     fn extract_archive_rejects_duplicate_font_file_names() {
         let archive = build_zip(&[("a/font.ttf", b"font-a"), ("b/font.ttf", b"font-b")]);
 
-        let err = extract_to_tempdir(archive).unwrap_err();
+        let err = extract_to_tempdir(archive, &default_include(), &default_config()).unwrap_err();
         assert!(matches!(
             *err,
             ExtractError::ExtractedFileAlreadyExists { .. }
@@ -212,7 +269,8 @@ mod tests {
             ("dir/", b""),
         ]);
 
-        let (_tempdir, files) = extract_to_tempdir(archive).unwrap();
+        let (_tempdir, files) =
+            extract_to_tempdir(archive, &default_include(), &default_config()).unwrap();
 
         assert_eq!(files, vec!["font.ttf", "font.ttc", "font.otf"]);
     }
@@ -226,7 +284,7 @@ mod tests {
             max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
         };
 
-        let err = extract_to_tempdir_with_config(archive, &config).unwrap_err();
+        let err = extract_to_tempdir(archive, &default_include(), &config).unwrap_err();
         assert!(matches!(*err, ExtractError::TooManyExtractableFiles { .. }));
     }
 
@@ -239,7 +297,7 @@ mod tests {
             max_extracted_file_size_bytes: 3,
         };
 
-        let err = extract_to_tempdir_with_config(archive, &config).unwrap_err();
+        let err = extract_to_tempdir(archive, &default_include(), &config).unwrap_err();
         assert!(matches!(
             *err,
             ExtractError::ExtractedFileExceedsMaxSize { .. }

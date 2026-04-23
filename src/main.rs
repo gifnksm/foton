@@ -1,19 +1,16 @@
 #[cfg(not(windows))]
 compile_error!("foton is supported on Windows only.");
 
-use std::{env, io, process, str::FromStr as _};
+use std::{env, io, process};
 
 use clap::{CommandFactory as _, Parser as _};
 use clap_complete::{Generator, Shell};
-use color_eyre::eyre::{self, WrapErr as _};
-use reqwest::Url;
-use semver::Version;
+use color_eyre::eyre;
 
 use crate::{
     command::InstallConfig,
-    package::{PackageId, PackageName, PackageSpec},
     platform::windows,
-    util::{app_dirs::AppDirs, hash::Sha256Digest, reporter::Reporter},
+    util::{app_dirs::AppDirs, reporter::Reporter},
 };
 
 mod cli;
@@ -92,21 +89,11 @@ fn run_smoke_test(
         max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
     };
 
-    let name = PackageName::new("hackgen").unwrap();
-    let version = Version::new(2, 10, 0);
-    let pkg_id = PackageId::new(name, version);
-    let spec = PackageSpec {
-        id: pkg_id,
-        url: Url::parse(
-            "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip",
-        )
-        .wrap_err("failed to parse hackgen download URL")?,
-        sha256: Sha256Digest::from_str(
-            "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7",
-        )?,
-    };
-
-    let package = command::install_package(reporter, app_id, &spec, app_dirs, &config)?;
+    let manifest = toml::from_str(include_str!(
+        "../packages/yuru7/hackgen/2.10.0/manifest.toml"
+    ))
+    .unwrap();
+    let package = command::install_package(reporter, app_id, &manifest, app_dirs, &config)?;
     command::uninstall_package(reporter, app_id, &package)?;
 
     Ok(())
