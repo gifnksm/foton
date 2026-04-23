@@ -12,7 +12,7 @@
 
 A simple font package manager for Windows using GitHub Releases.
 
-Manage fonts as packages. Install and update directly from GitHub Releases.
+Manage fonts as packages using versioned manifests that describe how each package version is installed from GitHub Releases.
 
 > [!WARNING]
 > `foton` is still in early development.
@@ -20,9 +20,9 @@ Manage fonts as packages. Install and update directly from GitHub Releases.
 
 ## Features
 
-* Install fonts from GitHub Releases
-* Track installed fonts with version and hash
-* Update fonts safely
+* Install font packages from GitHub Releases using versioned manifests
+* Track installed packages with version and hash
+* Update packages safely between manifest-defined versions
 * Clean uninstall
 
 ## Installation
@@ -63,84 +63,91 @@ $ cargo install --git https://github.com/gifnksm/foton.git foton
 
 ### Install
 
-Install a font from a GitHub repository:
+Install a font package from the manifest registry:
 
 ```bash
-foton install <user>/<repo>
+foton install <package spec>
 ```
 
 Example:
 
 ```bash
-foton install yuru7/HackGen
+foton install hackgen
+foton install hackgen@2.10.0
 ```
 
 This command is intended to:
 
-* Fetch the latest release
-* Download the release assets
-* Extract `.ttf` and `.otf` files
+* Resolve the package spec to a versioned manifest
+* Read the manifest for the selected package version
+* Fetch the GitHub release and asset specified by that manifest
+* Extract the font files specified by that manifest
 * Install the fonts into the system
-* Record metadata in the local database
+* Record package and file metadata in the local database
+
+Each installable package version is defined by a single resolved manifest.
+The manifest fully specifies how that version is fetched and installed.
 
 ---
 
 ### Update
 
-Update all installed fonts:
+Update all installed font packages:
 
 ```bash
 foton update
 ```
 
-Update a specific font:
+Update a specific package:
 
 ```bash
-foton update <name>
+foton update <package name>
 ```
 
 Example:
 
 ```bash
-foton update HackGen
+foton update hackgen
 ```
 
 The planned behavior is:
 
-* Check the latest GitHub release
-* Compare it with the installed version
-* Install a new version if one is available
-* Remove the old version
+* Check whether a newer package version is available in the manifest registry
+* Resolve the target version to its own manifest
+* Compare the installed package version with the target package version
+* Install the new version according to the target manifest
+* Remove files from the old version that are no longer needed
 
+Updates are defined as transitions between manifest-defined package versions, rather than by inferring behavior directly from arbitrary GitHub release assets.
 If file hashes differ unexpectedly, the tool may ask for confirmation.
 
 ---
 
 ### Uninstall
 
-Remove an installed font:
+Remove an installed font package:
 
 ```bash
-foton uninstall <name>
+foton uninstall <package name>
 ```
 
 Example:
 
 ```bash
-foton uninstall HackGen
+foton uninstall hackgen
 ```
 
 This command is intended to:
 
 * Remove installed font files
 * Unregister the fonts from the system
-* Remove the entry from the database
+* Remove the package entry from the database
 
 ---
 
 ### List
 
-List installed fonts:
+List installed font packages:
 
 ```bash
 foton list
@@ -149,30 +156,33 @@ foton list
 Example output:
 
 ```text
-HackGen   v2.10.0
-Inter     v4.0.2
+hackgen   v2.10.0
+inter     v4.0.2
 ```
 
 ---
 
 ### Info
 
-Show details of an installed font:
+Show details of an installed font package:
 
 ```bash
-foton info <name>
+foton info <package name>
 ```
 
 Example:
 
 ```bash
-foton info HackGen
+foton info hackgen
 ```
 
 Expected output may include:
 
+* Package name
+* Package ID (`name@version`)
 * Source repository
-* Installed version
+* Installed package version
+* Manifest identifier
 * File list
 * Hashes
 
@@ -190,21 +200,26 @@ foton update --dry-run
 
 ## Data Storage
 
-`foton` is expected to maintain a local database of installed fonts.
+`foton` is expected to maintain a local database of installed font packages.
 
 The database is expected to store:
 
+* Package name
+* Package ID (`name@version`)
 * Source repository (`user/repo`)
-* Installed version (release tag)
-* Font files and hashes
+* Installed package version
+* Manifest identifier for the installed version
+* Installed font files and hashes
 
 ---
 
 ## Current scope
 
 * Support is currently planned for `.ttf` and `.otf` files
-* The current design assumes that all font files in a release are installed
-* The current design is based solely on GitHub Releases
+* Installation and update are driven by versioned manifests
+* Each installable package version is represented by one resolved manifest
+* The current design uses GitHub Releases as the package payload source
+* Manifest generation and authoring ergonomics are currently out of scope
 
 ---
 
