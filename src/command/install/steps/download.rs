@@ -59,7 +59,7 @@ pub(crate) enum DownloadError {
 }
 
 pub(in crate::command::install) fn download_archive(
-    reporter: &mut Reporter<'_>,
+    reporter: &Reporter,
     pkg_id: &PackageId,
     source: &PackageSource,
     config: &InstallConfig,

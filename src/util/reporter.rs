@@ -1,9 +1,9 @@
 use std::{
     fmt::{self, Display},
-    sync::LazyLock,
+    sync::{Arc, LazyLock, Mutex},
 };
 
-use indicatif::{ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
 
 use crate::{
     cli::message::{error, info, step, warn},
@@ -11,7 +11,7 @@ use crate::{
 };
 
 type DynError<'r> = &'r dyn std::error::Error;
-type BoxedCallback<'c> = Box<dyn for<'r> FnMut(Report<'r>) + 'c>;
+type SharedCallback = Arc<dyn for<'r> Fn(Report<'r>) + Send + Sync + 'static>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum ReportSeverity {
@@ -88,17 +88,25 @@ impl<'a> Report<'a> {
     }
 }
 
-pub(crate) struct Reporter<'c> {
-    callback: BoxedCallback<'c>,
+#[derive(Clone)]
+pub(crate) struct Reporter {
+    multi_progress_bar: Arc<Mutex<MultiProgress>>,
+    callback: SharedCallback,
 }
 
-impl<'c> Reporter<'c> {
-    pub(crate) fn new<C>(callback: C) -> Self
+impl Reporter {
+    fn new<C>(callback: C) -> Self
     where
-        C: for<'r> FnMut(Report<'r>) + 'c,
+        C: for<'r> Fn(Report<'r>) + Send + Sync + 'static,
     {
-        let callback = Box::new(callback) as _;
-        Self { callback }
+        let pb = Arc::new(Mutex::new(MultiProgress::with_draw_target(
+            ProgressDrawTarget::stderr(),
+        )));
+        let callback = Arc::new(callback) as _;
+        Self {
+            multi_progress_bar: pb,
+            callback,
+        }
     }
 
     pub(crate) fn message_reporter() -> Self {
@@ -110,39 +118,39 @@ impl<'c> Reporter<'c> {
         })
     }
 
-    pub(crate) fn report(&mut self, report: Report<'_>) {
-        (self.callback)(report);
+    pub(crate) fn report(&self, report: Report<'_>) {
+        let mpb = self.multi_progress_bar.lock().unwrap().clone();
+        mpb.suspend(|| (self.callback)(report));
     }
 
-    pub(crate) fn report_step<'a, V>(&mut self, value: V)
+    pub(crate) fn report_step<'a, V>(&self, value: V)
     where
         V: Into<ReportValue<'a>>,
     {
         self.report(Report::step(value));
     }
 
-    pub(crate) fn report_info<'a, V>(&mut self, value: V)
+    pub(crate) fn report_info<'a, V>(&self, value: V)
     where
         V: Into<ReportValue<'a>>,
     {
         self.report(Report::info(value));
     }
 
-    pub(crate) fn report_error<'a, V>(&mut self, value: V)
+    pub(crate) fn report_error<'a, V>(&self, value: V)
     where
         V: Into<ReportValue<'a>>,
     {
         self.report(Report::error(value));
     }
 
-    pub(crate) fn report_warn<'a, V>(&mut self, value: V)
+    pub(crate) fn report_warn<'a, V>(&self, value: V)
     where
         V: Into<ReportValue<'a>>,
     {
         self.report(Report::warn(value));
     }
 
-    #[expect(clippy::unused_self)]
     pub(crate) fn download_progress_bar(&self, len: Option<u64>) -> ProgressBar {
         static KNOWN_LEN_STYLE: LazyLock<ProgressStyle> = LazyLock::new(|| {
             ProgressStyle::with_template(
@@ -163,7 +171,8 @@ impl<'c> Reporter<'c> {
             Some(_) => KNOWN_LEN_STYLE.clone(),
             None => UNKNOWN_LEN_STYLE.clone(),
         };
-        ProgressBar::with_draw_target(len, ProgressDrawTarget::stderr()).with_style(style)
+        let pb = ProgressBar::with_draw_target(len, ProgressDrawTarget::stderr()).with_style(style);
+        self.multi_progress_bar.lock().unwrap().add(pb)
     }
 
     pub(crate) fn with_download_progress_bar<T, E, F>(&self, len: Option<u64>, f: F) -> Result<T, E>
@@ -181,22 +190,22 @@ impl<'c> Reporter<'c> {
 }
 
 pub(crate) trait ReportErrorExt {
-    fn report_err_as_error(self, reporter: &mut Reporter<'_>) -> Self;
-    fn report_err_as_warn(self, reporter: &mut Reporter<'_>) -> Self;
+    fn report_err_as_error(self, reporter: &Reporter) -> Self;
+    fn report_err_as_warn(self, reporter: &Reporter) -> Self;
 }
 
 impl<T, E> ReportErrorExt for Result<T, E>
 where
     E: std::error::Error,
 {
-    fn report_err_as_error(self, reporter: &mut Reporter<'_>) -> Self {
+    fn report_err_as_error(self, reporter: &Reporter) -> Self {
         if let Err(err) = &self {
             reporter.report_error(err as DynError<'_>);
         }
         self
     }
 
-    fn report_err_as_warn(self, reporter: &mut Reporter<'_>) -> Self {
+    fn report_err_as_warn(self, reporter: &Reporter) -> Self {
         if let Err(err) = &self {
             reporter.report_warn(err as DynError<'_>);
         }

@@ -45,10 +45,10 @@ fn main() -> eyre::Result<()> {
     let app_dirs = AppDirs::from_directories()?;
 
     let _guard = windows::com::init()?;
-    let mut reporter = Reporter::message_reporter();
+    let reporter = Reporter::message_reporter();
 
     if smoke_test {
-        run_smoke_test(&mut reporter, APP_ID, &app_dirs)?;
+        run_smoke_test(&reporter, APP_ID, &app_dirs)?;
     }
 
     Ok(())
@@ -78,11 +78,7 @@ fn generate_man(output_dir: &str) {
     clap_mangen::generate_to(Args::command(), output_dir).unwrap();
 }
 
-fn run_smoke_test(
-    reporter: &mut Reporter<'_>,
-    app_id: &str,
-    app_dirs: &AppDirs,
-) -> eyre::Result<()> {
+fn run_smoke_test(reporter: &Reporter, app_id: &str, app_dirs: &AppDirs) -> eyre::Result<()> {
     let config = InstallConfig {
         max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
         max_extracted_files: 50,
