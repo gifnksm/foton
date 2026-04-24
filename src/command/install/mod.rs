@@ -69,7 +69,7 @@ pub(crate) struct InstallConfig {
 mod steps;
 
 pub(crate) fn install_package(
-    reporter: &mut Reporter<'_>,
+    reporter: &Reporter,
     app_id: &str,
     manifest: &PackageManifest,
     app_dirs: &AppDirs,
@@ -119,7 +119,7 @@ pub(crate) fn install_package(
 }
 
 fn stage_package(
-    reporter: &mut Reporter<'_>,
+    reporter: &Reporter,
     pkg_dirs: &PackageDirs,
     manifest: &PackageManifest,
     config: &InstallConfig,

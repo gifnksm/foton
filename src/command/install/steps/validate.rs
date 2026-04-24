@@ -40,7 +40,7 @@ pub(crate) enum ValidationError {
 }
 
 pub(in crate::command::install) fn validate_and_prune_fonts(
-    reporter: &mut Reporter<'_>,
+    reporter: &Reporter,
     fonts_dir: &AbsolutePath,
     file_names: &[FileName],
 ) -> Result<Vec<FontEntry>, Box<ValidationError>> {

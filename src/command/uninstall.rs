@@ -23,7 +23,7 @@ pub(crate) enum UninstallError {
 }
 
 pub(crate) fn uninstall_package(
-    reporter: &mut Reporter<'_>,
+    reporter: &Reporter,
     app_id: &str,
     package: &Package,
 ) -> Result<(), Box<UninstallError>> {

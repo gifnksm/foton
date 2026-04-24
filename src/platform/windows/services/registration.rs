@@ -57,7 +57,7 @@ pub(crate) enum RegistrationError {
 }
 
 pub(crate) fn register_package_fonts(
-    reporter: &mut Reporter<'_>,
+    reporter: &Reporter,
     app_id: &str,
     package: &Package,
 ) -> Result<(), RegistrationError> {
@@ -92,7 +92,7 @@ pub(crate) fn register_package_fonts(
 }
 
 pub(crate) fn unregister_package_fonts(
-    reporter: &mut Reporter<'_>,
+    reporter: &Reporter,
     app_id: &str,
     pkg_id: &PackageId,
 ) -> Result<(), RegistrationError> {
