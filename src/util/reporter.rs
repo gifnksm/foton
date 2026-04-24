@@ -1,5 +1,5 @@
 use std::{
-    fmt::{self, Display},
+    fmt::{self, Debug, Display},
     sync::{Arc, LazyLock, Mutex},
 };
 
@@ -92,6 +92,15 @@ impl<'a> Report<'a> {
 pub(crate) struct Reporter {
     multi_progress_bar: Arc<Mutex<MultiProgress>>,
     callback: SharedCallback,
+}
+
+impl Debug for Reporter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Reporter")
+            .field("multi_progress_bar", &"<MultiProgress>")
+            .field("callback", &"<callback>")
+            .finish()
+    }
 }
 
 impl Reporter {

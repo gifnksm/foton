@@ -2,13 +2,9 @@ use reqwest::Url;
 
 use crate::{
     command::install::steps::{DownloadError, ExtractError, ValidationError},
-    package::{self, Package, PackageDirs, PackageId, PackageManifest},
-    platform::windows::services::registration::{self, RegistrationError},
-    util::{
-        app_dirs::AppDirs,
-        fs::FsError,
-        reporter::{ReportErrorExt as _, Reporter},
-    },
+    package::{Package, PackageDirs, PackageId, PackageManifest},
+    platform::windows::services::registration::RegistrationError,
+    util::{app_dirs::AppDirs, fs::FsError, reporter::Reporter},
 };
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
@@ -66,6 +62,7 @@ pub(crate) struct InstallConfig {
     pub(crate) max_extracted_file_size_bytes: u64,
 }
 
+mod helpers;
 mod steps;
 
 pub(crate) fn install_package(
@@ -78,42 +75,14 @@ pub(crate) fn install_package(
     let pkg_id = manifest.metadata.id();
     reporter.report_step(format_args!("Installing {pkg_id}..."));
 
-    let pkg_dirs = PackageDirs::new(app_dirs.data_dir(), &pkg_id);
-
-    package::create_new_package_dirs(&pkg_dirs).map_err(|source| {
-        let pkg_id = pkg_id.clone();
-        InstallError::CreatePackageDirs { pkg_id, source }
-    })?;
-
-    let package = match stage_package(reporter, &pkg_dirs, manifest, config) {
-        Ok(package) => package,
-        Err(err) => {
-            let _ = package::remove_package_dirs(&pkg_dirs)
-                .map_err(|source| {
-                    let pkg_dirs = pkg_dirs.clone();
-                    InstallWarning::RemovePackageDirectoryAfterInstallFailure { pkg_dirs, source }
-                })
-                .report_err_as_warn(reporter);
-            return Err(err);
-        }
-    };
+    let pkg_dirs = helpers::create_new_package_dirs(reporter, app_dirs, &pkg_id)?;
+    let package = stage_package(reporter, &pkg_dirs, manifest, config)?;
 
     reporter.report_step(format_args!("Registering fonts..."));
-    let res = registration::register_package_fonts(reporter, app_id, &package).map_err(|source| {
-        let pkg_id = pkg_id.clone();
-        InstallError::Registration { pkg_id, source }
-    });
+    let registration = helpers::register_package_fonts(reporter, app_id, &package)?;
 
-    if let Err(err) = res {
-        let _ = registration::unregister_package_fonts(reporter, app_id, &pkg_id);
-        let _ = package::remove_package_dirs(&pkg_dirs)
-            .map_err(|source| {
-                let pkg_dirs = pkg_dirs.clone();
-                InstallWarning::RemovePackageDirectoryAfterInstallFailure { pkg_dirs, source }
-            })
-            .report_err_as_warn(reporter);
-        return Err(err.into());
-    }
+    pkg_dirs.disarm();
+    registration.disarm();
 
     Ok(package)
 }
