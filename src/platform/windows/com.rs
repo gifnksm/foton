@@ -15,16 +15,31 @@ pub(crate) fn init() -> Result<ComGuard, ComError> {
     unsafe { Com::CoInitializeEx(None, COINIT_MULTITHREADED) }
         .ok()
         .map_err(|source| ComError::Initialize { source })?;
-    Ok(ComGuard {})
+    Ok(ComGuard { armed: true })
+}
+
+pub(crate) fn uninit() {
+    // SAFETY: This is an unsafe FFI call. We call it with no arguments, as required.
+    unsafe { Com::CoUninitialize() };
 }
 
 #[derive(Debug)]
 #[must_use = "keep this guard alive for as long as COM is needed"]
-pub(crate) struct ComGuard {}
+pub(crate) struct ComGuard {
+    armed: bool,
+}
 
 impl Drop for ComGuard {
     fn drop(&mut self) {
-        // SAFETY: This is an unsafe FFI call. We call it with no arguments, as required.
-        unsafe { Com::CoUninitialize() };
+        if !self.armed {
+            return;
+        }
+        uninit();
+    }
+}
+
+impl ComGuard {
+    pub(crate) fn disarm(mut self) {
+        self.armed = false;
     }
 }

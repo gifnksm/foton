@@ -186,7 +186,7 @@ pub(crate) trait Step {
     type Error;
 
     fn report_prelude(&self, reporter: &Reporter);
-    fn make_error(&self) -> Self::Error;
+    fn make_failed(&self) -> Self::Error;
 }
 
 #[derive(Debug)]
@@ -227,7 +227,7 @@ where
 
     pub(crate) fn report_error(&self, report: S::ErrorReportValue) -> S::Error {
         self.reporter.report_error(report);
-        self.step.make_error()
+        self.step.make_failed()
     }
 
     pub(crate) fn download_progress_bar(&self, len: Option<u64>) -> ProgressBar {
@@ -254,12 +254,16 @@ where
         self.reporter.multi_progress_bar.lock().unwrap().add(pb)
     }
 
-    pub(crate) fn with_download_progress_bar<T, E, F>(&self, len: Option<u64>, f: F) -> Result<T, E>
+    pub(crate) async fn with_download_progress_bar<T, E, F>(
+        &self,
+        len: Option<u64>,
+        f: F,
+    ) -> Result<T, E>
     where
-        F: FnOnce(&ProgressBar) -> Result<T, E>,
+        F: AsyncFnOnce(&ProgressBar) -> Result<T, E>,
     {
         let pb = self.download_progress_bar(len);
-        let res = f(&pb);
+        let res = f(&pb).await;
         match &res {
             Ok(_) => pb.finish(),
             Err(_) => pb.abandon(),

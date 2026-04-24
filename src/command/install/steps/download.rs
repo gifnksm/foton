@@ -1,9 +1,10 @@
-use std::{
-    fs::File,
-    io::{self, Read, Seek as _, Write as _},
-};
+use std::{fs::File, io, pin::pin};
 
-use reqwest::{Url, blocking::Response};
+use bytes::Bytes;
+use futures_core::Stream;
+use futures_util::StreamExt as _;
+use reqwest::{Response, Url};
+use tokio::io::{AsyncSeekExt as _, AsyncWriteExt as _};
 
 use crate::{
     command::install::InstallConfig,
@@ -34,8 +35,8 @@ where
         reporter.report_step(format_args!("Downloading {}...", self.url));
     }
 
-    fn make_error(&self) -> Self::Error {
-        self.step.make_error()
+    fn make_failed(&self) -> Self::Error {
+        self.step.make_failed()
     }
 }
 
@@ -74,7 +75,7 @@ enum DownloadErrorReport {
     #[display("failed to read response body while downloading archive")]
     ReadResponseBody {
         #[error(source)]
-        source: io::Error,
+        source: reqwest::Error,
     },
     #[display("failed to rewind temporary file for downloaded archive")]
     Rewind {
@@ -89,7 +90,7 @@ impl From<DownloadErrorReport> for ReportValue<'static> {
     }
 }
 
-pub(in crate::command::install) fn download_archive<S>(
+pub(in crate::command::install) async fn download_archive<S>(
     reporter: &StepReporter<'_, S>,
     pkg_id: &PackageId,
     source: &PackageSource,
@@ -102,7 +103,8 @@ where
         step: reporter.step(),
         url: &source.url,
     });
-    let mut response = reqwest::blocking::get(source.url.clone())
+    let response = reqwest::get(source.url.clone())
+        .await
         .and_then(Response::error_for_status)
         .map_err(|err| {
             let url = source.url.clone();
@@ -124,9 +126,10 @@ where
     }
     let hasher = source.hash.hasher();
     let (output, digest) = reporter
-        .with_download_progress_bar(len, |pb| {
-            stream_archive_to_tempfile(&mut response, hasher, config, pb)
+        .with_download_progress_bar(len, async |pb| {
+            stream_archive_to_tempfile(response.bytes_stream(), hasher, config, pb).await
         })
+        .await
         .report_error(&reporter)?;
     if digest != source.hash {
         let pkg_id = pkg_id.clone();
@@ -142,59 +145,58 @@ where
     Ok(output)
 }
 
-fn stream_archive_to_tempfile<R>(
-    reader: &mut R,
+async fn stream_archive_to_tempfile<S>(
+    chunks: S,
     mut hasher: GenericHasher,
     config: &InstallConfig,
     pb: &indicatif::ProgressBar,
 ) -> Result<(File, GenericDigest), DownloadErrorReport>
 where
-    R: Read,
+    S: Stream<Item = Result<Bytes, reqwest::Error>>,
 {
-    let mut output =
+    let mut chunks = pin!(chunks);
+
+    let output =
         tempfile::tempfile().map_err(|source| DownloadErrorReport::CreateTempFile { source })?;
-    let mut buffer = [0; 8096];
+    let mut output = tokio::fs::File::from_std(output);
     let mut total_size = 0;
-    loop {
-        let n = reader
-            .read(&mut buffer)
-            .map_err(|source| DownloadErrorReport::ReadResponseBody { source })?;
-        total_size += n as u64;
+    while let Some(chunk) = chunks.next().await {
+        let chunk = chunk.map_err(|source| DownloadErrorReport::ReadResponseBody { source })?;
+        let chunk_size = chunk.len() as u64;
+        total_size += chunk_size;
         if total_size > config.max_archive_size_bytes {
             return Err(DownloadErrorReport::DownloadedSizeExceedsMax {
                 downloaded_size: total_size,
                 max_size: config.max_archive_size_bytes,
             });
         }
-        if n == 0 {
-            break;
-        }
-        let chunk = &buffer[..n];
-        hasher.update(chunk);
+        hasher.update(&chunk);
         output
-            .write_all(chunk)
+            .write_all(&chunk)
+            .await
             .map_err(|source| DownloadErrorReport::WriteTempFile { source })?;
-        pb.inc(chunk.len() as u64);
+        pb.inc(chunk_size);
     }
     let digest = hasher.finalize();
     output
         .rewind()
+        .await
         .map_err(|source| DownloadErrorReport::Rewind { source })?;
+    let output = output.into_std().await;
     Ok((output, digest))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
+    use futures_util::stream;
     use indicatif::ProgressBar;
     use sha2::{Digest as _, Sha256};
 
     use super::*;
 
-    #[test]
-    fn stream_archive_to_tempfile_rejects_download_size_exceeding_limit() {
-        let mut reader = Cursor::new(b"font".to_vec());
+    #[tokio::test]
+    async fn stream_archive_to_tempfile_rejects_download_size_exceeding_limit() {
+        let chunks = stream::once(async { Ok(Bytes::copy_from_slice(b"font")) });
         let config = InstallConfig {
             max_archive_size_bytes: 3,
             max_extracted_files: 1000,
@@ -203,7 +205,9 @@ mod tests {
         let pb = ProgressBar::hidden();
 
         let hasher = Sha256::new().into();
-        let err = stream_archive_to_tempfile(&mut reader, hasher, &config, &pb).unwrap_err();
+        let err = stream_archive_to_tempfile(chunks, hasher, &config, &pb)
+            .await
+            .unwrap_err();
 
         assert!(matches!(
             err,

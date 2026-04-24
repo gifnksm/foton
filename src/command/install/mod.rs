@@ -1,3 +1,5 @@
+use tokio_util::sync::CancellationToken;
+
 use crate::{
     package::{Package, PackageDirs, PackageId, PackageManifest},
     util::{
@@ -21,8 +23,8 @@ impl Step for InstallStep<'_> {
         reporter.report_step(format_args!("Installing {}...", self.pkg_id));
     }
 
-    fn make_error(&self) -> Self::Error {
-        InstallError {}
+    fn make_failed(&self) -> Self::Error {
+        InstallError::Failed
     }
 }
 
@@ -61,8 +63,12 @@ impl From<InstallErrorReport> for ReportValue<'static> {
 }
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
-#[display("failed to install package")]
-pub(crate) struct InstallError {}
+pub(crate) enum InstallError {
+    #[display("failed to install package")]
+    Failed,
+    #[display("install cancelled")]
+    Cancelled,
+}
 
 #[derive(Debug)]
 #[expect(clippy::struct_field_names)]
@@ -75,7 +81,8 @@ pub(crate) struct InstallConfig {
 mod helpers;
 mod steps;
 
-pub(crate) fn install_package(
+pub(crate) async fn install_package(
+    cancel_token: &CancellationToken,
     reporter: &Reporter,
     app_id: &str,
     manifest: &PackageManifest,
@@ -86,7 +93,7 @@ pub(crate) fn install_package(
     let reporter = reporter.with_step(InstallStep { pkg_id: &pkg_id });
 
     let pkg_dirs = helpers::create_new_package_dirs(&reporter, app_dirs, &pkg_id)?;
-    let package = stage_package(&reporter, &pkg_dirs, manifest, config)?;
+    let package = stage_package(cancel_token, &reporter, &pkg_dirs, manifest, config).await?;
 
     let registration = steps::register_package_fonts(&reporter, app_id, &package)?;
 
@@ -96,7 +103,8 @@ pub(crate) fn install_package(
     Ok(package)
 }
 
-fn stage_package(
+async fn stage_package(
+    cancel_token: &CancellationToken,
     reporter: &StepReporter<'_, InstallStep<'_>>,
     pkg_dirs: &PackageDirs,
     manifest: &PackageManifest,
@@ -108,7 +116,10 @@ fn stage_package(
     let mut file_paths = vec![];
 
     for source in &manifest.sources {
-        let file = steps::download_archive(reporter, &pkg_id, source, config)?;
+        let file = cancel_token
+            .run_until_cancelled(steps::download_archive(reporter, &pkg_id, source, config))
+            .await
+            .unwrap_or(Err(InstallError::Cancelled))?;
 
         file_paths.extend(steps::extract_archive(
             reporter,
@@ -120,6 +131,9 @@ fn stage_package(
     }
 
     let valid_entries = steps::validate_and_prune_fonts(reporter, package_fonts_dir, &file_paths)?;
+    if cancel_token.is_cancelled() {
+        return Err(InstallError::Cancelled);
+    }
 
     if valid_entries.is_empty() {
         let pkg_id = pkg_id.clone();

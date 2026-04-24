@@ -21,8 +21,8 @@ impl Step for UninstallStep<'_> {
         reporter.report_step(format_args!("Uninstalling {}...", self.pkg_id));
     }
 
-    fn make_error(&self) -> Self::Error {
-        UninstallError {}
+    fn make_failed(&self) -> Self::Error {
+        UninstallError::Failed
     }
 }
 
@@ -45,8 +45,10 @@ impl From<UninstallErrorReport> for ReportValue<'static> {
 }
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
-#[display("failed to uninstall package")]
-pub(crate) struct UninstallError {}
+pub(crate) enum UninstallError {
+    #[display("failed to uninstall package")]
+    Failed,
+}
 
 pub(crate) fn uninstall_package(
     reporter: &Reporter,

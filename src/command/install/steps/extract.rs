@@ -39,8 +39,8 @@ where
         ));
     }
 
-    fn make_error(&self) -> Self::Error {
-        self.step.make_error()
+    fn make_failed(&self) -> Self::Error {
+        self.step.make_failed()
     }
 }
 
