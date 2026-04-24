@@ -1,14 +1,33 @@
-use reqwest::Url;
-
 use crate::{
-    command::install::steps::{DownloadError, ExtractError, ValidationError},
     package::{Package, PackageDirs, PackageId, PackageManifest},
-    platform::windows::services::registration::RegistrationError,
-    util::{app_dirs::AppDirs, fs::FsError, reporter::Reporter},
+    util::{
+        app_dirs::AppDirs,
+        fs::FsError,
+        reporter::{ReportValue, Reporter, Step, StepReporter},
+    },
 };
 
+#[derive(Debug)]
+struct InstallStep<'a> {
+    pkg_id: &'a PackageId,
+}
+
+impl Step for InstallStep<'_> {
+    type WarnReportValue = InstallWarnReport;
+    type ErrorReportValue = InstallErrorReport;
+    type Error = InstallError;
+
+    fn report_prelude(&self, reporter: &Reporter) {
+        reporter.report_step(format_args!("Installing {}...", self.pkg_id));
+    }
+
+    fn make_error(&self) -> Self::Error {
+        InstallError {}
+    }
+}
+
 #[derive(Debug, derive_more::Display, derive_more::Error)]
-pub(crate) enum InstallWarning {
+enum InstallWarnReport {
     #[display("failed to remove package directory after install failure: {}; manual cleanup may be required", pkg_dirs.version_dir().display())]
     RemovePackageDirectoryAfterInstallFailure {
         pkg_dirs: PackageDirs,
@@ -17,42 +36,33 @@ pub(crate) enum InstallWarning {
     },
 }
 
+impl From<InstallWarnReport> for ReportValue<'static> {
+    fn from(report: InstallWarnReport) -> Self {
+        ReportValue::BoxedError(report.into())
+    }
+}
+
 #[derive(Debug, derive_more::Display, derive_more::Error)]
-pub(crate) enum InstallError {
+enum InstallErrorReport {
     #[display("failed to create package directories for package {pkg_id}")]
     CreatePackageDirs {
         pkg_id: PackageId,
         #[error(source)]
         source: FsError,
     },
-    #[display("failed to download package archive for package {pkg_id}: {url}")]
-    Download {
-        pkg_id: PackageId,
-        url: Url,
-        #[error(source)]
-        source: Box<DownloadError>,
-    },
-    #[display("failed to extract package archive for package {pkg_id}")]
-    Extract {
-        pkg_id: PackageId,
-        #[error(source)]
-        source: Box<ExtractError>,
-    },
-    #[display("failed to validate fonts for package {pkg_id}")]
-    Validation {
-        pkg_id: PackageId,
-        #[error(source)]
-        source: Box<ValidationError>,
-    },
     #[display("no valid font files found in package {pkg_id}")]
     NoValidFonts { pkg_id: PackageId },
-    #[display("failed to register fonts for package {pkg_id}")]
-    Registration {
-        pkg_id: PackageId,
-        #[error(source)]
-        source: RegistrationError,
-    },
 }
+
+impl From<InstallErrorReport> for ReportValue<'static> {
+    fn from(report: InstallErrorReport) -> Self {
+        ReportValue::BoxedError(report.into())
+    }
+}
+
+#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[display("failed to install package")]
+pub(crate) struct InstallError {}
 
 #[derive(Debug)]
 #[expect(clippy::struct_field_names)]
@@ -71,15 +81,14 @@ pub(crate) fn install_package(
     manifest: &PackageManifest,
     app_dirs: &AppDirs,
     config: &InstallConfig,
-) -> Result<Package, Box<InstallError>> {
+) -> Result<Package, InstallError> {
     let pkg_id = manifest.metadata.id();
-    reporter.report_step(format_args!("Installing {pkg_id}..."));
+    let reporter = reporter.with_step(InstallStep { pkg_id: &pkg_id });
 
-    let pkg_dirs = helpers::create_new_package_dirs(reporter, app_dirs, &pkg_id)?;
-    let package = stage_package(reporter, &pkg_dirs, manifest, config)?;
+    let pkg_dirs = helpers::create_new_package_dirs(&reporter, app_dirs, &pkg_id)?;
+    let package = stage_package(&reporter, &pkg_dirs, manifest, config)?;
 
-    reporter.report_step(format_args!("Registering fonts..."));
-    let registration = helpers::register_package_fonts(reporter, app_id, &package)?;
+    let registration = steps::register_package_fonts(&reporter, app_id, &package)?;
 
     pkg_dirs.disarm();
     registration.disarm();
@@ -88,52 +97,33 @@ pub(crate) fn install_package(
 }
 
 fn stage_package(
-    reporter: &Reporter,
+    reporter: &StepReporter<'_, InstallStep<'_>>,
     pkg_dirs: &PackageDirs,
     manifest: &PackageManifest,
     config: &InstallConfig,
-) -> Result<Package, Box<InstallError>> {
+) -> Result<Package, InstallError> {
     let pkg_id = manifest.metadata.id();
     let package_fonts_dir = pkg_dirs.fonts_dir();
 
     let mut file_paths = vec![];
 
     for source in &manifest.sources {
-        reporter.report_step(format_args!("Downloading {}...", source.url));
-        let file = steps::download_archive(reporter, &pkg_id, source, config).map_err(|err| {
-            let pkg_id = pkg_id.clone();
-            let url = source.url.clone();
-            InstallError::Download {
-                pkg_id,
-                url,
-                source: err,
-            }
-        })?;
+        let file = steps::download_archive(reporter, &pkg_id, source, config)?;
 
-        reporter.report_step(format_args!(
-            "Extracting archive to {}...",
-            package_fonts_dir.display()
-        ));
-        file_paths.extend(
-            steps::extract_archive(file, &source.include, package_fonts_dir, config).map_err(
-                |source| {
-                    let pkg_id = pkg_id.clone();
-                    InstallError::Extract { pkg_id, source }
-                },
-            )?,
-        );
+        file_paths.extend(steps::extract_archive(
+            reporter,
+            file,
+            &source.include,
+            package_fonts_dir,
+            config,
+        )?);
     }
 
-    reporter.report_step(format_args!("Validating fonts..."));
-    let valid_entries = steps::validate_and_prune_fonts(reporter, package_fonts_dir, &file_paths)
-        .map_err(|source| {
-        let pkg_id = pkg_id.clone();
-        InstallError::Validation { pkg_id, source }
-    })?;
+    let valid_entries = steps::validate_and_prune_fonts(reporter, package_fonts_dir, &file_paths)?;
 
     if valid_entries.is_empty() {
         let pkg_id = pkg_id.clone();
-        return Err(InstallError::NoValidFonts { pkg_id }.into());
+        return Err(reporter.report_error(InstallErrorReport::NoValidFonts { pkg_id }));
     }
 
     reporter.report_info(format_args!(
