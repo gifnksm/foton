@@ -10,11 +10,42 @@ use zip::{ZipArchive, result::ZipError};
 
 use crate::{
     command::install::InstallConfig,
-    util::path::{AbsolutePath, FileName},
+    util::{
+        path::{AbsolutePath, FileName},
+        reporter::{
+            NeverReport, ReportValue, Reporter, Step, StepReporter, StepResultErrorExt as _,
+        },
+    },
 };
 
+#[derive(Debug)]
+struct ExtractStep<'a, S> {
+    step: &'a S,
+    fonts_dir: &'a AbsolutePath,
+}
+
+impl<S> Step for ExtractStep<'_, S>
+where
+    S: Step,
+{
+    type WarnReportValue = NeverReport;
+    type ErrorReportValue = ExtractErrorReport;
+    type Error = S::Error;
+
+    fn report_prelude(&self, reporter: &Reporter) {
+        reporter.report_step(format_args!(
+            "Extracting archive to {}...",
+            self.fonts_dir.display()
+        ));
+    }
+
+    fn make_error(&self) -> Self::Error {
+        self.step.make_error()
+    }
+}
+
 #[derive(Debug, derive_more::Display, derive_more::Error)]
-pub(crate) enum ExtractError {
+enum ExtractErrorReport {
     #[display("failed to read archive")]
     ReadArchive {
         #[error(source)]
@@ -70,12 +101,35 @@ pub(crate) enum ExtractError {
     },
 }
 
-pub(in crate::command::install) fn extract_archive(
+impl From<ExtractErrorReport> for ReportValue<'static> {
+    fn from(report: ExtractErrorReport) -> Self {
+        Self::BoxedError(report.into())
+    }
+}
+
+pub(in crate::command::install) fn extract_archive<S>(
+    reporter: &StepReporter<'_, S>,
     file: File,
     include: &[glob::Pattern],
     fonts_dir: &AbsolutePath,
     config: &InstallConfig,
-) -> Result<Vec<FileName>, Box<ExtractError>> {
+) -> Result<Vec<FileName>, S::Error>
+where
+    S: Step,
+{
+    let reporter = reporter.with_step(ExtractStep {
+        step: reporter.step(),
+        fonts_dir,
+    });
+    extract_archive_impl(file, include, fonts_dir, config).report_error(&reporter)
+}
+
+fn extract_archive_impl(
+    file: File,
+    include: &[glob::Pattern],
+    fonts_dir: &AbsolutePath,
+    config: &InstallConfig,
+) -> Result<Vec<FileName>, ExtractErrorReport> {
     const MATCH_OPTIONS: MatchOptions = MatchOptions {
         case_sensitive: false,
         require_literal_separator: true,
@@ -84,12 +138,12 @@ pub(in crate::command::install) fn extract_archive(
 
     let mut files = vec![];
     let mut archive =
-        ZipArchive::new(file).map_err(|source| ExtractError::ReadArchive { source })?;
+        ZipArchive::new(file).map_err(|source| ExtractErrorReport::ReadArchive { source })?;
 
     for i in 0..archive.len() {
         let mut archive_file = archive.by_index(i).map_err(|source| {
             let index = i;
-            ExtractError::ExtractFile { index, source }
+            ExtractErrorReport::ExtractFile { index, source }
         })?;
 
         if !archive_file.is_file() {
@@ -105,27 +159,26 @@ pub(in crate::command::install) fn extract_archive(
             continue;
         }
         if archive_file.size() > config.max_extracted_file_size_bytes {
-            return Err(ExtractError::ExtractedFileExceedsMaxSize {
+            return Err(ExtractErrorReport::ExtractedFileExceedsMaxSize {
                 file_path: archive_path.clone(),
                 file_size: archive_file.size(),
                 max_size: config.max_extracted_file_size_bytes,
-            }
-            .into());
+            });
         }
 
         let file_name = archive_path
             .file_name()
-            .ok_or(ExtractError::GetFileName { index: i })?
+            .ok_or(ExtractErrorReport::GetFileName { index: i })?
             .to_owned();
         let file_name = FileName::new(&file_name).ok_or_else(|| {
             let index = i;
-            ExtractError::InvalidFileName { file_name, index }
+            ExtractErrorReport::InvalidFileName { file_name, index }
         })?;
         let fs_path = fonts_dir.join(&file_name);
 
         if files.len() >= config.max_extracted_files {
             let max_files = config.max_extracted_files;
-            return Err(ExtractError::TooManyExtractableFiles { max_files }.into());
+            return Err(ExtractErrorReport::TooManyExtractableFiles { max_files });
         }
 
         let mut file = File::options()
@@ -135,18 +188,18 @@ pub(in crate::command::install) fn extract_archive(
             .map_err(|source| {
                 let path = fs_path.clone();
                 if source.kind() == io::ErrorKind::AlreadyExists {
-                    ExtractError::ExtractedFileAlreadyExists { path, source }
+                    ExtractErrorReport::ExtractedFileAlreadyExists { path, source }
                 } else {
-                    ExtractError::CreateExtractedFile { path, source }
+                    ExtractErrorReport::CreateExtractedFile { path, source }
                 }
             })?;
         io::copy(&mut archive_file, &mut file).map_err(|source| {
             let path = fs_path.clone();
-            ExtractError::CopyExtractedFile { path, source }
+            ExtractErrorReport::CopyExtractedFile { path, source }
         })?;
         file.flush().map_err(|source| {
             let path = fs_path.clone();
-            ExtractError::FlushExtractedFile { path, source }
+            ExtractErrorReport::FlushExtractedFile { path, source }
         })?;
 
         files.push(file_name);
@@ -199,10 +252,10 @@ mod tests {
         archive: File,
         include: &[glob::Pattern],
         config: &InstallConfig,
-    ) -> Result<(TempDir, Vec<FileName>), Box<ExtractError>> {
+    ) -> Result<(TempDir, Vec<FileName>), Box<ExtractErrorReport>> {
         let tempdir = tempfile::tempdir().unwrap();
         let fonts_dir = AbsolutePath::new(tempdir.path()).unwrap();
-        let files = extract_archive(archive, include, &fonts_dir, config)?;
+        let files = extract_archive_impl(archive, include, &fonts_dir, config)?;
         Ok((tempdir, files))
     }
 
@@ -255,7 +308,7 @@ mod tests {
         let err = extract_to_tempdir(archive, &default_include(), &default_config()).unwrap_err();
         assert!(matches!(
             *err,
-            ExtractError::ExtractedFileAlreadyExists { .. }
+            ExtractErrorReport::ExtractedFileAlreadyExists { .. }
         ));
     }
 
@@ -285,7 +338,10 @@ mod tests {
         };
 
         let err = extract_to_tempdir(archive, &default_include(), &config).unwrap_err();
-        assert!(matches!(*err, ExtractError::TooManyExtractableFiles { .. }));
+        assert!(matches!(
+            *err,
+            ExtractErrorReport::TooManyExtractableFiles { .. }
+        ));
     }
 
     #[test]
@@ -300,7 +356,7 @@ mod tests {
         let err = extract_to_tempdir(archive, &default_include(), &config).unwrap_err();
         assert!(matches!(
             *err,
-            ExtractError::ExtractedFileExceedsMaxSize { .. }
+            ExtractErrorReport::ExtractedFileExceedsMaxSize { .. }
         ));
     }
 }

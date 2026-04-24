@@ -10,12 +10,37 @@ use crate::{
     package::{PackageId, PackageSource},
     util::{
         hash::{GenericDigest, GenericHasher},
-        reporter::Reporter,
+        reporter::{
+            NeverReport, ReportValue, Reporter, Step, StepReporter, StepResultErrorExt as _,
+        },
     },
 };
 
+#[derive(Debug)]
+struct DownloadStep<'a, S> {
+    step: &'a S,
+    url: &'a Url,
+}
+
+impl<S> Step for DownloadStep<'_, S>
+where
+    S: Step,
+{
+    type WarnReportValue = NeverReport;
+    type ErrorReportValue = DownloadErrorReport;
+    type Error = S::Error;
+
+    fn report_prelude(&self, reporter: &Reporter) {
+        reporter.report_step(format_args!("Downloading {}...", self.url));
+    }
+
+    fn make_error(&self) -> Self::Error {
+        self.step.make_error()
+    }
+}
+
 #[derive(Debug, derive_more::Display, derive_more::Error)]
-pub(crate) enum DownloadError {
+enum DownloadErrorReport {
     #[display("failed to download font archive from {url}")]
     Get {
         url: Url,
@@ -33,8 +58,8 @@ pub(crate) enum DownloadError {
     #[display("downloaded archive hash mismatch for {pkg_id}: expected {expected}, got {got}")]
     HashMismatch {
         pkg_id: PackageId,
-        expected: GenericDigest,
-        got: GenericDigest,
+        expected: Box<GenericDigest>,
+        got: Box<GenericDigest>,
     },
     #[display("failed to create temporary file for downloaded archive")]
     CreateTempFile {
@@ -58,44 +83,61 @@ pub(crate) enum DownloadError {
     },
 }
 
-pub(in crate::command::install) fn download_archive(
-    reporter: &Reporter,
+impl From<DownloadErrorReport> for ReportValue<'static> {
+    fn from(report: DownloadErrorReport) -> Self {
+        Self::BoxedError(report.into())
+    }
+}
+
+pub(in crate::command::install) fn download_archive<S>(
+    reporter: &StepReporter<'_, S>,
     pkg_id: &PackageId,
     source: &PackageSource,
     config: &InstallConfig,
-) -> Result<File, Box<DownloadError>> {
+) -> Result<File, S::Error>
+where
+    S: Step,
+{
+    let reporter = reporter.with_step(DownloadStep {
+        step: reporter.step(),
+        url: &source.url,
+    });
     let mut response = reqwest::blocking::get(source.url.clone())
         .and_then(Response::error_for_status)
         .map_err(|err| {
             let url = source.url.clone();
-            DownloadError::Get { url, source: err }
-        })?;
+            DownloadErrorReport::Get { url, source: err }
+        })
+        .report_error(&reporter)?;
 
     let len = response.content_length();
     if let Some(len) = len
         && len > config.max_archive_size_bytes
     {
         let reported_size = len;
-        return Err(DownloadError::ReportedSizeExceedsMax {
-            reported_size,
-            max_size: config.max_archive_size_bytes,
-        }
-        .into());
+        return Err(
+            reporter.report_error(DownloadErrorReport::ReportedSizeExceedsMax {
+                reported_size,
+                max_size: config.max_archive_size_bytes,
+            }),
+        );
     }
     let hasher = source.hash.hasher();
-    let (output, digest) = reporter.with_download_progress_bar(len, |pb| {
-        stream_archive_to_tempfile(&mut response, hasher, config, pb)
-    })?;
+    let (output, digest) = reporter
+        .with_download_progress_bar(len, |pb| {
+            stream_archive_to_tempfile(&mut response, hasher, config, pb)
+        })
+        .report_error(&reporter)?;
     if digest != source.hash {
         let pkg_id = pkg_id.clone();
-        let expected = source.hash.clone();
-        let got = digest;
-        return Err(DownloadError::HashMismatch {
+        let expected = Box::new(source.hash.clone());
+        let got = Box::new(digest);
+        let err = reporter.report_error(DownloadErrorReport::HashMismatch {
             pkg_id,
             expected,
             got,
-        }
-        .into());
+        });
+        return Err(err);
     }
     Ok(output)
 }
@@ -105,25 +147,24 @@ fn stream_archive_to_tempfile<R>(
     mut hasher: GenericHasher,
     config: &InstallConfig,
     pb: &indicatif::ProgressBar,
-) -> Result<(File, GenericDigest), Box<DownloadError>>
+) -> Result<(File, GenericDigest), DownloadErrorReport>
 where
     R: Read,
 {
     let mut output =
-        tempfile::tempfile().map_err(|source| DownloadError::CreateTempFile { source })?;
+        tempfile::tempfile().map_err(|source| DownloadErrorReport::CreateTempFile { source })?;
     let mut buffer = [0; 8096];
     let mut total_size = 0;
     loop {
         let n = reader
             .read(&mut buffer)
-            .map_err(|source| DownloadError::ReadResponseBody { source })?;
+            .map_err(|source| DownloadErrorReport::ReadResponseBody { source })?;
         total_size += n as u64;
         if total_size > config.max_archive_size_bytes {
-            return Err(DownloadError::DownloadedSizeExceedsMax {
+            return Err(DownloadErrorReport::DownloadedSizeExceedsMax {
                 downloaded_size: total_size,
                 max_size: config.max_archive_size_bytes,
-            }
-            .into());
+            });
         }
         if n == 0 {
             break;
@@ -132,13 +173,13 @@ where
         hasher.update(chunk);
         output
             .write_all(chunk)
-            .map_err(|source| DownloadError::WriteTempFile { source })?;
+            .map_err(|source| DownloadErrorReport::WriteTempFile { source })?;
         pb.inc(chunk.len() as u64);
     }
     let digest = hasher.finalize();
     output
         .rewind()
-        .map_err(|source| DownloadError::Rewind { source })?;
+        .map_err(|source| DownloadErrorReport::Rewind { source })?;
     Ok((output, digest))
 }
 
@@ -165,8 +206,8 @@ mod tests {
         let err = stream_archive_to_tempfile(&mut reader, hasher, &config, &pb).unwrap_err();
 
         assert!(matches!(
-            *err,
-            DownloadError::DownloadedSizeExceedsMax { .. }
+            err,
+            DownloadErrorReport::DownloadedSizeExceedsMax { .. }
         ));
     }
 }

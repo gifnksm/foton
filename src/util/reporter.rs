@@ -10,7 +10,6 @@ use crate::{
     util::error::FormatErrorChain as _,
 };
 
-type DynError<'r> = &'r dyn std::error::Error;
 type SharedCallback = Arc<dyn for<'r> Fn(Report<'r>) + Send + Sync + 'static>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -21,17 +20,17 @@ pub(crate) enum ReportSeverity {
     Warn,
 }
 
-#[derive(Debug, Clone, Copy, derive_more::From)]
+#[derive(Debug, derive_more::From)]
 pub(crate) enum ReportValue<'a> {
     FmtArgs(#[from] fmt::Arguments<'a>),
-    DynError(#[from] DynError<'a>),
+    BoxedError(#[from] Box<dyn std::error::Error + Send + Sync + 'a>),
 }
 
 impl Display for ReportValue<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ReportValue::FmtArgs(args) => write!(f, "{args}"),
-            ReportValue::DynError(err) => write!(f, "{}", err.format_error_chain()),
+            ReportValue::BoxedError(err) => write!(f, "{}", err.format_error_chain()),
         }
     }
 }
@@ -83,8 +82,8 @@ impl<'a> Report<'a> {
         self.severity
     }
 
-    pub(crate) fn value(&self) -> ReportValue<'_> {
-        self.value
+    pub(crate) fn value(&self) -> &ReportValue<'_> {
+        &self.value
     }
 }
 
@@ -127,6 +126,17 @@ impl Reporter {
         })
     }
 
+    pub(crate) fn with_step<S>(&self, step: S) -> StepReporter<'_, S>
+    where
+        S: Step,
+    {
+        step.report_prelude(self);
+        StepReporter {
+            reporter: self,
+            step,
+        }
+    }
+
     pub(crate) fn report(&self, report: Report<'_>) {
         let mpb = self.multi_progress_bar.lock().unwrap().clone();
         mpb.suspend(|| (self.callback)(report));
@@ -159,6 +169,66 @@ impl Reporter {
     {
         self.report(Report::warn(value));
     }
+}
+
+#[derive(Debug)]
+pub(crate) enum NeverReport {}
+
+impl From<NeverReport> for ReportValue<'_> {
+    fn from(report: NeverReport) -> Self {
+        match report {}
+    }
+}
+
+pub(crate) trait Step {
+    type WarnReportValue: Into<ReportValue<'static>>;
+    type ErrorReportValue: Into<ReportValue<'static>>;
+    type Error;
+
+    fn report_prelude(&self, reporter: &Reporter);
+    fn make_error(&self) -> Self::Error;
+}
+
+#[derive(Debug)]
+pub(crate) struct StepReporter<'a, S> {
+    reporter: &'a Reporter,
+    step: S,
+}
+
+impl<S> StepReporter<'_, S>
+where
+    S: Step,
+{
+    pub(crate) fn step(&self) -> &S {
+        &self.step
+    }
+
+    pub(crate) fn with_step<T>(&self, step: T) -> StepReporter<'_, T>
+    where
+        T: Step,
+    {
+        step.report_prelude(self.reporter);
+        StepReporter {
+            reporter: self.reporter,
+            step,
+        }
+    }
+
+    pub(crate) fn report_info<'a, V>(&self, report: V)
+    where
+        V: Into<ReportValue<'a>>,
+    {
+        self.reporter.report_info(report);
+    }
+
+    pub(crate) fn report_warn(&self, report: S::WarnReportValue) {
+        self.reporter.report_warn(report);
+    }
+
+    pub(crate) fn report_error(&self, report: S::ErrorReportValue) -> S::Error {
+        self.reporter.report_error(report);
+        self.step.make_error()
+    }
 
     pub(crate) fn download_progress_bar(&self, len: Option<u64>) -> ProgressBar {
         static KNOWN_LEN_STYLE: LazyLock<ProgressStyle> = LazyLock::new(|| {
@@ -181,7 +251,7 @@ impl Reporter {
             None => UNKNOWN_LEN_STYLE.clone(),
         };
         let pb = ProgressBar::with_draw_target(len, ProgressDrawTarget::stderr()).with_style(style);
-        self.multi_progress_bar.lock().unwrap().add(pb)
+        self.reporter.multi_progress_bar.lock().unwrap().add(pb)
     }
 
     pub(crate) fn with_download_progress_bar<T, E, F>(&self, len: Option<u64>, f: F) -> Result<T, E>
@@ -198,26 +268,42 @@ impl Reporter {
     }
 }
 
-pub(crate) trait ReportErrorExt {
-    fn report_err_as_error(self, reporter: &Reporter) -> Self;
-    fn report_err_as_warn(self, reporter: &Reporter) -> Self;
+pub(crate) trait StepResultWarnExt<S>
+where
+    S: Step,
+{
+    type Item;
+
+    fn report_warn(self, reporter: &StepReporter<'_, S>) -> Option<Self::Item>;
 }
 
-impl<T, E> ReportErrorExt for Result<T, E>
+impl<S, T, E> StepResultWarnExt<S> for Result<T, E>
 where
-    E: std::error::Error,
+    S: Step<WarnReportValue = E>,
 {
-    fn report_err_as_error(self, reporter: &Reporter) -> Self {
-        if let Err(err) = &self {
-            reporter.report_error(err as DynError<'_>);
-        }
-        self
-    }
+    type Item = T;
 
-    fn report_err_as_warn(self, reporter: &Reporter) -> Self {
-        if let Err(err) = &self {
-            reporter.report_warn(err as DynError<'_>);
-        }
-        self
+    fn report_warn(self, reporter: &StepReporter<'_, S>) -> Option<Self::Item> {
+        self.map_err(|err| reporter.report_warn(err)).ok()
+    }
+}
+
+pub(crate) trait StepResultErrorExt<S>
+where
+    S: Step,
+{
+    type Item;
+
+    fn report_error(self, reporter: &StepReporter<'_, S>) -> Result<Self::Item, S::Error>;
+}
+
+impl<S, T, E> StepResultErrorExt<S> for Result<T, E>
+where
+    S: Step<ErrorReportValue = E>,
+{
+    type Item = T;
+
+    fn report_error(self, reporter: &StepReporter<'_, S>) -> Result<Self::Item, S::Error> {
+        self.map_err(|err| reporter.report_error(err))
     }
 }
