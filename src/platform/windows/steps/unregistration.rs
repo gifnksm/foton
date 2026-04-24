@@ -26,8 +26,8 @@ where
         reporter.report_step(format_args!("Unregistering fonts..."));
     }
 
-    fn make_error(&self) -> Self::Error {
-        self.step.make_error()
+    fn make_failed(&self) -> Self::Error {
+        self.step.make_failed()
     }
 }
 
