@@ -41,6 +41,11 @@ impl AppDirs {
         Ok(Self { data_dir })
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_for_test(data_dir: AbsolutePath) -> Self {
+        Self { data_dir }
+    }
+
     pub(crate) fn data_dir(&self) -> &AbsolutePath {
         &self.data_dir
     }
