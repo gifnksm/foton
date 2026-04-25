@@ -1,11 +1,12 @@
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    db::lock::{DbLockFile, DbLockFileError},
     package::{Package, PackageDirs, PackageId, PackageManifest},
     util::{
         app_dirs::AppDirs,
         fs::FsError,
-        reporter::{ReportValue, Reporter, Step, StepReporter},
+        reporter::{ReportValue, Reporter, Step, StepReporter, StepResultErrorExt as _},
     },
 };
 
@@ -46,6 +47,21 @@ impl From<InstallWarnReport> for ReportValue<'static> {
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
 enum InstallErrorReport {
+    #[display("failed to open database lock file")]
+    OpenDbLockFile {
+        #[error(source)]
+        source: DbLockFileError,
+    },
+    #[display("another install or uninstall operation is already in progress")]
+    DbAlreadyLocked {
+        #[error(source)]
+        source: DbLockFileError,
+    },
+    #[display("failed to acquire database lock")]
+    AcquireDbLock {
+        #[error(source)]
+        source: DbLockFileError,
+    },
     #[display("failed to create package directories for package {pkg_id}")]
     CreatePackageDirs {
         pkg_id: PackageId,
@@ -91,6 +107,17 @@ pub(crate) async fn install_package(
 ) -> Result<Package, InstallError> {
     let pkg_id = manifest.metadata.id();
     let reporter = reporter.with_step(InstallStep { pkg_id: &pkg_id });
+
+    let mut db_lock = DbLockFile::open(app_dirs)
+        .map_err(|source| InstallErrorReport::OpenDbLockFile { source })
+        .report_error(&reporter)?;
+    let _db_lock_guard = db_lock
+        .try_acquire()
+        .map_err(|source| match source {
+            DbLockFileError::AlreadyLocked { .. } => InstallErrorReport::DbAlreadyLocked { source },
+            _ => InstallErrorReport::AcquireDbLock { source },
+        })
+        .report_error(&reporter)?;
 
     let pkg_dirs = helpers::create_new_package_dirs(&reporter, app_dirs, &pkg_id)?;
     let package = stage_package(cancel_token, &reporter, &pkg_dirs, manifest, config).await?;

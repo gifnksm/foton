@@ -17,6 +17,7 @@ use crate::{
 
 mod cli;
 mod command;
+mod db;
 mod package;
 mod platform;
 mod util;
@@ -134,7 +135,7 @@ async fn run_smoke_test(
         command::install_package(cancel_token, reporter, app_id, &manifest, app_dirs, &config)
             .await?;
 
-    command::uninstall_package(reporter, app_id, &package)?;
+    command::uninstall_package(reporter, app_id, app_dirs, &package)?;
 
     Ok(())
 }
