@@ -1,7 +1,9 @@
 use crate::{
+    db::lock::{DbLockFile, DbLockFileError},
     package::{self, Package, PackageId},
     platform::windows::steps::unregistration,
     util::{
+        app_dirs::AppDirs,
         fs::FsError,
         reporter::{NeverReport, ReportValue, Reporter, Step, StepResultErrorExt as _},
     },
@@ -28,6 +30,21 @@ impl Step for UninstallStep<'_> {
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
 pub(crate) enum UninstallErrorReport {
+    #[display("failed to open database lock file")]
+    OpenDbLockFile {
+        #[error(source)]
+        source: DbLockFileError,
+    },
+    #[display("another install or uninstall operation is already in progress")]
+    DbAlreadyLocked {
+        #[error(source)]
+        source: DbLockFileError,
+    },
+    #[display("failed to acquire database lock")]
+    AcquireDbLock {
+        #[error(source)]
+        source: DbLockFileError,
+    },
     #[display(
         "failed to remove package files for package {pkg_id}; manual cleanup may be required"
     )]
@@ -53,11 +70,25 @@ pub(crate) enum UninstallError {
 pub(crate) fn uninstall_package(
     reporter: &Reporter,
     app_id: &str,
+    app_dirs: &AppDirs,
     package: &Package,
 ) -> Result<(), UninstallError> {
     let reporter = reporter.with_step(UninstallStep {
         pkg_id: package.id(),
     });
+
+    let mut db_lock = DbLockFile::open(app_dirs)
+        .map_err(|source| UninstallErrorReport::OpenDbLockFile { source })
+        .report_error(&reporter)?;
+    let _db_lock_guard = db_lock
+        .try_acquire()
+        .map_err(|source| match source {
+            DbLockFileError::AlreadyLocked { .. } => {
+                UninstallErrorReport::DbAlreadyLocked { source }
+            }
+            _ => UninstallErrorReport::AcquireDbLock { source },
+        })
+        .report_error(&reporter)?;
 
     unregistration::unregister_package_fonts(&reporter, app_id, package.id())?;
 
