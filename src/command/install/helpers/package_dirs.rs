@@ -17,7 +17,7 @@ pub(in crate::command::install) fn create_new_package_dirs<'a, 'b, 'c>(
     app_dirs: &AppDirs,
     pkg_id: &PackageId,
 ) -> Result<PackageDirsGuard<'a, 'b, 'c>, InstallError> {
-    let pkg_dirs = PackageDirs::new(app_dirs.data_dir(), pkg_id);
+    let pkg_dirs = PackageDirs::new(app_dirs.data_local_dir(), pkg_id);
     package::create_new_package_dirs(&pkg_dirs)
         .map_err(|source| {
             let pkg_id = pkg_id.clone();

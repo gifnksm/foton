@@ -6,7 +6,7 @@ use crate::util::path::AbsolutePath;
 
 #[derive(Debug)]
 pub(crate) struct AppDirs {
-    data_dir: AbsolutePath,
+    data_local_dir: AbsolutePath,
 }
 
 const APP_QUALIFIER: &str = "";
@@ -23,30 +23,30 @@ pub(crate) enum AppDirsError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::IsVariant, derive_more::Display)]
 pub(crate) enum DirKind {
-    #[display("data")]
-    Data,
+    #[display("data-local")]
+    DataLocal,
 }
 
 impl AppDirs {
     pub(crate) fn from_directories() -> Result<Self, AppDirsError> {
         let dirs = ProjectDirs::from(APP_QUALIFIER, APP_ORGANIZATION, APP_APPLICATION)
             .ok_or(AppDirsError::GetProjectDirectories)?;
-        let data_dir = dirs.data_dir();
-        let Some(data_dir) = AbsolutePath::new(dirs.data_dir()) else {
+        let data_local_dir = dirs.data_local_dir();
+        let Some(data_local_dir) = AbsolutePath::new(data_local_dir) else {
             return Err(AppDirsError::NotAbsolute {
-                kind: DirKind::Data,
-                path: data_dir.to_owned(),
+                kind: DirKind::DataLocal,
+                path: data_local_dir.to_owned(),
             });
         };
-        Ok(Self { data_dir })
+        Ok(Self { data_local_dir })
     }
 
     #[cfg(test)]
-    pub(crate) fn new_for_test(data_dir: AbsolutePath) -> Self {
-        Self { data_dir }
+    pub(crate) fn new_for_test(data_local_dir: AbsolutePath) -> Self {
+        Self { data_local_dir }
     }
 
-    pub(crate) fn data_dir(&self) -> &AbsolutePath {
-        &self.data_dir
+    pub(crate) fn data_local_dir(&self) -> &AbsolutePath {
+        &self.data_local_dir
     }
 }

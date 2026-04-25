@@ -6,7 +6,7 @@ use std::{env, io, process};
 use clap::{CommandFactory as _, Parser as _};
 use clap_complete::{Generator, Shell};
 use color_eyre::eyre::{self, WrapErr as _, bail, eyre};
-use tokio::signal;
+use tokio::{runtime::Runtime, signal};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -45,42 +45,12 @@ fn main() -> eyre::Result<()> {
         process::exit(0);
     }
 
-    let Args { smoke_test } = Args::parse();
+    let args = Args::parse();
     let app_dirs = AppDirs::from_directories()?;
     let reporter = Reporter::message_reporter();
+    let _com_guard = windows::com::init().wrap_err("COM initialization failed")?;
 
-    let _guard = windows::com::init().wrap_err("COM initialization failed")?;
-
-    tokio::runtime::Builder::new_multi_thread()
-        .on_thread_start(|| {
-            if let Err(err) = windows::com::init().map(ComGuard::disarm) {
-                let err = eyre!(err).wrap_err("COM initialization failed");
-                panic!("{}", err.format_error_chain());
-            }
-        })
-        .on_thread_stop(windows::com::uninit)
-        .enable_all()
-        .build()?
-        .block_on(async {
-            let mut ctrl_c =
-                signal::windows::ctrl_c().wrap_err("failed to listen for ctrl-c event")?;
-            let cancel_token = CancellationToken::new();
-
-            tokio::spawn({
-                let cancel_token = cancel_token.clone();
-                let reporter = reporter.clone();
-                async move {
-                    ctrl_c.recv().await;
-                    reporter.report_warn(format_args!("cancellation requested, shutting down..."));
-                    cancel_token.cancel();
-                }
-            });
-
-            if smoke_test {
-                run_smoke_test(&cancel_token, &reporter, APP_ID, &app_dirs).await?;
-            }
-            Ok(())
-        })
+    build_tokio_runtime()?.block_on(run(args, app_dirs, reporter))
 }
 
 fn print_completion(bin_name: &str, shell: &str) -> eyre::Result<()> {
@@ -107,6 +77,42 @@ fn print_completion(bin_name: &str, shell: &str) -> eyre::Result<()> {
 
 fn generate_man(output_dir: &str) -> eyre::Result<()> {
     clap_mangen::generate_to(Args::command(), output_dir).wrap_err("failed to generate man")
+}
+
+fn build_tokio_runtime() -> eyre::Result<Runtime> {
+    tokio::runtime::Builder::new_multi_thread()
+        .on_thread_start(|| {
+            if let Err(err) = windows::com::init().map(ComGuard::disarm) {
+                let err = eyre!(err).wrap_err("COM initialization failed");
+                panic!("{}", err.format_error_chain());
+            }
+        })
+        .on_thread_stop(windows::com::uninit)
+        .enable_all()
+        .build()
+        .wrap_err("failed to create Tokio runtime")
+}
+
+async fn run(args: Args, app_dirs: AppDirs, reporter: Reporter) -> eyre::Result<()> {
+    let mut ctrl_c = signal::windows::ctrl_c().wrap_err("failed to listen for ctrl-c event")?;
+    let cancel_token = CancellationToken::new();
+
+    tokio::spawn({
+        let cancel_token = cancel_token.clone();
+        let reporter = reporter.clone();
+        async move {
+            ctrl_c.recv().await;
+            reporter.report_warn(format_args!("cancellation requested, shutting down..."));
+            cancel_token.cancel();
+        }
+    });
+
+    let Args { smoke_test } = args;
+    if smoke_test {
+        run_smoke_test(&cancel_token, &reporter, APP_ID, &app_dirs).await?;
+    }
+
+    Ok(())
 }
 
 async fn run_smoke_test(
