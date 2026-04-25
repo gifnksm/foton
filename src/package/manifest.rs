@@ -29,6 +29,8 @@ pub(crate) struct PackageMetadata {
     pub(crate) homepage: Option<Url>,
     #[serde(default, deserialize_with = "optional_http_url::deserialize")]
     pub(crate) repository: Option<Url>,
+    #[serde(default, with = "optional_spdx_expression")]
+    pub(crate) license: Option<spdx::Expression>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,6 +122,31 @@ mod optional_http_url {
     }
 }
 
+mod optional_spdx_expression {
+    use std::string::ToString;
+
+    use serde::{Deserialize as _, Serialize as _};
+    use spdx::Expression;
+
+    #[expect(clippy::ref_option)]
+    pub(super) fn serialize<S>(expr: &Option<Expression>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        expr.as_ref().map(ToString::to_string).serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Option<Expression>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let expr: Option<String> = Option::deserialize(deserializer)?;
+        expr.map(|s| s.parse::<Expression>())
+            .transpose()
+            .map_err(|e| serde::de::Error::custom(format!("invalid SPDX expression: {e}")))
+    }
+}
+
 mod http_url {
     use serde::Deserialize as _;
     use url::Url;
@@ -186,6 +213,7 @@ version = "2.10.0"
 description = "HackGen"
 homepage = "https://github.com/yuru7/HackGen"
 repository = "https://github.com/yuru7/HackGen"
+license = "OFL-1.1"
 
 [[sources]]
 url = "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip"
@@ -210,6 +238,10 @@ include = ["*/*.ttf"]
             manifest.metadata.repository.as_ref().map(Url::as_str),
             Some("https://github.com/yuru7/HackGen")
         );
+        assert_eq!(
+            manifest.metadata.license.as_ref().map(ToString::to_string),
+            Some("OFL-1.1".to_string())
+        );
         assert_eq!(manifest.sources.len(), 1);
         assert_eq!(
             manifest.sources[0].url.as_str(),
@@ -227,6 +259,26 @@ include = ["*/*.ttf"]
                 .collect::<Vec<_>>(),
             vec!["*/*.ttf"]
         );
+    }
+
+    #[test]
+    fn package_manifest_rejects_invalid_license_expression() {
+        let err = parse_manifest(
+            r#"
+[package]
+namespace = "yuru7"
+name = "hackgen"
+version = "2.10.0"
+license = "not-a-valid-spdx"
+
+[[sources]]
+url = "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip"
+hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
+"#,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("invalid SPDX expression"));
     }
 
     #[derive(Debug, Deserialize)]

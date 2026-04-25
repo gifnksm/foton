@@ -52,6 +52,7 @@ reqwest = { version = "0.13.2", features = ["stream"] }
 semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 sha2 = "0.11.0"
+spdx = "0.13.4"
 tempfile = "3.27.0"
 tokio = { version = "1.52.1", features = ["fs", "rt-multi-thread", "signal"] }
 tokio-util = "0.7.18"
