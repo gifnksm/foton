@@ -5,6 +5,7 @@ version = "2.10.0"
 description = "Hack と源柔ゴシックを合成したプログラミングフォント 白源 (はくげん／HackGen)"
 homepage = "https://github.com/yuru7/HackGen"
 repository = "https://github.com/yuru7/HackGen"
+license = "OFL-1.1"
 
 [[sources]]
 url = "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip"
