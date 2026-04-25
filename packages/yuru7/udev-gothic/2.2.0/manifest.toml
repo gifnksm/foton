@@ -1,6 +1,5 @@
 [package]
-namespace = "yuru7"
-name = "udev-gothic"
+name = "yuru7/udev-gothic"
 version = "2.2.0"
 description = "UDEV Gothic は、ユニバーサルデザインフォントのBIZ UDゴシックと、 開発者向けフォントの JetBrains Mono を合成した、プログラミング向けフォントです。"
 homepage = "https://github.com/yuru7/udev-gothic"

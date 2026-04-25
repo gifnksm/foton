@@ -15,7 +15,7 @@ pub(crate) struct PackageName(String);
 const PACKAGE_NAME_REGEX_STR: &str = r"^[a-zA-Z][-_0-9a-zA-Z]*$";
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
-pub(crate) enum PackageNameError {
+pub(crate) enum ParsePackageNameError {
     #[display(
         "invalid package name `{name}`: must start with an ASCII letter and contain only ASCII letters, digits, `-` or `_`"
     )]
@@ -23,7 +23,7 @@ pub(crate) enum PackageNameError {
 }
 
 impl PackageName {
-    pub(crate) fn new<N>(name: N) -> Result<Self, PackageNameError>
+    pub(crate) fn new<N>(name: N) -> Result<Self, ParsePackageNameError>
     where
         N: Into<String>,
     {
@@ -32,7 +32,7 @@ impl PackageName {
 
         let name = name.into();
         if !NAME_REGEX.is_match(&name) {
-            return Err(PackageNameError::InvalidFormat { name });
+            return Err(ParsePackageNameError::InvalidFormat { name });
         }
         Ok(Self(name))
     }
@@ -44,7 +44,7 @@ impl PackageName {
 }
 
 impl FromStr for PackageName {
-    type Err = PackageNameError;
+    type Err = ParsePackageNameError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::new(s)
@@ -52,7 +52,7 @@ impl FromStr for PackageName {
 }
 
 impl TryFrom<&str> for PackageName {
-    type Error = PackageNameError;
+    type Error = ParsePackageNameError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Self::new(value)
@@ -60,7 +60,7 @@ impl TryFrom<&str> for PackageName {
 }
 
 impl TryFrom<String> for PackageName {
-    type Error = PackageNameError;
+    type Error = ParsePackageNameError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Self::new(value)

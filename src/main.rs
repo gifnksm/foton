@@ -131,11 +131,9 @@ async fn run_smoke_test(
     let manifest = toml::from_str(include_str!(
         "../packages/yuru7/hackgen/2.10.0/manifest.toml"
     ))?;
-    let package =
-        command::install_package(cancel_token, reporter, app_id, &manifest, app_dirs, &config)
-            .await?;
+    command::install_package(cancel_token, reporter, app_id, &manifest, app_dirs, &config).await?;
 
-    command::uninstall_package(reporter, app_id, app_dirs, &package)?;
+    command::uninstall_package(reporter, app_id, app_dirs, &manifest.metadata.id())?;
 
     Ok(())
 }

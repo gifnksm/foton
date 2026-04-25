@@ -1,7 +1,7 @@
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    db::lock::{DbLockFile, DbLockFileError},
+    db::{DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError},
     package::{Package, PackageDirs, PackageId, PackageManifest},
     util::{
         app_dirs::AppDirs,
@@ -62,6 +62,16 @@ enum InstallErrorReport {
         #[error(source)]
         source: DbLockFileError,
     },
+    #[display("failed to load package database")]
+    LoadDatabase {
+        #[error(source)]
+        source: PackageDatabaseError,
+    },
+    #[display("failed to save package database")]
+    SaveDatabase {
+        #[error(source)]
+        source: PackageDatabaseError,
+    },
     #[display("failed to create package directories for package {pkg_id}")]
     CreatePackageDirs {
         pkg_id: PackageId,
@@ -70,6 +80,15 @@ enum InstallErrorReport {
     },
     #[display("no valid font files found in package {pkg_id}")]
     NoValidFonts { pkg_id: PackageId },
+    #[display(
+        "failed to remove package {uninstall_pkg_id} directories during cleanup before installing package {install_pkg_id}"
+    )]
+    CleanupRemovePackageDirs {
+        uninstall_pkg_id: PackageId,
+        install_pkg_id: PackageId,
+        #[error(source)]
+        source: FsError,
+    },
 }
 
 impl From<InstallErrorReport> for ReportValue<'static> {
@@ -104,14 +123,14 @@ pub(crate) async fn install_package(
     manifest: &PackageManifest,
     app_dirs: &AppDirs,
     config: &InstallConfig,
-) -> Result<Package, InstallError> {
+) -> Result<(), InstallError> {
     let pkg_id = manifest.metadata.id();
     let reporter = reporter.with_step(InstallStep { pkg_id: &pkg_id });
 
     let mut db_lock = DbLockFile::open(app_dirs)
         .map_err(|source| InstallErrorReport::OpenDbLockFile { source })
         .report_error(&reporter)?;
-    let _db_lock_guard = db_lock
+    let db_lock_guard = db_lock
         .try_acquire()
         .map_err(|source| match source {
             DbLockFileError::AlreadyLocked { .. } => InstallErrorReport::DbAlreadyLocked { source },
@@ -119,15 +138,25 @@ pub(crate) async fn install_package(
         })
         .report_error(&reporter)?;
 
+    let db = PackageDatabase::load(app_dirs, &db_lock_guard)
+        .map_err(|source| InstallErrorReport::LoadDatabase { source })
+        .report_error(&reporter)?;
+
+    let Some(db) = helpers::begin_install(&reporter, app_id, app_dirs, db, manifest)? else {
+        return Ok(());
+    };
+
     let pkg_dirs = helpers::create_new_package_dirs(&reporter, app_dirs, &pkg_id)?;
     let package = stage_package(cancel_token, &reporter, &pkg_dirs, manifest, config).await?;
 
     let registration = steps::register_package_fonts(&reporter, app_id, &package)?;
 
+    db.complete_install()?;
+
     pkg_dirs.disarm();
     registration.disarm();
 
-    Ok(package)
+    Ok(())
 }
 
 async fn stage_package(

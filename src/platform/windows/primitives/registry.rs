@@ -321,12 +321,9 @@ impl RegisteredFont {
 mod tests {
     use std::{
         process,
+        str::FromStr as _,
         sync::atomic::{AtomicUsize, Ordering},
     };
-
-    use semver::{BuildMetadata, Version};
-
-    use crate::package::{PackageName, PackageNamespace};
 
     use super::*;
 
@@ -359,10 +356,12 @@ mod tests {
     }
 
     fn test_package_id(name: &str) -> PackageId {
-        let namespace = PackageNamespace::new("example-namespace").unwrap();
-        let name = PackageName::new(format!("registry-test-{name}")).unwrap();
-        let version = Version::parse(&format!("0.1.0+pid-{}", process::id())).unwrap();
-        PackageId::new(namespace, name, version)
+        format!(
+            "example-namespace/registry-test-{name}@0.1.0+pid-{pid}",
+            pid = process::id()
+        )
+        .parse()
+        .unwrap()
     }
 
     fn cleanup_app_root(app_id: &str) {
@@ -541,10 +540,15 @@ mod tests {
     )]
     fn unregister_package_fonts_keeps_non_empty_parent_keys() {
         with_registry_test(|app_id| {
-            let pkg_id_v1 = test_package_id("cleanup-keep-parents");
-            let mut v2 = pkg_id_v1.version().clone();
-            v2.build = BuildMetadata::new(&format!("{}-other", v2.build.as_str())).unwrap();
-            let pkg_id_v2 = PackageId::new(pkg_id_v1.namespace(), pkg_id_v1.name(), v2);
+            let pid = process::id();
+            let pkg_id_v1 = PackageId::from_str(&format!(
+                "example-namespace/registry-test-cleanup-keep-parents@0.1.0+pid-{pid}"
+            ))
+            .unwrap();
+            let pkg_id_v2 = PackageId::from_str(&format!(
+                "example-namespace/registry-test-cleanup-keep-parents@0.2.0+pid-{pid}-other",
+            ))
+            .unwrap();
 
             let entries = [RegisteredFont::new(
                 "Example Font (TrueType)",

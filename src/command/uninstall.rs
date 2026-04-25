@@ -1,6 +1,8 @@
 use crate::{
-    db::lock::{DbLockFile, DbLockFileError},
-    package::{self, Package, PackageId},
+    db::{
+        BeginUninstallResult, DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError,
+    },
+    package::{self, PackageDirs, PackageId},
     platform::windows::steps::unregistration,
     util::{
         app_dirs::AppDirs,
@@ -45,6 +47,16 @@ pub(crate) enum UninstallErrorReport {
         #[error(source)]
         source: DbLockFileError,
     },
+    #[display("failed to load package database")]
+    LoadDatabase {
+        #[error(source)]
+        source: PackageDatabaseError,
+    },
+    #[display("failed to save package database")]
+    SaveDatabase {
+        #[error(source)]
+        source: PackageDatabaseError,
+    },
     #[display(
         "failed to remove package files for package {pkg_id}; manual cleanup may be required"
     )]
@@ -71,16 +83,14 @@ pub(crate) fn uninstall_package(
     reporter: &Reporter,
     app_id: &str,
     app_dirs: &AppDirs,
-    package: &Package,
+    pkg_id: &PackageId,
 ) -> Result<(), UninstallError> {
-    let reporter = reporter.with_step(UninstallStep {
-        pkg_id: package.id(),
-    });
+    let reporter = reporter.with_step(UninstallStep { pkg_id });
 
     let mut db_lock = DbLockFile::open(app_dirs)
         .map_err(|source| UninstallErrorReport::OpenDbLockFile { source })
         .report_error(&reporter)?;
-    let _db_lock_guard = db_lock
+    let db_lock_guard = db_lock
         .try_acquire()
         .map_err(|source| match source {
             DbLockFileError::AlreadyLocked { .. } => {
@@ -90,13 +100,39 @@ pub(crate) fn uninstall_package(
         })
         .report_error(&reporter)?;
 
-    unregistration::unregister_package_fonts(&reporter, app_id, package.id())?;
+    let mut db = PackageDatabase::load(app_dirs, &db_lock_guard)
+        .map_err(|source| UninstallErrorReport::LoadDatabase { source })
+        .report_error(&reporter)?;
 
-    package::remove_package_dirs(package.dirs())
+    match db.begin_uninstall(pkg_id) {
+        BeginUninstallResult::CanUninstall => {}
+        BeginUninstallResult::NotFound => {
+            reporter.report_info(format_args!(
+                "package {pkg_id} is not installed; nothing to do"
+            ));
+            return Ok(());
+        }
+    }
+    db.save()
+        .map_err(|source| UninstallErrorReport::SaveDatabase { source })
+        .report_error(&reporter)?;
+
+    unregistration::unregister_package_fonts(&reporter, app_id, pkg_id)?;
+
+    let pkg_dirs = PackageDirs::new(app_dirs, pkg_id);
+    package::remove_package_dirs(&pkg_dirs)
         .map_err(|source| {
-            let pkg_id = package.id().clone();
+            let pkg_id = pkg_id.clone();
             UninstallErrorReport::RemovePackageFiles { pkg_id, source }
         })
+        .report_error(&reporter)?;
+
+    // `begin_uninstall` succeeded and the uninstall side effects completed just above, so
+    // finalizing the same uninstall in the package database should not fail. If it does, the
+    // package database state is internally inconsistent and we intentionally panic.
+    db.complete_uninstall(pkg_id).unwrap();
+    db.save()
+        .map_err(|source| UninstallErrorReport::SaveDatabase { source })
         .report_error(&reporter)?;
 
     Ok(())

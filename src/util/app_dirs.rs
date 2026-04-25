@@ -68,6 +68,10 @@ impl AppDirs {
         &self.data_local_dir
     }
 
+    pub(crate) fn db_json_file(&self) -> AbsolutePath {
+        self.data_local_dir.join("db.json")
+    }
+
     pub(crate) fn db_lock_file(&self) -> AbsolutePath {
         self.data_local_dir.join("db.lock")
     }

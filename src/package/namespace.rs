@@ -15,7 +15,7 @@ pub(crate) struct PackageNamespace(String);
 const PACKAGE_NAMESPACE_REGEX_STR: &str = r"^[a-zA-Z][-_0-9a-zA-Z]*$";
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
-pub(crate) enum PackageNamespaceError {
+pub(crate) enum ParsePackageNamespaceError {
     #[display(
         "invalid package namespace `{name}`: must start with an ASCII letter and contain only ASCII letters, digits, `-` or `_`"
     )]
@@ -23,7 +23,7 @@ pub(crate) enum PackageNamespaceError {
 }
 
 impl PackageNamespace {
-    pub(crate) fn new<N>(name: N) -> Result<Self, PackageNamespaceError>
+    pub(crate) fn new<N>(name: N) -> Result<Self, ParsePackageNamespaceError>
     where
         N: Into<String>,
     {
@@ -32,7 +32,7 @@ impl PackageNamespace {
 
         let name = name.into();
         if !NAMESPACE_REGEX.is_match(&name) {
-            return Err(PackageNamespaceError::InvalidFormat { name });
+            return Err(ParsePackageNamespaceError::InvalidFormat { name });
         }
         Ok(Self(name))
     }
@@ -44,7 +44,7 @@ impl PackageNamespace {
 }
 
 impl FromStr for PackageNamespace {
-    type Err = PackageNamespaceError;
+    type Err = ParsePackageNamespaceError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::new(s)
@@ -52,7 +52,7 @@ impl FromStr for PackageNamespace {
 }
 
 impl TryFrom<&str> for PackageNamespace {
-    type Error = PackageNamespaceError;
+    type Error = ParsePackageNamespaceError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Self::new(value)
@@ -60,7 +60,7 @@ impl TryFrom<&str> for PackageNamespace {
 }
 
 impl TryFrom<String> for PackageNamespace {
-    type Error = PackageNamespaceError;
+    type Error = ParsePackageNamespaceError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Self::new(value)
