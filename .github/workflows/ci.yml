@@ -45,6 +45,25 @@ jobs:
           jq -n --argjson rust "${rust}" --argjson os "${os}" '{ rust: $rust, os: $os }'
         shell: bash
 
+  set-scenario-matrix:
+    runs-on: windows-latest
+    outputs:
+      scenario: ${{ steps.set-values.outputs.scenario }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Set scenario matrix values
+        id: set-values
+        run: |
+          scenario="$(cargo xtask scenario list --json | jq -c '{ scenario: . }')"
+          echo "scenario=${scenario}" >> "$GITHUB_OUTPUT"
+
+          echo "${scenario}"
+        shell: bash
+
   rustfmt:
     name: Rustfmt
     strategy:
@@ -239,6 +258,22 @@ jobs:
       - run: cargo release patch -vv --allow-branch '*'
         shell: bash
 
+  scenario:
+    name: Scenario (${{ matrix.scenario }})
+    needs: set-scenario-matrix
+    strategy:
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.set-scenario-matrix.outputs.scenario) }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo xtask scenario run --scenario "${{ matrix.scenario }}"
+        shell: bash
+
   actionlint:
     runs-on: ubuntu-latest
     steps:
@@ -274,6 +309,7 @@ jobs:
   ci-complete:
     needs:
       - set-matrix
+      - set-scenario-matrix
       - rustfmt
       - check
       - clippy
@@ -283,6 +319,7 @@ jobs:
       - test
       - coverage
       - release-dry-run
+      - scenario
       - actionlint
       - typos
       - markdownlint

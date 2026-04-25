@@ -1,19 +1,31 @@
 use cargo_metadata::camino::Utf8PathBuf;
-use color_eyre::eyre;
+use color_eyre::eyre::{self, WrapErr as _, eyre};
 use serde::{Deserialize, Serialize};
+use strum::IntoEnumIterator as _;
+use tempfile::TempDir;
 
 use crate::{
     report::{ExecResult, RunId, RunKind, RunReport},
-    util::fs as fs_util,
+    util::{build, fs as fs_util},
 };
 
 mod help_check;
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, derive_more::Display, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    clap::ValueEnum,
+    derive_more::Display,
+    Serialize,
+    Deserialize,
+    strum::EnumIter,
+    strum::IntoStaticStr,
 )]
 #[display(rename_all = "kebab-case")]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum Scenario {
     HelpCheck,
 }
@@ -21,7 +33,7 @@ pub(crate) enum Scenario {
 /// Commands for running scenarios.
 #[derive(clap::Subcommand)]
 pub(crate) enum ScenarioCommand {
-    /// Run a scenario and write its outputs to the specified directory.
+    /// Run a scenario and print a summary of the captured outputs.
     Run {
         /// Scenario to run.
         #[clap(long)]
@@ -29,23 +41,29 @@ pub(crate) enum ScenarioCommand {
         #[clap(flatten)]
         args: RunArgs,
     },
+    /// List the available scenarios.
+    List {
+        /// Print the scenario list as JSON.
+        #[clap(long)]
+        json: bool,
+    },
 }
 
 /// Common arguments for running a scenario.
 #[derive(clap::Args)]
 pub(crate) struct RunArgs {
-    /// Path to the `foton` executable to run inside the scenario.
+    /// Path to the `foton` executable to run inside the scenario. If omitted, `foton` is built automatically.
     #[clap(long)]
-    foton_exe: Utf8PathBuf,
-    /// Directory where scenario outputs are written.
+    foton_exe: Option<Utf8PathBuf>,
+    /// Directory where scenario outputs are written. If omitted, a temporary directory is used.
     #[clap(long)]
-    output_dir: Utf8PathBuf,
+    output_dir: Option<Utf8PathBuf>,
 }
 
 pub(crate) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()> {
     match command {
         ScenarioCommand::Run { scenario, args } => {
-            let params = args.parameters();
+            let (_temp_dir_guard, params) = args.build_parameters()?;
             let (res, report) = RunReport::capture(
                 params.run_id,
                 RunKind::Scenario(*scenario),
@@ -54,16 +72,49 @@ pub(crate) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()> {
             report.print_summary();
             res
         }
+        ScenarioCommand::List { json } => {
+            if *json {
+                let scenarios = Scenario::iter().map(|s| s.to_string()).collect::<Vec<_>>();
+                println!("{}", serde_json::to_string_pretty(&scenarios)?);
+            } else {
+                for scenario in Scenario::iter() {
+                    println!("{scenario}");
+                }
+            }
+            Ok(())
+        }
     }
 }
 
 impl RunArgs {
-    fn parameters(&self) -> ScenarioParameters {
-        ScenarioParameters {
-            foton_exe: self.foton_exe.clone(),
-            output_dir: self.output_dir.clone(),
-            run_id: RunId::new(),
-        }
+    fn build_parameters(&self) -> eyre::Result<(Option<TempDir>, ScenarioParameters)> {
+        let foton_exe = if let Some(path) = self.foton_exe.clone() {
+            path
+        } else {
+            build::build_foton_exe()?
+        };
+        let (temp_dir_guard, output_dir) = if let Some(output_dir) = &self.output_dir {
+            fs_util::create_dir_all("output directory", output_dir)?;
+            (None, output_dir.clone())
+        } else {
+            let temp_dir =
+                TempDir::new().wrap_err("failed to create temporary output directory")?;
+            let path = Utf8PathBuf::from_path_buf(temp_dir.path().to_owned()).map_err(|path| {
+                eyre!(
+                    "failed to convert temporary output directory path to UTF-8: {}",
+                    path.display()
+                )
+            })?;
+            (Some(temp_dir), path)
+        };
+        Ok((
+            temp_dir_guard,
+            ScenarioParameters {
+                foton_exe,
+                output_dir,
+                run_id: RunId::new(),
+            },
+        ))
     }
 }
 
@@ -79,8 +130,6 @@ pub(crate) fn run(
     params: &ScenarioParameters,
     exec_results: &mut Vec<ExecResult>,
 ) -> eyre::Result<()> {
-    fs_util::create_dir_all("output directory", &params.output_dir)?;
-
     match scenario {
         Scenario::HelpCheck => help_check::run(params, exec_results),
     }

@@ -13,6 +13,8 @@ derive_more = { version = "2.1.1", features = ["display", "is_variant"] }
 notify = "8.2.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
+strum = { version = "0.28.0", features = ["derive"] }
+tempfile = "3.27.0"
 wsbx = "0.1.0"
 
 [lints]

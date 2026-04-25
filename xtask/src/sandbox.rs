@@ -1,15 +1,11 @@
 use std::{
-    io::BufReader,
-    process::{Command, Stdio},
+    process::Command,
     sync::mpsc::{self, RecvTimeoutError},
     time::{Duration, Instant},
 };
 
-use cargo_metadata::{
-    CrateType, Message,
-    camino::{Utf8Path, Utf8PathBuf},
-};
-use color_eyre::eyre::{self, OptionExt as _, WrapErr as _, bail, ensure};
+use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
+use color_eyre::eyre::{self, WrapErr as _, bail, ensure};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher as _};
 use wsbx::{SandboxConfig, SandboxEnvironment, config::MappedFolder};
 
@@ -17,7 +13,7 @@ use crate::{
     bootstrap::{SandboxAction, SandboxBootstrapConfig},
     report::{RunId, RunKind, RunReport},
     scenario::Scenario,
-    util::{env as env_util, fs as fs_util},
+    util::{build, env as env_util, fs as fs_util},
 };
 
 /// Mutually exclusive options that choose what kind of sandbox config to generate.
@@ -255,79 +251,6 @@ impl MappingPaths {
     }
 }
 
-fn build_foton_exe() -> eyre::Result<Utf8PathBuf> {
-    let cargo_bin = env_util::cargo_bin()?;
-
-    let mut command = Command::new(cargo_bin)
-        .args([
-            "build",
-            "-p",
-            "foton",
-            "--message-format=json-render-diagnostics",
-        ])
-        .stdout(Stdio::piped())
-        .spawn()
-        .wrap_err("failed to spawn `cargo build -p foton`")?;
-
-    let mut foton_exe = None;
-    let reader = BufReader::new(command.stdout.take().unwrap());
-    for message in Message::parse_stream(reader) {
-        let message = message.wrap_err("failed to parse cargo message")?;
-        if let Message::CompilerArtifact(artifact) = message
-            && artifact.target.is_bin()
-            && artifact.target.crate_types.contains(&CrateType::Bin)
-            && artifact.target.name == "foton"
-            && let Some(exe) = artifact.executable
-        {
-            foton_exe = Some(exe);
-        }
-    }
-
-    let status = command.wait().wrap_err("failed to wait for cargo build")?;
-    ensure!(status.success(), "cargo build failed with status {status}");
-
-    let foton_exe = foton_exe.ok_or_eyre("failed to find foton executable in cargo output")?;
-    Ok(foton_exe)
-}
-
-fn build_test_exes() -> eyre::Result<Vec<Utf8PathBuf>> {
-    let cargo_bin = env_util::cargo_bin()?;
-
-    let mut command = Command::new(cargo_bin)
-        .args([
-            "test",
-            "--no-run",
-            "-p",
-            "foton",
-            "--message-format=json-render-diagnostics",
-        ])
-        .env("FOTON_SANDBOX_TEST", "1")
-        .stdout(Stdio::piped())
-        .spawn()
-        .wrap_err("failed to spawn `cargo test --no-run -p foton`")?;
-
-    let mut test_exes = vec![];
-    let reader = BufReader::new(command.stdout.take().unwrap());
-    for message in Message::parse_stream(reader) {
-        let message = message.wrap_err("failed to parse cargo message")?;
-        if let Message::CompilerArtifact(artifact) = message
-            && artifact.target.name == "foton"
-            && let Some(exe) = artifact.executable
-        {
-            test_exes.push(exe);
-        }
-    }
-
-    let status = command.wait().wrap_err("failed to wait for cargo test")?;
-    ensure!(status.success(), "cargo test failed with status {status}");
-
-    ensure!(
-        !test_exes.is_empty(),
-        "cargo test did not produce any test executables for foton"
-    );
-    Ok(test_exes)
-}
-
 fn prepare_host_artifacts(
     run_id: RunId,
     kind: RunKind,
@@ -335,7 +258,7 @@ fn prepare_host_artifacts(
     sandbox_paths: &MappingPaths,
 ) -> eyre::Result<()> {
     let xtask_exe = env_util::current_exe()?;
-    let foton_exe = build_foton_exe()?;
+    let foton_exe = build::build_foton_exe()?;
 
     fs_util::create_dir_all("base", &host_paths.base_dir)?;
     fs_util::create_dir_all("binary", &host_paths.bin_dir)?;
@@ -348,7 +271,7 @@ fn prepare_host_artifacts(
     let action = match kind {
         RunKind::Noop => SandboxAction::Noop,
         RunKind::Test => {
-            let host_test_exes = build_test_exes()?;
+            let host_test_exes = build::build_test_exes()?;
             let mut sandbox_test_exes = vec![];
             for host_test_exe in host_test_exes {
                 let file_name = host_test_exe.file_name().unwrap();
