@@ -25,10 +25,9 @@ pub(in crate::db::persist) fn serialize_payload(
 pub(in crate::db) mod types {
     use std::collections::BTreeMap;
 
-    use semver::Version;
     use serde::{Deserialize, Serialize};
 
-    use crate::package::{PackageManifest, PackageQualifiedName, PackageState};
+    use crate::package::{PackageManifest, PackageQualifiedName, PackageState, PackageVersion};
 
     #[derive(Debug, Default, Clone, Serialize, Deserialize)]
     pub(in crate::db) struct PersistedPackageDb {
@@ -37,7 +36,7 @@ pub(in crate::db) mod types {
 
     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
     pub(in crate::db) struct PersistedPackageVersionMap {
-        pub(in crate::db) versions: BTreeMap<Version, PersistedPackageEntry>,
+        pub(in crate::db) versions: BTreeMap<PackageVersion, PersistedPackageEntry>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

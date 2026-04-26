@@ -1,9 +1,8 @@
 use reqwest::Url;
-use semver::Version;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    package::{PackageId, PackageQualifiedName},
+    package::{PackageId, PackageQualifiedName, PackageVersion},
     util::hash::GenericDigest,
 };
 
@@ -19,7 +18,7 @@ pub(crate) struct PackageManifest {
 pub(crate) struct PackageMetadata {
     #[serde(rename = "name")]
     pub(crate) qualified_name: PackageQualifiedName,
-    pub(crate) version: Version,
+    pub(crate) version: PackageVersion,
     #[serde(
         default,
         deserialize_with = "option_nonempty_string_without_surrounding_whitespaces::deserialize"
@@ -194,6 +193,8 @@ mod glob_pattern {
 
 #[cfg(test)]
 mod tests {
+    use semver::Version;
+
     use super::*;
 
     fn parse_manifest(input: &str) -> Result<PackageManifest, toml::de::Error> {

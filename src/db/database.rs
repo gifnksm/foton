@@ -4,7 +4,6 @@ use std::{
     io::{self, BufReader},
 };
 
-use semver::Version;
 use tempfile::NamedTempFile;
 
 use crate::{
@@ -12,7 +11,9 @@ use crate::{
         DbLockFileGuard,
         persist::{self, PersistError, PersistedPackageDb, PersistedPackageEntry},
     },
-    package::{PackageId, PackageManifest, PackageName, PackageQualifiedName, PackageState},
+    package::{
+        PackageId, PackageManifest, PackageName, PackageQualifiedName, PackageState, PackageVersion,
+    },
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
 
@@ -327,9 +328,9 @@ impl<'a> PackageDatabase<'a> {
 pub(crate) enum BeginInstallResult {
     CanInstall,
     AlreadyInstalled,
-    OtherVersionInstalled(Version),
-    HavePendingInstall(BTreeSet<Version>),
-    HavePendingUninstall(BTreeSet<Version>),
+    OtherVersionInstalled(PackageVersion),
+    HavePendingInstall(BTreeSet<PackageVersion>),
+    HavePendingUninstall(BTreeSet<PackageVersion>),
 }
 
 #[derive(Debug, Clone, derive_more::IsVariant)]
@@ -340,6 +341,7 @@ pub(crate) enum BeginUninstallResult {
 
 #[cfg(test)]
 mod tests {
+    use semver::Version;
     use tempfile::TempDir;
 
     use super::*;
@@ -399,7 +401,10 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].0, PackageState::Installed);
-        assert_eq!(entries[0].1.metadata.version, Version::new(2, 10, 0));
+        assert_eq!(
+            entries[0].1.metadata.version,
+            PackageVersion::from(Version::new(2, 10, 0))
+        );
     }
 
     #[test]
@@ -420,7 +425,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         assert!(matches!(
             result,
             BeginInstallResult::HavePendingInstall(ref versions)
-                if versions.contains(&Version::new(2, 10, 0))
+                if versions.contains(&Version::new(2, 10, 0).into())
         ));
     }
 
@@ -518,7 +523,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         assert!(matches!(
             result,
             BeginInstallResult::HavePendingUninstall(ref versions)
-                if versions.contains(&Version::new(2, 10, 0))
+                if versions.contains(&Version::new(2, 10, 0).into())
         ));
     }
 }

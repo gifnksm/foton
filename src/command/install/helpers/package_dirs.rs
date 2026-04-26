@@ -77,7 +77,10 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use crate::util::{path::AbsolutePath, reporter::Reporter};
+    use crate::{
+        package::PackageSpec,
+        util::{path::AbsolutePath, reporter::Reporter},
+    };
 
     use super::*;
 
@@ -102,8 +105,11 @@ mod tests {
         fs::write(&existing_font, b"font").unwrap();
 
         let pkg_id = make_package_id();
+        let pkg_spec = PackageSpec::Id(pkg_id.clone());
         let reporter = Reporter::message_reporter();
-        let reporter = reporter.with_step(InstallStep { pkg_id: &pkg_id });
+        let reporter = reporter.with_step(InstallStep {
+            pkg_spec: &pkg_spec,
+        });
         let app_dirs = AppDirs::new_for_test(AbsolutePath::new(tempdir.path()).unwrap());
 
         create_new_package_dirs(&reporter, &app_dirs, &pkg_id).unwrap_err();
@@ -117,8 +123,11 @@ mod tests {
     fn package_dirs_guard_removes_created_directories_on_drop() {
         let (tempdir, pkg_dirs) = make_package_dirs();
         let pkg_id = make_package_id();
+        let pkg_spec = PackageSpec::Id(pkg_id.clone());
         let reporter = Reporter::message_reporter();
-        let reporter = reporter.with_step(InstallStep { pkg_id: &pkg_id });
+        let reporter = reporter.with_step(InstallStep {
+            pkg_spec: &pkg_spec,
+        });
         let app_dirs = AppDirs::new_for_test(AbsolutePath::new(tempdir.path()).unwrap());
 
         {

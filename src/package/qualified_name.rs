@@ -16,6 +16,10 @@ pub(crate) struct PackageQualifiedName {
 }
 
 impl PackageQualifiedName {
+    pub(crate) fn new(namespace: PackageNamespace, name: PackageName) -> Self {
+        Self { namespace, name }
+    }
+
     pub(crate) fn namespace(&self) -> &PackageNamespace {
         &self.namespace
     }

@@ -3,14 +3,14 @@ use std::{
     fmt::{self, Display},
     path::Path,
     str::FromStr,
-    sync::LazyLock,
+    sync::{Arc, LazyLock},
 };
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct PackageNamespace(String);
+pub(crate) struct PackageNamespace(Arc<str>);
 
 const PACKAGE_NAMESPACE_REGEX_STR: &str = r"^[a-zA-Z][-_0-9a-zA-Z]*$";
 
@@ -34,7 +34,7 @@ impl PackageNamespace {
         if !NAMESPACE_REGEX.is_match(&name) {
             return Err(ParsePackageNamespaceError::InvalidFormat { name });
         }
-        Ok(Self(name))
+        Ok(Self(name.into()))
     }
 
     #[cfg(test)]
@@ -65,13 +65,13 @@ impl AsRef<str> for PackageNamespace {
 
 impl AsRef<OsStr> for PackageNamespace {
     fn as_ref(&self) -> &OsStr {
-        self.0.as_ref()
+        (*self.0).as_ref()
     }
 }
 
 impl AsRef<Path> for PackageNamespace {
     fn as_ref(&self) -> &Path {
-        self.0.as_ref()
+        (*self.0).as_ref()
     }
 }
 
@@ -80,13 +80,13 @@ macro_rules! impl_partial_eq_for_package_namespace {
         $(
             impl PartialEq<$ty> for PackageNamespace {
                 fn eq(&self, other: &$ty) -> bool {
-                    self.0 == *other
+                    self.0[..] == other[..]
                 }
             }
 
             impl PartialEq<PackageNamespace> for $ty {
                 fn eq(&self, other: &PackageNamespace) -> bool {
-                    *self == other.0
+                    self[..] == other.0[..]
                 }
             }
         )*
