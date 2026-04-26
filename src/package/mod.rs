@@ -1,7 +1,7 @@
 use crate::util::path::FileName;
 
 pub(crate) use self::{
-    dirs::*, id::*, manifest::*, name::*, namespace::*, qualified_name::*, state::*,
+    dirs::*, id::*, manifest::*, name::*, namespace::*, qualified_name::*, spec::*, state::*,
 };
 
 mod dirs;
@@ -10,6 +10,7 @@ mod manifest;
 mod name;
 mod namespace;
 mod qualified_name;
+mod spec;
 mod state;
 
 #[derive(Debug, Clone)]

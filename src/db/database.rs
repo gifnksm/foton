@@ -12,7 +12,7 @@ use crate::{
         DbLockFileGuard,
         persist::{self, PersistError, PersistedPackageDb, PersistedPackageEntry},
     },
-    package::{PackageId, PackageManifest, PackageQualifiedName, PackageState},
+    package::{PackageId, PackageManifest, PackageName, PackageQualifiedName, PackageState},
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
 
@@ -117,7 +117,18 @@ impl<'a> PackageDatabase<'a> {
         Ok(())
     }
 
-    pub(crate) fn entries_by_name(
+    pub(crate) fn entry_by_id(
+        &self,
+        pkg_id: &PackageId,
+    ) -> Option<(PackageState, &PackageManifest)> {
+        self.persist_db
+            .packages
+            .get(pkg_id.qualified_name())
+            .and_then(|version_map| version_map.versions.get(pkg_id.version()))
+            .map(|entry| (entry.state, &entry.manifest))
+    }
+
+    pub(crate) fn entries_by_qualified_name(
         &self,
         pkg_name: &PackageQualifiedName,
     ) -> impl Iterator<Item = (PackageState, &PackageManifest)> {
@@ -133,12 +144,28 @@ impl<'a> PackageDatabase<'a> {
             })
     }
 
+    pub(crate) fn entries_by_name(
+        &self,
+        pkg_name: &PackageName,
+    ) -> impl Iterator<Item = (PackageState, &PackageManifest)> {
+        self.persist_db
+            .packages
+            .iter()
+            .filter(move |(qualified_name, _)| qualified_name.name() == pkg_name)
+            .flat_map(|(_, version_map)| {
+                version_map
+                    .versions
+                    .values()
+                    .map(|packages| (packages.state, &packages.manifest))
+            })
+    }
+
     pub(crate) fn begin_install(&mut self, manifest: &PackageManifest) -> BeginInstallResult {
         let mut pending_installs = BTreeSet::new();
         let mut pending_uninstalls = BTreeSet::new();
         let pkg_name = manifest.metadata.qualified_name.clone();
         let pkg_version = manifest.metadata.version.clone();
-        for (state, m) in self.entries_by_name(&pkg_name) {
+        for (state, m) in self.entries_by_qualified_name(&pkg_name) {
             match state {
                 PackageState::Installed => {
                     let result = if m.metadata.version == pkg_version {
@@ -368,7 +395,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
 
         let db = load_db(&app_dirs, &lock_file_guard);
         let pkg_name = "yuru7/hackgen".parse::<PackageQualifiedName>().unwrap();
-        let entries = db.entries_by_name(&pkg_name).collect::<Vec<_>>();
+        let entries = db.entries_by_qualified_name(&pkg_name).collect::<Vec<_>>();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].0, PackageState::Installed);
@@ -439,7 +466,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         ));
         db.cancel_install(&pkg_id).unwrap();
 
-        assert_eq!(db.entries_by_name(&pkg_name).count(), 0);
+        assert_eq!(db.entries_by_qualified_name(&pkg_name).count(), 0);
     }
 
     #[test]
@@ -464,7 +491,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         ));
         db.complete_uninstall(&pkg_id).unwrap();
 
-        assert_eq!(db.entries_by_name(&pkg_name).count(), 0);
+        assert_eq!(db.entries_by_qualified_name(&pkg_name).count(), 0);
     }
 
     #[test]
