@@ -2,6 +2,7 @@ use crate::util::path::FileName;
 
 pub(crate) use self::{
     dirs::*, id::*, manifest::*, name::*, namespace::*, qualified_name::*, spec::*, state::*,
+    version::*,
 };
 
 mod dirs;
@@ -12,6 +13,7 @@ mod namespace;
 mod qualified_name;
 mod spec;
 mod state;
+mod version;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Package {

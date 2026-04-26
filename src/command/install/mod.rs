@@ -1,8 +1,10 @@
+use std::path::Path;
+
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     db::{DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError},
-    package::{Package, PackageDirs, PackageId, PackageManifest},
+    package::{Package, PackageDirs, PackageId, PackageManifest, PackageSpec},
     util::{
         app_dirs::AppDirs,
         fs::FsError,
@@ -12,7 +14,7 @@ use crate::{
 
 #[derive(Debug)]
 struct InstallStep<'a> {
-    pkg_id: &'a PackageId,
+    pkg_spec: &'a PackageSpec,
 }
 
 impl Step for InstallStep<'_> {
@@ -21,7 +23,7 @@ impl Step for InstallStep<'_> {
     type Error = InstallError;
 
     fn report_prelude(&self, reporter: &Reporter) {
-        reporter.report_step(format_args!("Installing {}...", self.pkg_id));
+        reporter.report_step(format_args!("Installing {}...", self.pkg_spec));
     }
 
     fn make_failed(&self) -> Self::Error {
@@ -120,12 +122,15 @@ pub(crate) async fn install_package(
     cancel_token: &CancellationToken,
     reporter: &Reporter,
     app_id: &str,
-    manifest: &PackageManifest,
+    registry_path: &Path,
+    pkg_spec: &PackageSpec,
     app_dirs: &AppDirs,
     config: &InstallConfig,
 ) -> Result<(), InstallError> {
+    let reporter = reporter.with_step(InstallStep { pkg_spec });
+
+    let manifest = steps::resolve_package(&reporter, registry_path, pkg_spec)?;
     let pkg_id = manifest.metadata.id();
-    let reporter = reporter.with_step(InstallStep { pkg_id: &pkg_id });
 
     let mut db_lock = DbLockFile::open(app_dirs)
         .map_err(|source| InstallErrorReport::OpenDbLockFile { source })
@@ -142,12 +147,12 @@ pub(crate) async fn install_package(
         .map_err(|source| InstallErrorReport::LoadDatabase { source })
         .report_error(&reporter)?;
 
-    let Some(db) = helpers::begin_install(&reporter, app_id, app_dirs, db, manifest)? else {
+    let Some(db) = helpers::begin_install(&reporter, app_id, app_dirs, db, &manifest)? else {
         return Ok(());
     };
 
     let pkg_dirs = helpers::create_new_package_dirs(&reporter, app_dirs, &pkg_id)?;
-    let package = stage_package(cancel_token, &reporter, &pkg_dirs, manifest, config).await?;
+    let package = stage_package(cancel_token, &reporter, &pkg_dirs, &manifest, config).await?;
 
     let registration = steps::register_package_fonts(&reporter, app_id, &package)?;
 

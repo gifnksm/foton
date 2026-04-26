@@ -1,7 +1,7 @@
 #[cfg(not(windows))]
 compile_error!("foton is supported on Windows only.");
 
-use std::{env, io, process};
+use std::{env, io, path::Path, process};
 
 use clap::{CommandFactory as _, Parser as _};
 use clap_complete::{Generator, Shell};
@@ -20,6 +20,7 @@ mod command;
 mod db;
 mod package;
 mod platform;
+mod registry;
 mod util;
 
 const APP_ID: &str = "io.github.gifnksm.foton";
@@ -128,12 +129,20 @@ async fn run_smoke_test(
         max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
     };
 
-    let manifest = toml::from_str(include_str!(
-        "../packages/yuru7/hackgen/2.10.0/manifest.toml"
-    ))?;
-    command::install_package(cancel_token, reporter, app_id, &manifest, app_dirs, &config).await?;
-
+    let registry_path = Path::new("packages");
     let pkg_spec = "yuru7/hackgen".parse()?;
+
+    command::install_package(
+        cancel_token,
+        reporter,
+        app_id,
+        registry_path,
+        &pkg_spec,
+        app_dirs,
+        &config,
+    )
+    .await?;
+
     command::uninstall_package(reporter, app_id, app_dirs, &pkg_spec)?;
 
     Ok(())

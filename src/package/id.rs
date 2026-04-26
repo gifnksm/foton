@@ -3,25 +3,24 @@ use std::{
     str::FromStr,
 };
 
-use semver::Version;
 use serde::{Deserialize, Serialize};
 
 use crate::package::{
-    PackageName, PackageNamespace, PackageQualifiedName, ParsePackageNameError,
+    PackageName, PackageNamespace, PackageQualifiedName, PackageVersion, ParsePackageNameError,
     ParsePackageNamespaceError, ParsePackageQualifiedNameError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct PackageId {
     qualified_name: PackageQualifiedName,
-    version: Version,
+    version: PackageVersion,
 }
 
 impl PackageId {
     pub(crate) fn new<N, V>(qualified_name: N, version: V) -> Self
     where
         N: Into<PackageQualifiedName>,
-        V: Into<Version>,
+        V: Into<PackageVersion>,
     {
         let qualified_name = qualified_name.into();
         let version = version.into();
@@ -43,7 +42,7 @@ impl PackageId {
         self.qualified_name.name()
     }
 
-    pub(crate) fn version(&self) -> &Version {
+    pub(crate) fn version(&self) -> &PackageVersion {
         &self.version
     }
 }
@@ -128,6 +127,7 @@ impl<'de> Deserialize<'de> for PackageId {
 
 #[cfg(test)]
 mod tests {
+    use semver::Version;
     use serde::de::value::{Error as ValueError, StrDeserializer};
 
     use super::*;
