@@ -17,7 +17,7 @@ pub(in crate::command::install) fn create_new_package_dirs<'a, 'b, 'c>(
     app_dirs: &AppDirs,
     pkg_id: &PackageId,
 ) -> Result<PackageDirsGuard<'a, 'b, 'c>, InstallError> {
-    let pkg_dirs = PackageDirs::new(app_dirs.data_local_dir(), pkg_id);
+    let pkg_dirs = PackageDirs::new(app_dirs, pkg_id);
     package::create_new_package_dirs(&pkg_dirs)
         .map_err(|source| {
             let pkg_id = pkg_id.clone();
@@ -75,28 +75,22 @@ impl PackageDirsGuard<'_, '_, '_> {
 mod tests {
     use std::fs;
 
-    use semver::Version;
     use tempfile::TempDir;
 
-    use crate::{
-        package::{PackageName, PackageNamespace},
-        util::{path::AbsolutePath, reporter::Reporter},
-    };
+    use crate::util::{path::AbsolutePath, reporter::Reporter};
 
     use super::*;
 
     fn make_package_id() -> PackageId {
-        let namespace = PackageNamespace::new("yuru7").unwrap();
-        let name = PackageName::new("hackgen").unwrap();
-        let version = Version::new(2, 10, 0);
-        PackageId::new(namespace, name, version)
+        "yuru7/hackgen@2.10.0".parse().unwrap()
     }
 
     fn make_package_dirs() -> (TempDir, PackageDirs) {
         let tempdir = tempfile::tempdir().unwrap();
         let app_data_dir = AbsolutePath::new(tempdir.path()).unwrap();
+        let app_dirs = AppDirs::new_for_test(app_data_dir);
         let pkg_id = make_package_id();
-        let pkg_dirs = PackageDirs::new(app_data_dir, &pkg_id);
+        let pkg_dirs = PackageDirs::new(&app_dirs, &pkg_id);
         (tempdir, pkg_dirs)
     }
 

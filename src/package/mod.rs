@@ -1,12 +1,16 @@
 use crate::util::path::FileName;
 
-pub(crate) use self::{dirs::*, id::*, manifest::*, name::*, namespace::*};
+pub(crate) use self::{
+    dirs::*, id::*, manifest::*, name::*, namespace::*, qualified_name::*, state::*,
+};
 
 mod dirs;
 mod id;
 mod manifest;
 mod name;
 mod namespace;
+mod qualified_name;
+mod state;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Package {

@@ -1,6 +1,7 @@
 use crate::{
     package::PackageId,
     util::{
+        app_dirs::AppDirs,
         fs::{self as fs_util, FsError},
         path::AbsolutePath,
     },
@@ -16,12 +17,8 @@ pub(crate) struct PackageDirs {
 }
 
 impl PackageDirs {
-    pub(crate) fn new<P>(app_data_dir: P, pkg_id: &PackageId) -> Self
-    where
-        P: Into<AbsolutePath>,
-    {
-        let app_data_dir = app_data_dir.into();
-        let package_base_dir = app_data_dir.join("packages");
+    pub(crate) fn new(app_dirs: &AppDirs, pkg_id: &PackageId) -> Self {
+        let package_base_dir = app_dirs.data_local_dir().join("packages");
         let namespace_dir = package_base_dir.join(pkg_id.namespace());
         let name_dir = namespace_dir.join(pkg_id.name());
         let version_dir = name_dir.join(pkg_id.version().to_string());
@@ -81,49 +78,43 @@ pub(crate) fn remove_package_dirs(pkg_dirs: &PackageDirs) -> Result<(), FsError>
 mod tests {
     use std::{fs, path::Path};
 
-    use semver::Version;
     use tempfile::TempDir;
-
-    use crate::package::{PackageName, PackageNamespace};
 
     use super::*;
 
     fn test_package_id() -> PackageId {
-        let namespace = PackageNamespace::new("example-namespace").unwrap();
-        let name = PackageName::new("example-package").unwrap();
-        PackageId::new(namespace, name, Version::new(0, 1, 0))
+        "example-namespace/example-package@0.1.0".parse().unwrap()
     }
 
     #[test]
-    fn package_dirs_new_accepts_absolute_base_path() {
-        let app_data_dir = AbsolutePath::new(r"C:\path\to\package").unwrap();
-        let pkg_dirs = PackageDirs::new(app_data_dir, &test_package_id());
+    fn package_dirs_new_uses_app_dirs_data_local_dir() {
+        let data_local_dir = AbsolutePath::new(r"C:\path\to\data").unwrap();
+        let app_dirs = &AppDirs::new_for_test(data_local_dir);
+        let pkg_dirs = PackageDirs::new(app_dirs, &test_package_id());
         assert_eq!(
             pkg_dirs.namespace_dir(),
-            Path::new(r"C:\path\to\package\packages\example-namespace")
+            Path::new(r"C:\path\to\data\packages\example-namespace")
         );
         assert_eq!(
             pkg_dirs.name_dir(),
-            Path::new(r"C:\path\to\package\packages\example-namespace\example-package")
+            Path::new(r"C:\path\to\data\packages\example-namespace\example-package")
         );
         assert_eq!(
             pkg_dirs.version_dir(),
-            Path::new(r"C:\path\to\package\packages\example-namespace\example-package\0.1.0")
+            Path::new(r"C:\path\to\data\packages\example-namespace\example-package\0.1.0")
         );
         assert_eq!(
             pkg_dirs.fonts_dir(),
-            Path::new(r"C:\path\to\package\packages\example-namespace\example-package\0.1.0\fonts")
+            Path::new(r"C:\path\to\data\packages\example-namespace\example-package\0.1.0\fonts")
         );
     }
 
     fn make_package_dirs() -> (TempDir, PackageDirs) {
         let tempdir = tempfile::tempdir().unwrap();
         let app_data_dir = AbsolutePath::new(tempdir.path()).unwrap();
-        let namespace = PackageNamespace::new("yuru7").unwrap();
-        let name = PackageName::new("hackgen").unwrap();
-        let version = Version::new(2, 10, 0);
-        let pkg_id = PackageId::new(namespace, name, version);
-        let pkg_dirs = PackageDirs::new(app_data_dir, &pkg_id);
+        let app_dirs = AppDirs::new_for_test(app_data_dir);
+        let pkg_id = "yuru7/hackgen@2.10.0".parse().unwrap();
+        let pkg_dirs = PackageDirs::new(&app_dirs, &pkg_id);
         (tempdir, pkg_dirs)
     }
 

@@ -3,7 +3,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    package::{PackageId, PackageName, namespace::PackageNamespace},
+    package::{PackageId, PackageQualifiedName},
     util::hash::GenericDigest,
 };
 
@@ -17,8 +17,8 @@ pub(crate) struct PackageManifest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct PackageMetadata {
-    pub(crate) namespace: PackageNamespace,
-    pub(crate) name: PackageName,
+    #[serde(rename = "name")]
+    pub(crate) qualified_name: PackageQualifiedName,
     pub(crate) version: Version,
     #[serde(
         default,
@@ -44,11 +44,7 @@ pub(crate) struct PackageSource {
 
 impl PackageMetadata {
     pub(crate) fn id(&self) -> PackageId {
-        PackageId::new(
-            self.namespace.clone(),
-            self.name.clone(),
-            self.version.clone(),
-        )
+        PackageId::new(self.qualified_name.clone(), self.version.clone())
     }
 }
 
@@ -207,8 +203,7 @@ mod tests {
     fn valid_manifest_toml() -> &'static str {
         r#"
 [package]
-namespace = "yuru7"
-name = "hackgen"
+name = "yuru7/hackgen"
 version = "2.10.0"
 description = "HackGen"
 homepage = "https://github.com/yuru7/HackGen"
@@ -226,8 +221,8 @@ include = ["*/*.ttf"]
     fn package_manifest_deserializes_valid_manifest() {
         let manifest = parse_manifest(valid_manifest_toml()).unwrap();
 
-        assert_eq!(manifest.metadata.namespace, "yuru7");
-        assert_eq!(manifest.metadata.name, "hackgen");
+        assert_eq!(manifest.metadata.qualified_name.namespace(), "yuru7");
+        assert_eq!(manifest.metadata.qualified_name.name(), "hackgen");
         assert_eq!(manifest.metadata.version, Version::new(2, 10, 0));
         assert_eq!(manifest.metadata.description.as_deref(), Some("HackGen"));
         assert_eq!(
@@ -266,8 +261,7 @@ include = ["*/*.ttf"]
         let err = parse_manifest(
             r#"
 [package]
-namespace = "yuru7"
-name = "hackgen"
+name = "yuru7/hackgen"
 version = "2.10.0"
 license = "not-a-valid-spdx"
 
@@ -313,8 +307,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let err = parse_manifest(
             r#"
 [package]
-namespace = "yuru7"
-name = "hackgen"
+name = "yuru7/hackgen"
 version = "2.10.0"
 
 sources = []
@@ -330,8 +323,7 @@ sources = []
         let err = parse_manifest(
             r#"
 [package]
-namespace = "yuru7"
-name = "hackgen"
+name = "yuru7/hackgen"
 version = "2.10.0"
 
 [[sources]]
@@ -350,8 +342,7 @@ include = []
         let err = parse_manifest(
             r#"
 [package]
-namespace = "yuru7"
-name = "hackgen"
+name = "yuru7/hackgen"
 version = "2.10.0"
 description = ""
 
@@ -373,8 +364,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let err = parse_manifest(
             r#"
 [package]
-namespace = "yuru7"
-name = "hackgen"
+name = "yuru7/hackgen"
 version = "2.10.0"
 description = " HackGen "
 
@@ -396,8 +386,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let err = parse_manifest(
             r#"
 [package]
-namespace = "yuru7"
-name = "hackgen"
+name = "yuru7/hackgen"
 version = "2.10.0"
 
 [[sources]]
@@ -415,8 +404,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let err = parse_manifest(
             r#"
 [package]
-namespace = "yuru7"
-name = "hackgen"
+name = "yuru7/hackgen"
 version = "2.10.0"
 homepage = "file:///tmp/project"
 
@@ -435,8 +423,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let manifest = parse_manifest(
             r#"
 [package]
-namespace = "yuru7"
-name = "hackgen"
+name = "yuru7/hackgen"
 version = "2.10.0"
 
 [[sources]]

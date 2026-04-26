@@ -1,6 +1,5 @@
 [package]
-namespace = "yuru7"
-name = "hackgen"
+name = "yuru7/hackgen"
 version = "2.10.0"
 description = "Hack と源柔ゴシックを合成したプログラミングフォント 白源 (はくげん／HackGen)"
 homepage = "https://github.com/yuru7/HackGen"
