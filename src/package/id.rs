@@ -107,22 +107,6 @@ impl FromStr for PackageId {
     }
 }
 
-impl TryFrom<&str> for PackageId {
-    type Error = ParsePackageIdError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        value.parse()
-    }
-}
-
-impl TryFrom<String> for PackageId {
-    type Error = ParsePackageIdError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
-    }
-}
-
 impl Serialize for PackageId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

@@ -51,28 +51,6 @@ impl FromStr for PackageNamespace {
     }
 }
 
-impl TryFrom<&str> for PackageNamespace {
-    type Error = ParsePackageNamespaceError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<String> for PackageNamespace {
-    type Error = ParsePackageNamespaceError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<&PackageNamespace> for PackageNamespace {
-    fn from(name: &PackageNamespace) -> Self {
-        name.clone()
-    }
-}
-
 impl Display for PackageNamespace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.0, f)
