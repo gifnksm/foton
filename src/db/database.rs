@@ -10,7 +10,7 @@ use tempfile::NamedTempFile;
 use crate::{
     db::{
         DbLockFileGuard,
-        persist::{PersistedPackageDb, PersistedPackageEntry},
+        persist::{self, PersistError, PersistedPackageDb, PersistedPackageEntry},
     },
     package::{PackageId, PackageManifest, PackageQualifiedName, PackageState},
     util::{app_dirs::AppDirs, path::AbsolutePath},
@@ -34,13 +34,13 @@ pub(crate) enum PackageDatabaseError {
     DeserializeDatabase {
         path: AbsolutePath,
         #[error(source)]
-        source: serde_json::Error,
+        source: PersistError,
     },
     #[display("failed to serialize database to temporary file: {}", path.display())]
     SerializeDatabase {
         path: AbsolutePath,
         #[error(source)]
-        source: serde_json::Error,
+        source: PersistError,
     },
     #[display("failed to persist temporary file to database file: {}", path.display())]
     PersistTempFile {
@@ -80,7 +80,7 @@ impl<'a> PackageDatabase<'a> {
                 PackageDatabaseError::OpenDatabase { path, source }
             })?;
             let mut reader = BufReader::new(file);
-            serde_json::from_reader(&mut reader).map_err(|source| {
+            persist::from_reader(&mut reader).map_err(|source| {
                 let path = persist_path.clone();
                 PackageDatabaseError::DeserializeDatabase { path, source }
             })?
@@ -101,7 +101,7 @@ impl<'a> PackageDatabase<'a> {
             let path = AbsolutePath::new(persist_dir).unwrap();
             PackageDatabaseError::CreateTempFile { path, source }
         })?;
-        serde_json::to_writer(&temp_file, &self.persist_db).map_err(|source| {
+        persist::to_writer(&temp_file, &self.persist_db).map_err(|source| {
             let path = AbsolutePath::new(temp_file.path()).unwrap();
             PackageDatabaseError::SerializeDatabase { path, source }
         })?;
