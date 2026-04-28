@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     package::Package,
     platform::windows::primitives::{
@@ -7,18 +9,18 @@ use crate::{
     util::{
         path::AbsolutePath,
         reporter::{
-            ReportValue, Reporter, Step, StepReporter, StepResultErrorExt as _,
+            ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _,
             StepResultWarnExt as _,
         },
     },
 };
 
 #[derive(Debug)]
-struct RegistrationStep<'a, S> {
-    step: &'a S,
+struct RegistrationStep<S> {
+    step: Arc<S>,
 }
 
-impl<S> Step for RegistrationStep<'_, S>
+impl<S> Step for RegistrationStep<S>
 where
     S: Step,
 {
@@ -26,7 +28,7 @@ where
     type ErrorReportValue = RegistrationErrorReport;
     type Error = S::Error;
 
-    fn report_prelude(&self, reporter: &Reporter) {
+    fn report_prelude(&self, reporter: &RootReporter) {
         reporter.report_step(format_args!("Registering fonts..."));
     }
 
@@ -77,7 +79,7 @@ impl From<RegistrationErrorReport> for ReportValue<'static> {
 }
 
 pub(crate) fn register_package_fonts<S>(
-    reporter: &StepReporter<'_, S>,
+    reporter: &StepReporter<S>,
     app_id: &str,
     package: &Package,
 ) -> Result<(), S::Error>
@@ -85,7 +87,7 @@ where
     S: Step,
 {
     let reporter = reporter.with_step(RegistrationStep {
-        step: reporter.step(),
+        step: Arc::clone(reporter.step()),
     });
 
     let fonts_dir = package.dirs().fonts_dir();

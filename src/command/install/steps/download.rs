@@ -1,4 +1,4 @@
-use std::{fs::File, io, pin::pin};
+use std::{fs::File, io, pin::pin, sync::Arc};
 
 use bytes::Bytes;
 use futures_core::Stream;
@@ -12,18 +12,18 @@ use crate::{
     util::{
         hash::{GenericDigest, GenericHasher},
         reporter::{
-            NeverReport, ReportValue, Reporter, Step, StepReporter, StepResultErrorExt as _,
+            NeverReport, ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _,
         },
     },
 };
 
 #[derive(Debug)]
-struct DownloadStep<'a, S> {
-    step: &'a S,
-    url: &'a Url,
+struct DownloadStep<S> {
+    step: Arc<S>,
+    url: Url,
 }
 
-impl<S> Step for DownloadStep<'_, S>
+impl<S> Step for DownloadStep<S>
 where
     S: Step,
 {
@@ -31,7 +31,7 @@ where
     type ErrorReportValue = DownloadErrorReport;
     type Error = S::Error;
 
-    fn report_prelude(&self, reporter: &Reporter) {
+    fn report_prelude(&self, reporter: &RootReporter) {
         reporter.report_step(format_args!("Downloading {}...", self.url));
     }
 
@@ -91,7 +91,7 @@ impl From<DownloadErrorReport> for ReportValue<'static> {
 }
 
 pub(in crate::command::install) async fn download_archive<S>(
-    reporter: &StepReporter<'_, S>,
+    reporter: &StepReporter<S>,
     pkg_id: &PackageId,
     source: &PackageSource,
     config: &InstallConfig,
@@ -100,8 +100,8 @@ where
     S: Step,
 {
     let reporter = reporter.with_step(DownloadStep {
-        step: reporter.step(),
-        url: &source.url,
+        step: Arc::clone(reporter.step()),
+        url: source.url.clone(),
     });
     let response = reqwest::get(source.url.clone())
         .await

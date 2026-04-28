@@ -11,29 +11,30 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub(in crate::command::install) struct DbGuard<'a, 'b, 'c, 'd> {
+pub(in crate::command::install) struct DbGuard<'db> {
     installation_persisted: bool,
     installation_completed_in_memory: bool,
-    reporter: &'a StepReporter<'b, InstallStep<'c>>,
-    db: PackageDatabase<'d>,
+    reporter: StepReporter<InstallStep>,
+    db: PackageDatabase<'db>,
     pkg_id: PackageId,
 }
 
 #[derive(Debug)]
-pub(in crate::command::install) enum BeginInstallTxResult<'a, 'b, 'c, 'd> {
-    CanInstall(DbGuard<'a, 'b, 'c, 'd>),
-    AlreadyInstalled(PackageDatabase<'d>),
-    OtherVersionInstalled(PackageDatabase<'d>, PackageVersion),
-    PendingInstallFound(PackageDatabase<'d>, BTreeSet<PackageVersion>),
-    PendingUninstallFound(PackageDatabase<'d>, BTreeSet<PackageVersion>),
+pub(in crate::command::install) enum BeginInstallTxResult<'db> {
+    CanInstall(DbGuard<'db>),
+    AlreadyInstalled(PackageDatabase<'db>),
+    OtherVersionInstalled(PackageDatabase<'db>, PackageVersion),
+    PendingInstallFound(PackageDatabase<'db>, BTreeSet<PackageVersion>),
+    PendingUninstallFound(PackageDatabase<'db>, BTreeSet<PackageVersion>),
 }
 
-pub(in crate::command::install) fn begin_install<'a, 'b, 'c, 'd>(
-    reporter: &'a StepReporter<'b, InstallStep<'c>>,
-    mut db: PackageDatabase<'d>,
+pub(in crate::command::install) fn begin_install<'db>(
+    reporter: &StepReporter<InstallStep>,
+    mut db: PackageDatabase<'db>,
     manifest: &PackageManifest,
-) -> Result<BeginInstallTxResult<'a, 'b, 'c, 'd>, InstallError> {
+) -> Result<BeginInstallTxResult<'db>, InstallError> {
     let pkg_id = manifest.metadata.id();
+    let reporter = reporter.clone();
     match db.begin_install(manifest) {
         BeginInstallResult::CanInstall => {}
         BeginInstallResult::AlreadyInstalled => {
@@ -50,7 +51,7 @@ pub(in crate::command::install) fn begin_install<'a, 'b, 'c, 'd>(
         }
     }
 
-    save(reporter, &mut db)?;
+    save(&reporter, &mut db)?;
 
     Ok(BeginInstallTxResult::CanInstall(DbGuard {
         installation_persisted: false,
@@ -62,7 +63,7 @@ pub(in crate::command::install) fn begin_install<'a, 'b, 'c, 'd>(
 }
 
 fn save(
-    reporter: &StepReporter<'_, InstallStep<'_>>,
+    reporter: &StepReporter<InstallStep>,
     db: &mut PackageDatabase<'_>,
 ) -> Result<(), InstallError> {
     db.save()
@@ -71,7 +72,7 @@ fn save(
     Ok(())
 }
 
-impl DbGuard<'_, '_, '_, '_> {
+impl DbGuard<'_> {
     pub(in crate::command::install) fn complete_install(mut self) -> Result<(), InstallError> {
         // This guard only reaches completion after `begin_install` has persisted a pending-install
         // entry for `self.pkg_id`. Failure here indicates an internal DB invariant violation.
@@ -85,11 +86,11 @@ impl DbGuard<'_, '_, '_, '_> {
     }
 
     fn save(&mut self) -> Result<(), InstallError> {
-        save(self.reporter, &mut self.db)
+        save(&self.reporter, &mut self.db)
     }
 }
 
-impl Drop for DbGuard<'_, '_, '_, '_> {
+impl Drop for DbGuard<'_> {
     fn drop(&mut self) {
         if self.installation_persisted {
             return;

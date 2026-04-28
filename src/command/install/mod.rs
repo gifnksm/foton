@@ -12,21 +12,21 @@ use crate::{
     util::{
         app_dirs::AppDirs,
         fs::FsError,
-        reporter::{ReportValue, Reporter, Step, StepReporter, StepResultErrorExt as _},
+        reporter::{ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _},
     },
 };
 
 #[derive(Debug)]
-struct InstallStep<'a> {
-    pkg_spec: &'a PackageSpec,
+struct InstallStep {
+    pkg_spec: PackageSpec,
 }
 
-impl Step for InstallStep<'_> {
+impl Step for InstallStep {
     type WarnReportValue = InstallWarnReport;
     type ErrorReportValue = InstallErrorReport;
     type Error = InstallError;
 
-    fn report_prelude(&self, reporter: &Reporter) {
+    fn report_prelude(&self, reporter: &RootReporter) {
         reporter.report_step(format_args!("Installing {}...", self.pkg_spec));
     }
 
@@ -115,14 +115,16 @@ mod steps;
 
 pub(crate) async fn install_package(
     cancel_token: &CancellationToken,
-    reporter: &Reporter,
+    reporter: &RootReporter,
     app_id: &str,
     registry_path: &Path,
     pkg_spec: &PackageSpec,
     app_dirs: &AppDirs,
     config: &InstallConfig,
 ) -> Result<(), InstallError> {
-    let reporter = reporter.with_step(InstallStep { pkg_spec });
+    let reporter = reporter.with_step(InstallStep {
+        pkg_spec: pkg_spec.clone(),
+    });
 
     let manifest = steps::resolve_package(&reporter, registry_path, pkg_spec)?;
     let pkg_id = manifest.metadata.id();
@@ -159,13 +161,13 @@ pub(crate) async fn install_package(
     Ok(())
 }
 
-fn begin_install<'a, 'b, 'c, 'd>(
-    reporter: &'a StepReporter<'b, InstallStep<'c>>,
+fn begin_install<'db>(
+    reporter: &StepReporter<InstallStep>,
     app_id: &str,
     app_dirs: &AppDirs,
-    mut db: PackageDatabase<'d>,
+    mut db: PackageDatabase<'db>,
     manifest: &PackageManifest,
-) -> Result<Option<DbGuard<'a, 'b, 'c, 'd>>, InstallError> {
+) -> Result<Option<DbGuard<'db>>, InstallError> {
     let pkg_id = manifest.metadata.id();
     loop {
         let cleanup_versions = match helpers::begin_install(reporter, db, manifest)? {
@@ -221,7 +223,7 @@ fn begin_install<'a, 'b, 'c, 'd>(
 
 async fn stage_package(
     cancel_token: &CancellationToken,
-    reporter: &StepReporter<'_, InstallStep<'_>>,
+    reporter: &StepReporter<InstallStep>,
     pkg_dirs: &PackageDirs,
     manifest: &PackageManifest,
     config: &InstallConfig,
