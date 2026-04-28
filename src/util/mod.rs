@@ -4,3 +4,5 @@ pub(crate) mod fs;
 pub(crate) mod hash;
 pub(crate) mod path;
 pub(crate) mod reporter;
+#[cfg(test)]
+pub(crate) mod testing;

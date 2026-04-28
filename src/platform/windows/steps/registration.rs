@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
+    cli::context::StepContext,
     package::Package,
     platform::windows::primitives::{
         registry::{self, RegisteredFont, RegistryError},
@@ -8,10 +9,7 @@ use crate::{
     },
     util::{
         path::AbsolutePath,
-        reporter::{
-            ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _,
-            StepResultWarnExt as _,
-        },
+        reporter::{ReportValue, Step, StepResultErrorExt as _, StepResultWarnExt as _},
     },
 };
 
@@ -27,10 +25,6 @@ where
     type WarnReportValue = RegistrationWarnReport;
     type ErrorReportValue = RegistrationErrorReport;
     type Error = S::Error;
-
-    fn report_prelude(&self, reporter: &RootReporter) {
-        reporter.report_step(format_args!("Registering fonts..."));
-    }
 
     fn make_failed(&self) -> Self::Error {
         self.step.make_failed()
@@ -79,16 +73,17 @@ impl From<RegistrationErrorReport> for ReportValue<'static> {
 }
 
 pub(crate) fn register_package_fonts<S>(
-    reporter: &StepReporter<S>,
-    app_id: &str,
+    cx: &StepContext<S>,
     package: &Package,
 ) -> Result<(), S::Error>
 where
     S: Step,
 {
-    let reporter = reporter.with_step(RegistrationStep {
-        step: Arc::clone(reporter.step()),
+    let cx = cx.with_step(RegistrationStep {
+        step: Arc::clone(cx.step()),
     });
+    let reporter = cx.reporter();
+    reporter.report_step(format_args!("Registering fonts..."));
 
     let fonts_dir = package.dirs().fonts_dir();
     let registered_fonts = package
@@ -100,9 +95,9 @@ where
     // Report fatal errors at the point of failure so they stay ordered relative to
     // warnings emitted by later best-effort steps in this function. Callers should
     // return the error without reporting it again.
-    registry::register_package_fonts(app_id, package.id(), &registered_fonts)
+    registry::register_package_fonts(cx.app_id(), package.id(), &registered_fonts)
         .map_err(|source| RegistrationErrorReport::RegisterFontsInRegistry { source })
-        .report_error(&reporter)?;
+        .report_error(reporter)?;
 
     for entry in &registered_fonts {
         session::load_font(entry.path())
@@ -110,12 +105,12 @@ where
                 let path = entry.path().clone();
                 RegistrationWarnReport::LoadFont { path, source }
             })
-            .report_warn(&reporter);
+            .report_warn(reporter);
     }
 
     session::broadcast_font_change()
         .map_err(|source| RegistrationWarnReport::BroadcastFontAfterInstall { source })
-        .report_warn(&reporter);
+        .report_warn(reporter);
 
     Ok(())
 }

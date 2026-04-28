@@ -1,30 +1,22 @@
 use std::{path::Path, sync::Arc};
 
 use crate::{
+    cli::context::StepContext,
+    command::{InstallError, install::InstallStep},
     package::{PackageId, PackageManifest, PackageName, PackageQualifiedName, PackageSpec},
     registry::{PackageRegistry, PackageRegistryError},
-    util::reporter::{
-        NeverReport, ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _,
-    },
+    util::reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
 };
 
 #[derive(Debug)]
-struct ResolveStep<S> {
-    step: Arc<S>,
-    spec: PackageSpec,
+struct ResolveStep {
+    step: Arc<InstallStep>,
 }
 
-impl<S> Step for ResolveStep<S>
-where
-    S: Step,
-{
+impl Step for ResolveStep {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = ResolveErrorReport;
-    type Error = S::Error;
-
-    fn report_prelude(&self, reporter: &RootReporter) {
-        reporter.report_step(format_args!("Resolving {}...", self.spec));
-    }
+    type Error = InstallError;
 
     fn make_failed(&self) -> Self::Error {
         self.step.make_failed()
@@ -69,18 +61,16 @@ impl From<ResolveErrorReport> for ReportValue<'static> {
     }
 }
 
-pub(crate) fn resolve_package<S>(
-    reporter: &StepReporter<S>,
+pub(crate) fn resolve_package(
+    cx: &StepContext<InstallStep>,
     registry_path: &Path,
     pkg_spec: &PackageSpec,
-) -> Result<PackageManifest, S::Error>
-where
-    S: Step,
-{
-    let reporter = reporter.with_step(ResolveStep {
-        step: Arc::clone(reporter.step()),
-        spec: pkg_spec.clone(),
+) -> Result<PackageManifest, InstallError> {
+    let cx = cx.with_step(ResolveStep {
+        step: Arc::clone(cx.step()),
     });
+    let reporter = cx.reporter();
+    reporter.report_step(format_args!("Resolving {pkg_spec}..."));
 
     let registry = PackageRegistry::new(registry_path.to_path_buf());
 
@@ -91,7 +81,7 @@ where
                 let name = name.clone();
                 ResolveErrorReport::FindLatestPackagesByName { name, source }
             })
-            .report_error(&reporter)?
+            .report_error(reporter)?
             .into_values()
             .collect::<Vec<_>>(),
         PackageSpec::QualifiedName(qualified_name) => registry
@@ -103,7 +93,7 @@ where
                     source,
                 }
             })
-            .report_error(&reporter)?
+            .report_error(reporter)?
             .into_iter()
             .collect(),
         PackageSpec::Id(pkg_id) => registry
@@ -112,7 +102,7 @@ where
                 let pkg_id = pkg_id.clone();
                 ResolveErrorReport::FindPackageById { pkg_id, source }
             })
-            .report_error(&reporter)?
+            .report_error(reporter)?
             .into_iter()
             .collect(),
     };
@@ -139,7 +129,10 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use crate::command::install::{InstallError, InstallStep};
+    use crate::{
+        command::install::{InstallError, InstallStep},
+        util::testing::TempdirContext,
+    };
 
     use super::*;
 
@@ -178,11 +171,9 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         registry_path: &Path,
         pkg_spec: &PackageSpec,
     ) -> Result<PackageManifest, InstallError> {
-        let reporter = RootReporter::message_reporter();
-        let reporter = reporter.with_step(InstallStep {
-            pkg_spec: pkg_spec.clone(),
-        });
-        resolve_package(&reporter, registry_path, pkg_spec)
+        let cx = TempdirContext::new();
+        let cx = cx.with_step(InstallStep {});
+        resolve_package(&cx, registry_path, pkg_spec)
     }
 
     #[test]

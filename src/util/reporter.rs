@@ -130,7 +130,6 @@ impl RootReporter {
     where
         S: Step,
     {
-        step.report_prelude(self);
         StepReporter {
             root_reporter: self.clone(),
             step: Arc::new(step),
@@ -185,7 +184,6 @@ pub(crate) trait Step: Debug {
     type ErrorReportValue: Into<ReportValue<'static>>;
     type Error;
 
-    fn report_prelude(&self, reporter: &RootReporter);
     fn make_failed(&self) -> Self::Error;
 }
 
@@ -216,11 +214,17 @@ where
     where
         T: Step<Error = S::Error>,
     {
-        step.report_prelude(&self.root_reporter);
         StepReporter {
             root_reporter: self.root_reporter.clone(),
             step: Arc::new(step),
         }
+    }
+
+    pub(crate) fn report_step<'a, V>(&self, report: V)
+    where
+        V: Into<ReportValue<'a>>,
+    {
+        self.root_reporter.report_step(report);
     }
 
     pub(crate) fn report_info<'a, V>(&self, report: V)

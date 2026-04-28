@@ -1,16 +1,15 @@
 #[cfg(not(windows))]
 compile_error!("foton is supported on Windows only.");
 
-use std::{env, io, path::Path, process};
+use std::{env, io, path::Path, process, sync::Arc};
 
 use clap::{CommandFactory as _, Parser as _};
 use clap_complete::{Generator, Shell};
 use color_eyre::eyre::{self, WrapErr as _, bail, eyre};
 use tokio::{runtime::Runtime, signal};
-use tokio_util::sync::CancellationToken;
 
 use crate::{
-    command::InstallConfig,
+    cli::{config::Config, context::RootContext},
     platform::windows::{self, com::ComGuard},
     util::{app_dirs::AppDirs, error::FormatErrorChain as _, reporter::RootReporter},
 };
@@ -97,11 +96,16 @@ fn build_tokio_runtime() -> eyre::Result<Runtime> {
 
 async fn run(args: Args, app_dirs: AppDirs, reporter: RootReporter) -> eyre::Result<()> {
     let mut ctrl_c = signal::windows::ctrl_c().wrap_err("failed to listen for ctrl-c event")?;
-    let cancel_token = CancellationToken::new();
+    let cx = RootContext::new(
+        APP_ID.into(),
+        Arc::new(app_dirs),
+        Config::default().into(),
+        reporter,
+    );
 
     tokio::spawn({
-        let cancel_token = cancel_token.clone();
-        let reporter = reporter.clone();
+        let cancel_token = cx.cancel_token().clone();
+        let reporter = cx.reporter().clone();
         async move {
             ctrl_c.recv().await;
             reporter.report_warn(format_args!("cancellation requested, shutting down..."));
@@ -111,39 +115,19 @@ async fn run(args: Args, app_dirs: AppDirs, reporter: RootReporter) -> eyre::Res
 
     let Args { smoke_test } = args;
     if smoke_test {
-        run_smoke_test(&cancel_token, &reporter, APP_ID, &app_dirs).await?;
+        run_smoke_test(&cx).await?;
     }
 
     Ok(())
 }
 
-async fn run_smoke_test(
-    cancel_token: &CancellationToken,
-    reporter: &RootReporter,
-    app_id: &str,
-    app_dirs: &AppDirs,
-) -> eyre::Result<()> {
-    let config = InstallConfig {
-        max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
-        max_extracted_files: 50,
-        max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
-    };
-
+async fn run_smoke_test(cx: &RootContext) -> eyre::Result<()> {
     let registry_path = Path::new("packages");
     let pkg_spec = "yuru7/hackgen".parse()?;
 
-    command::install_package(
-        cancel_token,
-        reporter,
-        app_id,
-        registry_path,
-        &pkg_spec,
-        app_dirs,
-        &config,
-    )
-    .await?;
+    command::install_package(cx, registry_path, &pkg_spec).await?;
 
-    command::uninstall_package(reporter, app_id, app_dirs, &pkg_spec)?;
+    command::uninstall_package(cx, &pkg_spec)?;
 
     Ok(())
 }

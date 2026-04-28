@@ -1,40 +1,38 @@
 use crate::{
+    cli::context::StepContext,
     package::{Package, PackageId},
     platform::windows::steps::{registration, unregistration},
-    util::reporter::{Step, StepReporter},
+    util::reporter::Step,
 };
 
-pub(in crate::command::install) fn register_package_fonts<'a, S>(
-    reporter: &'a StepReporter<S>,
-    app_id: &'a str,
-    package: &'a Package,
-) -> Result<RegistrationGuard<'a, S>, S::Error>
+pub(in crate::command::install) fn register_package_fonts<S>(
+    cx: &StepContext<S>,
+    package: &Package,
+) -> Result<RegistrationGuard<S>, S::Error>
 where
     S: Step,
 {
     let guard = RegistrationGuard {
         armed: true,
-        reporter,
-        app_id,
-        pkg_id: package.id(),
+        cx: cx.clone(),
+        pkg_id: package.id().clone(),
     };
-    registration::register_package_fonts(reporter, app_id, package)?;
+    registration::register_package_fonts(cx, package)?;
     Ok(guard)
 }
 
 #[must_use]
 #[derive(Debug)]
-pub(in crate::command::install) struct RegistrationGuard<'a, S>
+pub(in crate::command::install) struct RegistrationGuard<S>
 where
     S: Step,
 {
     armed: bool,
-    reporter: &'a StepReporter<S>,
-    app_id: &'a str,
-    pkg_id: &'a PackageId,
+    cx: StepContext<S>,
+    pkg_id: PackageId,
 }
 
-impl<S> Drop for RegistrationGuard<'_, S>
+impl<S> Drop for RegistrationGuard<S>
 where
     S: Step,
 {
@@ -42,14 +40,14 @@ where
         if !self.armed {
             return;
         }
-        self.reporter.report_info(format_args!(
+        self.cx.reporter().report_info(format_args!(
             "rolling back registration of package fonts..."
         ));
-        let _ = unregistration::unregister_package_fonts(self.reporter, self.app_id, self.pkg_id);
+        let _ = unregistration::unregister_package_fonts(&self.cx, &self.pkg_id);
     }
 }
 
-impl<S> RegistrationGuard<'_, S>
+impl<S> RegistrationGuard<S>
 where
     S: Step,
 {

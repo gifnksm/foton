@@ -1,23 +1,15 @@
 use std::collections::BTreeSet;
 
 use crate::{
+    cli::context::StepContext,
     command::{
         InstallError,
         install::{InstallErrorReport, InstallStep},
     },
     db::{BeginInstallResult, PackageDatabase},
     package::{PackageId, PackageManifest, PackageVersion},
-    util::reporter::{StepReporter, StepResultErrorExt as _},
+    util::reporter::StepResultErrorExt as _,
 };
-
-#[derive(Debug)]
-pub(in crate::command::install) struct DbGuard<'db> {
-    installation_persisted: bool,
-    installation_completed_in_memory: bool,
-    reporter: StepReporter<InstallStep>,
-    db: PackageDatabase<'db>,
-    pkg_id: PackageId,
-}
 
 #[derive(Debug)]
 pub(in crate::command::install) enum BeginInstallTxResult<'db> {
@@ -29,12 +21,10 @@ pub(in crate::command::install) enum BeginInstallTxResult<'db> {
 }
 
 pub(in crate::command::install) fn begin_install<'db>(
-    reporter: &StepReporter<InstallStep>,
+    cx: &StepContext<InstallStep>,
     mut db: PackageDatabase<'db>,
     manifest: &PackageManifest,
 ) -> Result<BeginInstallTxResult<'db>, InstallError> {
-    let pkg_id = manifest.metadata.id();
-    let reporter = reporter.clone();
     match db.begin_install(manifest) {
         BeginInstallResult::CanInstall => {}
         BeginInstallResult::AlreadyInstalled => {
@@ -51,25 +41,31 @@ pub(in crate::command::install) fn begin_install<'db>(
         }
     }
 
-    save(&reporter, &mut db)?;
+    save(cx, &mut db)?;
 
     Ok(BeginInstallTxResult::CanInstall(DbGuard {
         installation_persisted: false,
         installation_completed_in_memory: false,
-        reporter,
+        cx: cx.clone(),
         db,
-        pkg_id,
+        pkg_id: manifest.metadata.id(),
     }))
 }
 
-fn save(
-    reporter: &StepReporter<InstallStep>,
-    db: &mut PackageDatabase<'_>,
-) -> Result<(), InstallError> {
+fn save(cx: &StepContext<InstallStep>, db: &mut PackageDatabase<'_>) -> Result<(), InstallError> {
     db.save()
         .map_err(|source| InstallErrorReport::SaveDatabase { source })
-        .report_error(reporter)?;
+        .report_error(cx.reporter())?;
     Ok(())
+}
+
+#[derive(Debug)]
+pub(in crate::command::install) struct DbGuard<'db> {
+    installation_persisted: bool,
+    installation_completed_in_memory: bool,
+    cx: StepContext<InstallStep>,
+    db: PackageDatabase<'db>,
+    pkg_id: PackageId,
 }
 
 impl DbGuard<'_> {
@@ -86,7 +82,7 @@ impl DbGuard<'_> {
     }
 
     fn save(&mut self) -> Result<(), InstallError> {
-        save(&self.reporter, &mut self.db)
+        save(&self.cx, &mut self.db)
     }
 }
 
@@ -103,7 +99,8 @@ impl Drop for DbGuard<'_> {
         // the actual system state. We therefore only roll back the DB here while it is still in
         // `PendingInstall`.
         if !self.installation_completed_in_memory {
-            self.reporter
+            self.cx
+                .reporter()
                 .report_info(format_args!("rolling back database changes..."));
 
             // Dropping before `complete_install()` means the in-memory DB state is still
