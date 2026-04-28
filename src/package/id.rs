@@ -134,22 +134,22 @@ mod tests {
 
     #[test]
     fn package_id_parses_valid_string() {
-        let pkg_id: PackageId = "yuru7/hackgen@2.10.0".parse().unwrap();
+        let pkg_id: PackageId = "example-namespace/example-font@0.1.0".parse().unwrap();
 
-        assert_eq!(pkg_id.namespace().to_string(), "yuru7");
-        assert_eq!(pkg_id.name().to_string(), "hackgen");
-        assert_eq!(pkg_id.version(), &Version::new(2, 10, 0));
-        assert_eq!(pkg_id.to_string(), "yuru7/hackgen@2.10.0");
+        assert_eq!(pkg_id.namespace().to_string(), "example-namespace");
+        assert_eq!(pkg_id.name().to_string(), "example-font");
+        assert_eq!(pkg_id.version(), &Version::new(0, 1, 0));
+        assert_eq!(pkg_id.to_string(), "example-namespace/example-font@0.1.0");
     }
 
     #[test]
     fn package_id_rejects_invalid_format() {
         for input in [
-            "yuru7",
-            "hackgen@2.10.0",
-            "yuru7/hackgen",
-            "yuru7/hackgen@",
-            "yuru7/hackgen@2.10.0@latest",
+            "example-namespace",
+            "example-font@0.1.0",
+            "example-namespace/example-font",
+            "example-namespace/example-font@",
+            "example-namespace/example-font@0.1.0@latest",
         ] {
             assert!(matches!(
                 input.parse::<PackageId>(),
@@ -160,30 +160,37 @@ mod tests {
 
     #[test]
     fn package_id_reports_invalid_namespace() {
-        let err = "0yuru7/hackgen@2.10.0".parse::<PackageId>().unwrap_err();
+        let err = "0example-namespace/example-font@0.1.0"
+            .parse::<PackageId>()
+            .unwrap_err();
 
         assert!(matches!(err, ParsePackageIdError::InvalidNamespace { .. }));
     }
 
     #[test]
     fn package_id_reports_invalid_name() {
-        let err = "yuru7/0hackgen@2.10.0".parse::<PackageId>().unwrap_err();
+        let err = "example-namespace/0example-font@0.1.0"
+            .parse::<PackageId>()
+            .unwrap_err();
 
         assert!(matches!(err, ParsePackageIdError::InvalidName { .. }));
     }
 
     #[test]
     fn package_id_reports_invalid_version() {
-        let err = "yuru7/hackgen@latest".parse::<PackageId>().unwrap_err();
+        let err = "example-namespace/example-font@latest"
+            .parse::<PackageId>()
+            .unwrap_err();
 
         assert!(matches!(err, ParsePackageIdError::InvalidVersion { .. }));
     }
 
     #[test]
     fn package_id_deserializes_from_string() {
-        let deserializer = StrDeserializer::<ValueError>::new("yuru7/hackgen@2.10.0");
+        let deserializer =
+            StrDeserializer::<ValueError>::new("example-namespace/example-font@0.1.0");
         let pkg_id = PackageId::deserialize(deserializer).unwrap();
 
-        assert_eq!(pkg_id.to_string(), "yuru7/hackgen@2.10.0");
+        assert_eq!(pkg_id.to_string(), "example-namespace/example-font@0.1.0");
     }
 }

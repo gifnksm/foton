@@ -131,38 +131,17 @@ mod tests {
 
     use crate::{
         command::install::{InstallError, InstallStep},
-        util::testing::TempdirContext,
+        util::testing::{self, TempdirContext},
     };
 
     use super::*;
 
-    fn make_registry_dir() -> TempDir {
-        TempDir::new().unwrap()
-    }
-
-    fn write_manifest(
-        root: &Path,
-        namespace: &str,
-        name: &str,
-        version: &str,
-        manifest_name: &str,
-        manifest_version: &str,
-    ) {
+    fn write_manifest(root: &Path, namespace: &str, name: &str, version: &str) {
         let dir = root.join(namespace).join(name).join(version);
         fs::create_dir_all(&dir).unwrap();
         fs::write(
             dir.join("manifest.toml"),
-            format!(
-                r#"
-[package]
-name = "{manifest_name}"
-version = "{manifest_version}"
-
-[[sources]]
-url = "https://example.com/{name}-{version}.zip"
-hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
-"#
-            ),
+            testing::make_manifest_str(namespace, name, version),
         )
         .unwrap();
     }
@@ -178,51 +157,26 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
 
     #[test]
     fn resolve_package_resolves_name_to_latest_manifest() {
-        let tempdir = make_registry_dir();
-        write_manifest(
-            tempdir.path(),
-            "yuru7",
-            "hackgen",
-            "2.9.0",
-            "yuru7/hackgen",
-            "2.9.0",
-        );
-        write_manifest(
-            tempdir.path(),
-            "yuru7",
-            "hackgen",
-            "2.10.0",
-            "yuru7/hackgen",
-            "2.10.0",
-        );
+        let tempdir = TempDir::new().unwrap();
+        write_manifest(tempdir.path(), "example-namespace", "example-font", "0.1.0");
+        write_manifest(tempdir.path(), "example-namespace", "example-font", "0.2.0");
 
-        let spec: PackageSpec = "hackgen".parse().unwrap();
+        let spec: PackageSpec = "example-font".parse().unwrap();
         let manifest = resolve_for_test(tempdir.path(), &spec).unwrap();
 
-        assert_eq!(manifest.metadata.id().to_string(), "yuru7/hackgen@2.10.0");
+        assert_eq!(
+            manifest.metadata.id().to_string(),
+            "example-namespace/example-font@0.2.0"
+        );
     }
 
     #[test]
     fn resolve_package_reports_multiple_matching_packages_for_name() {
-        let tempdir = make_registry_dir();
-        write_manifest(
-            tempdir.path(),
-            "yuru7",
-            "hackgen",
-            "2.10.0",
-            "yuru7/hackgen",
-            "2.10.0",
-        );
-        write_manifest(
-            tempdir.path(),
-            "someone",
-            "hackgen",
-            "1.0.0",
-            "someone/hackgen",
-            "1.0.0",
-        );
+        let tempdir = TempDir::new().unwrap();
+        write_manifest(tempdir.path(), "example-namespace", "example-font", "0.2.0");
+        write_manifest(tempdir.path(), "other-namespace", "example-font", "1.0.0");
 
-        let spec: PackageSpec = "hackgen".parse().unwrap();
+        let spec: PackageSpec = "example-font".parse().unwrap();
         let err = resolve_for_test(tempdir.path(), &spec).unwrap_err();
 
         assert!(matches!(err, InstallError::Failed));
@@ -230,9 +184,9 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
 
     #[test]
     fn resolve_package_reports_not_found_for_missing_spec() {
-        let tempdir = make_registry_dir();
+        let tempdir = TempDir::new().unwrap();
 
-        let spec: PackageSpec = "yuru7/hackgen".parse().unwrap();
+        let spec: PackageSpec = "example-namespace/example-font".parse().unwrap();
         let err = resolve_for_test(tempdir.path(), &spec).unwrap_err();
 
         assert!(matches!(err, InstallError::Failed));

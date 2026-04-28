@@ -72,33 +72,26 @@ impl PackageDirsGuard {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{fs, sync::LazyLock};
 
-    use crate::{cli::context::Context, package::PackageId, util::testing::TempdirContext};
+    use crate::{package::PackageId, util::testing::TempdirContext};
 
     use super::*;
 
-    fn make_package_id() -> PackageId {
-        "yuru7/hackgen@2.10.0".parse().unwrap()
-    }
-
-    fn make_package_dirs<R>(cx: &Context<R>) -> PackageDirs {
-        let pkg_id = make_package_id();
-        PackageDirs::new(cx.app_dirs(), &pkg_id)
-    }
+    static PKG_ID: LazyLock<PackageId> =
+        LazyLock::new(|| "example-namespace/example-font@0.1.0".parse().unwrap());
 
     #[test]
     fn create_new_package_dirs_does_not_remove_existing_package_on_failure() {
         let cx = TempdirContext::new();
-        let pkg_dirs = make_package_dirs(&cx);
+        let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
         fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
         let existing_font = pkg_dirs.fonts_dir().join("existing.ttf");
         fs::write(&existing_font, b"font").unwrap();
 
-        let pkg_id = make_package_id();
         let cx = cx.with_step(InstallStep {});
 
-        create_new_package_dirs(&cx, &pkg_id).unwrap_err();
+        create_new_package_dirs(&cx, &PKG_ID).unwrap_err();
 
         assert!(pkg_dirs.version_dir().exists());
         assert!(pkg_dirs.fonts_dir().exists());
@@ -108,12 +101,11 @@ mod tests {
     #[test]
     fn package_dirs_guard_removes_created_directories_on_drop() {
         let cx = TempdirContext::new();
-        let pkg_dirs = make_package_dirs(&cx);
-        let pkg_id = make_package_id();
+        let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
         let cx = cx.with_step(InstallStep {});
 
         {
-            let _guard = create_new_package_dirs(&cx, &pkg_id).unwrap();
+            let _guard = create_new_package_dirs(&cx, &PKG_ID).unwrap();
             assert!(pkg_dirs.fonts_dir().exists());
             assert!(pkg_dirs.version_dir().exists());
         }

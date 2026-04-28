@@ -101,21 +101,22 @@ mod tests {
 
     #[test]
     fn package_qualified_name_parses_valid_string() {
-        let qualified_name: PackageQualifiedName = "yuru7/hackgen".parse().unwrap();
+        let qualified_name: PackageQualifiedName =
+            "example-namespace/example-font".parse().unwrap();
 
-        assert_eq!(qualified_name.namespace().to_string(), "yuru7");
-        assert_eq!(qualified_name.name().to_string(), "hackgen");
-        assert_eq!(qualified_name.to_string(), "yuru7/hackgen");
+        assert_eq!(qualified_name.namespace().to_string(), "example-namespace");
+        assert_eq!(qualified_name.name().to_string(), "example-font");
+        assert_eq!(qualified_name.to_string(), "example-namespace/example-font");
     }
 
     #[test]
     fn package_qualified_name_rejects_invalid_format() {
         for input in [
-            "yuru7",
-            "hackgen",
-            "yuru7/",
-            "/hackgen",
-            "yuru7/hackgen/nerd",
+            "example-namespace",
+            "example-font",
+            "example-namespace/",
+            "/example-font",
+            "example-namespace/example/font",
         ] {
             assert!(matches!(
                 input.parse::<PackageQualifiedName>(),
@@ -126,7 +127,7 @@ mod tests {
 
     #[test]
     fn package_qualified_name_reports_invalid_namespace() {
-        let err = "0yuru7/hackgen"
+        let err = "0example-namespace/example-font"
             .parse::<PackageQualifiedName>()
             .unwrap_err();
 
@@ -138,7 +139,7 @@ mod tests {
 
     #[test]
     fn package_qualified_name_reports_invalid_name() {
-        let err = "yuru7/0hackgen"
+        let err = "example-namespace/0example-font"
             .parse::<PackageQualifiedName>()
             .unwrap_err();
 
@@ -150,9 +151,9 @@ mod tests {
 
     #[test]
     fn package_qualified_name_deserializes_from_string() {
-        let deserializer = StrDeserializer::<ValueError>::new("yuru7/hackgen");
+        let deserializer = StrDeserializer::<ValueError>::new("example-namespace/example-font");
         let qualified_name = PackageQualifiedName::deserialize(deserializer).unwrap();
 
-        assert_eq!(qualified_name.to_string(), "yuru7/hackgen");
+        assert_eq!(qualified_name.to_string(), "example-namespace/example-font");
     }
 }

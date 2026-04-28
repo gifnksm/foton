@@ -26,6 +26,22 @@ impl FromStr for PackageVersion {
     }
 }
 
+impl TryFrom<String> for PackageVersion {
+    type Error = semver::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::from_str(&value)
+    }
+}
+
+impl TryFrom<&str> for PackageVersion {
+    type Error = semver::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::from_str(value)
+    }
+}
+
 impl Display for PackageVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.0, f)

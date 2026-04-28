@@ -263,56 +263,38 @@ fn check_dir_presence(path: &Path) -> Result<DirPresence, PackageRegistryError> 
 mod tests {
     use std::fs;
 
-    use tempfile::TempDir;
+    use crate::util::testing;
 
     use super::*;
 
-    fn make_registry() -> (TempDir, PackageRegistry) {
-        let tempdir = TempDir::new().unwrap();
-        let registry = PackageRegistry::new(tempdir.path().to_path_buf());
-        (tempdir, registry)
+    fn write_manifest(root: &Path, namespace: &str, name: &str, version: &str) {
+        write_manifest_str(
+            root,
+            namespace,
+            name,
+            version,
+            &testing::make_manifest_str(namespace, name, version),
+        );
     }
 
-    fn write_manifest(
+    fn write_manifest_str(
         root: &Path,
         namespace: &str,
         name: &str,
         version: &str,
-        manifest_name: &str,
-        manifest_version: &str,
+        manifest_str: &str,
     ) {
         let dir = root.join(namespace).join(name).join(version);
         fs::create_dir_all(&dir).unwrap();
-        fs::write(
-            dir.join("manifest.toml"),
-            format!(
-                r#"
-[package]
-name = "{manifest_name}"
-version = "{manifest_version}"
-
-[[sources]]
-url = "https://example.com/{name}-{version}.zip"
-hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
-"#
-            ),
-        )
-        .unwrap();
+        fs::write(dir.join("manifest.toml"), manifest_str).unwrap();
     }
 
     #[test]
     fn find_package_by_id_reads_manifest() {
-        let (tempdir, registry) = make_registry();
-        write_manifest(
-            tempdir.path(),
-            "yuru7",
-            "hackgen",
-            "2.10.0",
-            "yuru7/hackgen",
-            "2.10.0",
-        );
+        let (tempdir, registry) = testing::make_registry();
+        write_manifest(tempdir.path(), "example-namespace", "example-font", "0.1.0");
 
-        let pkg_id: PackageId = "yuru7/hackgen@2.10.0".parse().unwrap();
+        let pkg_id: PackageId = "example-namespace/example-font@0.1.0".parse().unwrap();
         let manifest = registry.find_package_by_id(&pkg_id).unwrap().unwrap();
 
         assert_eq!(manifest.metadata.id(), pkg_id);
@@ -320,94 +302,62 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
 
     #[test]
     fn find_latest_package_by_qualified_name_picks_latest_version() {
-        let (tempdir, registry) = make_registry();
-        write_manifest(
-            tempdir.path(),
-            "yuru7",
-            "hackgen",
-            "2.9.0",
-            "yuru7/hackgen",
-            "2.9.0",
-        );
-        write_manifest(
-            tempdir.path(),
-            "yuru7",
-            "hackgen",
-            "2.10.0",
-            "yuru7/hackgen",
-            "2.10.0",
-        );
+        let (tempdir, registry) = testing::make_registry();
+        write_manifest(tempdir.path(), "example-namespace", "example-font", "0.1.0");
+        write_manifest(tempdir.path(), "example-namespace", "example-font", "0.2.0");
 
-        let qualified_name: PackageQualifiedName = "yuru7/hackgen".parse().unwrap();
+        let qualified_name: PackageQualifiedName =
+            "example-namespace/example-font".parse().unwrap();
         let manifest = registry
             .find_latest_package_by_qualified_name(&qualified_name)
             .unwrap()
             .unwrap();
 
-        assert_eq!(manifest.metadata.id().to_string(), "yuru7/hackgen@2.10.0");
+        assert_eq!(
+            manifest.metadata.id().to_string(),
+            "example-namespace/example-font@0.2.0"
+        );
     }
 
     #[test]
     fn find_latest_packages_by_name_returns_latest_manifest_per_package() {
-        let (tempdir, registry) = make_registry();
-        write_manifest(
-            tempdir.path(),
-            "yuru7",
-            "hackgen",
-            "2.9.0",
-            "yuru7/hackgen",
-            "2.9.0",
-        );
-        write_manifest(
-            tempdir.path(),
-            "yuru7",
-            "hackgen",
-            "2.10.0",
-            "yuru7/hackgen",
-            "2.10.0",
-        );
-        write_manifest(
-            tempdir.path(),
-            "someone",
-            "hackgen",
-            "1.0.0",
-            "someone/hackgen",
-            "1.0.0",
-        );
+        let (tempdir, registry) = testing::make_registry();
+        write_manifest(tempdir.path(), "example-namespace", "example-font", "0.1.0");
+        write_manifest(tempdir.path(), "example-namespace", "example-font", "0.2.0");
+        write_manifest(tempdir.path(), "other-namespace", "example-font", "1.0.0");
 
-        let name: PackageName = "hackgen".parse().unwrap();
+        let name: PackageName = "example-font".parse().unwrap();
         let manifests = registry.find_latest_packages_by_name(&name).unwrap();
 
         assert_eq!(manifests.len(), 2);
         assert_eq!(
-            manifests[&"someone/hackgen".parse().unwrap()]
+            manifests[&"other-namespace/example-font".parse().unwrap()]
                 .metadata
                 .id()
                 .to_string(),
-            "someone/hackgen@1.0.0"
+            "other-namespace/example-font@1.0.0"
         );
         assert_eq!(
-            manifests[&"yuru7/hackgen".parse().unwrap()]
+            manifests[&"example-namespace/example-font".parse().unwrap()]
                 .metadata
                 .id()
                 .to_string(),
-            "yuru7/hackgen@2.10.0"
+            "example-namespace/example-font@0.2.0"
         );
     }
 
     #[test]
     fn find_package_by_id_rejects_manifest_id_mismatch() {
-        let (tempdir, registry) = make_registry();
-        write_manifest(
+        let (tempdir, registry) = testing::make_registry();
+        write_manifest_str(
             tempdir.path(),
-            "yuru7",
-            "hackgen",
-            "2.10.0",
-            "yuru7/hackgen",
-            "2.9.0",
+            "example-namespace",
+            "example-font",
+            "0.1.0",
+            &testing::make_manifest_str("example-namespace", "example-font", "0.1.1"),
         );
 
-        let pkg_id: PackageId = "yuru7/hackgen@2.10.0".parse().unwrap();
+        let pkg_id: PackageId = "example-namespace/example-font@0.1.0".parse().unwrap();
         let err = registry.find_package_by_id(&pkg_id).unwrap_err();
 
         assert!(matches!(

@@ -74,20 +74,13 @@ impl DbLockFile {
 
 #[cfg(test)]
 mod tests {
-    use tempfile::TempDir;
+    use crate::util::testing;
 
     use super::*;
 
-    fn make_app_dirs() -> (TempDir, AppDirs) {
-        let tempdir = tempfile::tempdir().unwrap();
-        let data_local_dir = AbsolutePath::new(tempdir.path()).unwrap();
-        let app_dirs = AppDirs::new_for_test(data_local_dir);
-        (tempdir, app_dirs)
-    }
-
     #[test]
     fn try_acquire_returns_already_locked_when_lock_is_already_held() {
-        let (_tempdir, app_dirs) = make_app_dirs();
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut first = DbLockFile::open(&app_dirs).unwrap();
         let mut second = DbLockFile::open(&app_dirs).unwrap();
 
@@ -99,7 +92,7 @@ mod tests {
 
     #[test]
     fn try_acquire_succeeds_after_previous_guard_is_dropped() {
-        let (_tempdir, app_dirs) = make_app_dirs();
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut first = DbLockFile::open(&app_dirs).unwrap();
         let mut second = DbLockFile::open(&app_dirs).unwrap();
 

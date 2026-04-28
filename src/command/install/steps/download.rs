@@ -196,8 +196,7 @@ mod tests {
         let config = Config {
             install: InstallConfig {
                 max_archive_size_bytes: 3,
-                max_extracted_files: 1000,
-                max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
+                ..InstallConfig::default()
             },
         };
         let pb = ProgressBar::hidden();

@@ -134,8 +134,10 @@ mod tests {
 
     use crate::{
         db::{DbLockFile, PackageDatabase},
-        package::PackageManifest,
-        util::{app_dirs::AppDirs, testing::TempdirContext},
+        util::{
+            app_dirs::AppDirs,
+            testing::{self, TempdirContext},
+        },
     };
 
     use super::*;
@@ -147,22 +149,6 @@ mod tests {
         PackageDatabase::load(app_dirs, lock_file_guard).unwrap()
     }
 
-    fn test_manifest(namespace: &str, name: &str, version: &str) -> PackageManifest {
-        toml::from_str(&format!(
-            r#"
-[package]
-name = "{namespace}/{name}"
-version = "{version}"
-description = "HackGen"
-
-[[sources]]
-url = "https://example.com/hackgen.zip"
-hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
-"#
-        ))
-        .unwrap()
-    }
-
     #[test]
     fn resolve_spec_returns_none_for_missing_specs() {
         let cx = TempdirContext::new();
@@ -172,9 +158,13 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let db = load_db(cx.app_dirs(), &lock_file_guard);
 
         for spec in [
-            "yuru7/hackgen@2.10.0".parse::<PackageSpec>().unwrap(),
-            "yuru7/hackgen".parse::<PackageSpec>().unwrap(),
-            "hackgen".parse::<PackageSpec>().unwrap(),
+            "example-namespace/example-font@0.1.0"
+                .parse::<PackageSpec>()
+                .unwrap(),
+            "example-namespace/example-font"
+                .parse::<PackageSpec>()
+                .unwrap(),
+            "example-font".parse::<PackageSpec>().unwrap(),
         ] {
             let resolved = resolve_spec(&cx, &db, &spec).unwrap();
             assert_eq!(resolved, None);
@@ -188,7 +178,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
         let mut db = load_db(cx.app_dirs(), &lock_file_guard);
-        let manifest = test_manifest("yuru7", "hackgen", "2.10.0");
+        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let expected = manifest.metadata.id();
         assert!(matches!(
             db.begin_install(&manifest),
@@ -197,8 +187,12 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         db.complete_install(&expected).unwrap();
 
         for spec in [
-            "yuru7/hackgen@2.10.0".parse::<PackageSpec>().unwrap(),
-            "yuru7/hackgen".parse::<PackageSpec>().unwrap(),
+            "example-namespace/example-font@0.1.0"
+                .parse::<PackageSpec>()
+                .unwrap(),
+            "example-namespace/example-font"
+                .parse::<PackageSpec>()
+                .unwrap(),
         ] {
             let resolved = resolve_spec(&cx, &db, &spec).unwrap();
             assert_eq!(resolved, Some(expected.clone()));
@@ -213,7 +207,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let lock_file_guard = lock_file.try_acquire().unwrap();
         let mut db = load_db(cx.app_dirs(), &lock_file_guard);
 
-        let manifest1 = test_manifest("yuru7", "hackgen", "2.10.0");
+        let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id1 = manifest1.metadata.id();
         assert!(matches!(
             db.begin_install(&manifest1),
@@ -221,7 +215,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         ));
         db.complete_install(&pkg_id1).unwrap();
 
-        let manifest2 = test_manifest("someone", "hackgen", "1.0.0");
+        let manifest2 = testing::make_manifest("other-namespace", "example-font", "1.0.0");
         let pkg_id2 = manifest2.metadata.id();
         assert!(matches!(
             db.begin_install(&manifest2),
@@ -229,7 +223,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         ));
         db.complete_install(&pkg_id2).unwrap();
 
-        let spec = "hackgen".parse::<PackageSpec>().unwrap();
+        let spec = "example-font".parse::<PackageSpec>().unwrap();
         let err = resolve_spec(&cx, &db, &spec).unwrap_err();
 
         assert!(matches!(err, UninstallError::Failed));
@@ -242,14 +236,16 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
         let mut db = load_db(cx.app_dirs(), &lock_file_guard);
-        let manifest = test_manifest("yuru7", "hackgen", "2.10.0");
+        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let expected = manifest.metadata.id();
         assert!(matches!(
             db.begin_install(&manifest),
             crate::db::BeginInstallResult::CanInstall
         ));
 
-        let spec = "yuru7/hackgen".parse::<PackageSpec>().unwrap();
+        let spec = "example-namespace/example-font"
+            .parse::<PackageSpec>()
+            .unwrap();
         let resolved = resolve_spec(&cx, &db, &spec).unwrap();
         assert_eq!(resolved, Some(expected.clone()));
 
@@ -267,13 +263,13 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let lock_file_guard = lock_file.try_acquire().unwrap();
         let mut db = load_db(cx.app_dirs(), &lock_file_guard);
 
-        let manifest1 = test_manifest("yuru7", "hackgen", "2.10.0");
+        let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         assert!(matches!(
             db.begin_install(&manifest1),
             crate::db::BeginInstallResult::CanInstall
         ));
 
-        let manifest2 = test_manifest("someone", "hackgen", "1.0.0");
+        let manifest2 = testing::make_manifest("other-namespace", "example-font", "1.0.0");
         let pkg_id2 = manifest2.metadata.id();
         assert!(matches!(
             db.begin_install(&manifest2),
@@ -281,7 +277,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         ));
         db.begin_uninstall(&pkg_id2);
 
-        let spec = "hackgen".parse::<PackageSpec>().unwrap();
+        let spec = "example-font".parse::<PackageSpec>().unwrap();
         let err = resolve_spec(&cx, &db, &spec).unwrap_err();
 
         assert!(matches!(err, UninstallError::Failed));

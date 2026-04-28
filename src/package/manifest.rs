@@ -204,16 +204,16 @@ mod tests {
     fn valid_manifest_toml() -> &'static str {
         r#"
 [package]
-name = "yuru7/hackgen"
-version = "2.10.0"
-description = "HackGen"
-homepage = "https://github.com/yuru7/HackGen"
-repository = "https://github.com/yuru7/HackGen"
+name = "example-namespace/example-font"
+version = "0.1.0"
+description = "example-font"
+homepage = "https://example.com/homepage"
+repository = "https://example.com/repository"
 license = "OFL-1.1"
 
 [[sources]]
-url = "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip"
-hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = ["*/*.ttf"]
 "#
     }
@@ -222,30 +222,30 @@ include = ["*/*.ttf"]
     fn package_manifest_deserializes_valid_manifest() {
         let manifest = parse_manifest(valid_manifest_toml()).unwrap();
 
-        assert_eq!(manifest.metadata.qualified_name.namespace(), "yuru7");
-        assert_eq!(manifest.metadata.qualified_name.name(), "hackgen");
-        assert_eq!(manifest.metadata.version, Version::new(2, 10, 0));
-        assert_eq!(manifest.metadata.description.as_deref(), Some("HackGen"));
         assert_eq!(
-            manifest.metadata.homepage.as_ref().map(Url::as_str),
-            Some("https://github.com/yuru7/HackGen")
+            manifest.metadata.qualified_name.namespace(),
+            "example-namespace"
+        );
+        assert_eq!(manifest.metadata.qualified_name.name(), "example-font");
+        assert_eq!(manifest.metadata.version, Version::new(0, 1, 0));
+        assert_eq!(manifest.metadata.description.unwrap(), "example-font");
+        assert_eq!(
+            manifest.metadata.homepage.unwrap().as_str(),
+            "https://example.com/homepage"
         );
         assert_eq!(
-            manifest.metadata.repository.as_ref().map(Url::as_str),
-            Some("https://github.com/yuru7/HackGen")
+            manifest.metadata.repository.unwrap().as_str(),
+            "https://example.com/repository"
         );
-        assert_eq!(
-            manifest.metadata.license.as_ref().map(ToString::to_string),
-            Some("OFL-1.1".to_string())
-        );
+        assert_eq!(manifest.metadata.license.unwrap().to_string(), "OFL-1.1");
         assert_eq!(manifest.sources.len(), 1);
         assert_eq!(
             manifest.sources[0].url.as_str(),
-            "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip"
+            "https://example.com/example-font-0.1.0.zip"
         );
         assert_eq!(
             manifest.sources[0].hash.to_string(),
-            "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
         assert_eq!(
             manifest.sources[0]
@@ -262,13 +262,13 @@ include = ["*/*.ttf"]
         let err = parse_manifest(
             r#"
 [package]
-name = "yuru7/hackgen"
-version = "2.10.0"
+name = "example-namespace/example-font"
+version = "0.1.0"
 license = "not-a-valid-spdx"
 
 [[sources]]
-url = "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip"
-hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 "#,
         )
         .unwrap_err();
@@ -308,8 +308,8 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let err = parse_manifest(
             r#"
 [package]
-name = "yuru7/hackgen"
-version = "2.10.0"
+name = "example-namespace/example-font"
+version = "0.1.0"
 
 sources = []
 "#,
@@ -324,12 +324,12 @@ sources = []
         let err = parse_manifest(
             r#"
 [package]
-name = "yuru7/hackgen"
-version = "2.10.0"
+name = "example-namespace/example-font"
+version = "0.1.0"
 
 [[sources]]
-url = "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip"
-hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = []
 "#,
         )
@@ -343,13 +343,13 @@ include = []
         let err = parse_manifest(
             r#"
 [package]
-name = "yuru7/hackgen"
-version = "2.10.0"
+name = "example-namespace/example-font"
+version = "0.1.0"
 description = ""
 
 [[sources]]
-url = "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip"
-hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 "#,
         )
         .unwrap_err();
@@ -365,13 +365,13 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let err = parse_manifest(
             r#"
 [package]
-name = "yuru7/hackgen"
-version = "2.10.0"
-description = " HackGen "
+name = "example-namespace/example-font"
+version = "0.1.0"
+description = " example-font "
 
 [[sources]]
-url = "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip"
-hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 "#,
         )
         .unwrap_err();
@@ -387,12 +387,12 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let err = parse_manifest(
             r#"
 [package]
-name = "yuru7/hackgen"
-version = "2.10.0"
+name = "example-namespace/example-font"
+version = "0.1.0"
 
 [[sources]]
-url = "file:///tmp/HackGen_v2.10.0.zip"
-hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
+url = "file:///tmp/example-font_v0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 "#,
         )
         .unwrap_err();
@@ -405,13 +405,13 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let err = parse_manifest(
             r#"
 [package]
-name = "yuru7/hackgen"
-version = "2.10.0"
+name = "example-namespace/example-font"
+version = "0.1.0"
 homepage = "file:///tmp/project"
 
 [[sources]]
-url = "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip"
-hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 "#,
         )
         .unwrap_err();
@@ -424,12 +424,12 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let manifest = parse_manifest(
             r#"
 [package]
-name = "yuru7/hackgen"
-version = "2.10.0"
+name = "example-namespace/example-font"
+version = "0.1.0"
 
 [[sources]]
-url = "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip"
-hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 "#,
         )
         .unwrap();

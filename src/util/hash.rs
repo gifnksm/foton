@@ -156,21 +156,21 @@ mod tests {
 
     #[test]
     fn generic_digest_from_str_accepts_sha256_with_prefix() {
-        let actual = GenericDigest::from_str(
-            "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7",
+        let digest = GenericDigest::from_str(
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         )
         .unwrap();
 
         assert_eq!(
-            actual.to_string(),
-            "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
+            digest.to_string(),
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
     }
 
     #[test]
     fn generic_digest_from_str_rejects_missing_prefix() {
         let err = GenericDigest::from_str(
-            "ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         )
         .unwrap_err();
 
@@ -180,7 +180,7 @@ mod tests {
     #[test]
     fn generic_digest_from_str_rejects_unsupported_algorithm() {
         let err = GenericDigest::from_str(
-            "sha512:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7",
+            "sha512:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         )
         .unwrap_err();
 
@@ -192,20 +192,14 @@ mod tests {
 
     #[test]
     fn sha256_digest_from_str_accepts_unprefixed_values() {
-        let expected = Sha256Digest::from_str(
-            "ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7",
+        let digest = Sha256Digest::from_str(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         )
         .unwrap();
 
-        let actual = Sha256Digest::from_str(
-            "ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7",
-        )
-        .unwrap();
-
-        assert_eq!(actual, expected);
         assert_eq!(
-            actual.to_string(),
-            "ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
+            digest.to_string(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
     }
 
@@ -213,10 +207,10 @@ mod tests {
     fn sha256_digest_from_str_rejects_invalid_inputs() {
         for input in [
             "",
-            "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7",
-            "ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db",
-            "ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788dbz",
-            "éd182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7",
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdez",
+            "é0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
         ] {
             let _ = Sha256Digest::from_str(input).unwrap_err();
         }
