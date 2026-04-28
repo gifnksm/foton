@@ -5,22 +5,22 @@ use crate::{
     util::{
         app_dirs::AppDirs,
         reporter::{
-            NeverReport, ReportValue, Reporter, Step, StepReporter, StepResultErrorExt as _,
+            NeverReport, ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _,
         },
     },
 };
 
 #[derive(Debug)]
-struct UninstallStep<'a> {
-    pkg_spec: &'a PackageSpec,
+struct UninstallStep {
+    pkg_spec: PackageSpec,
 }
 
-impl Step for UninstallStep<'_> {
+impl Step for UninstallStep {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = UninstallErrorReport;
     type Error = UninstallError;
 
-    fn report_prelude(&self, reporter: &Reporter) {
+    fn report_prelude(&self, reporter: &RootReporter) {
         reporter.report_step(format_args!("Uninstalling {}...", self.pkg_spec));
     }
 
@@ -74,12 +74,14 @@ pub(crate) enum UninstallError {
 }
 
 pub(crate) fn uninstall_package(
-    reporter: &Reporter,
+    reporter: &RootReporter,
     app_id: &str,
     app_dirs: &AppDirs,
     pkg_spec: &PackageSpec,
 ) -> Result<(), UninstallError> {
-    let reporter = reporter.with_step(UninstallStep { pkg_spec });
+    let reporter = reporter.with_step(UninstallStep {
+        pkg_spec: pkg_spec.clone(),
+    });
 
     let mut db_lock = DbLockFile::open(app_dirs)
         .map_err(|source| UninstallErrorReport::OpenDbLockFile { source })
@@ -111,7 +113,7 @@ pub(crate) fn uninstall_package(
 }
 
 fn resolve_spec(
-    reporter: &StepReporter<'_, UninstallStep<'_>>,
+    reporter: &StepReporter<UninstallStep>,
     db: &PackageDatabase<'_>,
     spec: &PackageSpec,
 ) -> Result<Option<PackageId>, UninstallError> {
@@ -146,7 +148,7 @@ mod tests {
     use crate::{
         db::{DbLockFile, PackageDatabase},
         package::PackageManifest,
-        util::{app_dirs::AppDirs, path::AbsolutePath, reporter::Reporter},
+        util::{app_dirs::AppDirs, path::AbsolutePath, reporter::RootReporter},
     };
 
     use super::*;
@@ -183,11 +185,13 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
 
     fn resolve_for_test(
         db: &PackageDatabase<'_>,
-        spec: &PackageSpec,
+        pkg_spec: &PackageSpec,
     ) -> Result<Option<PackageId>, UninstallError> {
-        let reporter = Reporter::message_reporter();
-        let reporter = reporter.with_step(UninstallStep { pkg_spec: spec });
-        resolve_spec(&reporter, db, spec)
+        let reporter = RootReporter::message_reporter();
+        let reporter = reporter.with_step(UninstallStep {
+            pkg_spec: pkg_spec.clone(),
+        });
+        resolve_spec(&reporter, db, pkg_spec)
     }
 
     #[test]

@@ -4,11 +4,11 @@ use crate::{
     util::reporter::{Step, StepReporter},
 };
 
-pub(in crate::command::install) fn register_package_fonts<'a, 'b, S>(
-    reporter: &'a StepReporter<'b, S>,
+pub(in crate::command::install) fn register_package_fonts<'a, S>(
+    reporter: &'a StepReporter<S>,
     app_id: &'a str,
     package: &'a Package,
-) -> Result<RegistrationGuard<'a, 'b, S>, S::Error>
+) -> Result<RegistrationGuard<'a, S>, S::Error>
 where
     S: Step,
 {
@@ -24,17 +24,17 @@ where
 
 #[must_use]
 #[derive(Debug)]
-pub(in crate::command::install) struct RegistrationGuard<'a, 'b, S>
+pub(in crate::command::install) struct RegistrationGuard<'a, S>
 where
     S: Step,
 {
     armed: bool,
-    reporter: &'a StepReporter<'b, S>,
+    reporter: &'a StepReporter<S>,
     app_id: &'a str,
     pkg_id: &'a PackageId,
 }
 
-impl<S> Drop for RegistrationGuard<'_, '_, S>
+impl<S> Drop for RegistrationGuard<'_, S>
 where
     S: Step,
 {
@@ -49,7 +49,7 @@ where
     }
 }
 
-impl<S> RegistrationGuard<'_, '_, S>
+impl<S> RegistrationGuard<'_, S>
 where
     S: Step,
 {

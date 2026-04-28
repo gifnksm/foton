@@ -3,6 +3,7 @@ use std::{
     fs::File,
     io::{self, Write as _},
     path::PathBuf,
+    sync::Arc,
 };
 
 use glob::MatchOptions;
@@ -13,18 +14,18 @@ use crate::{
     util::{
         path::{AbsolutePath, FileName},
         reporter::{
-            NeverReport, ReportValue, Reporter, Step, StepReporter, StepResultErrorExt as _,
+            NeverReport, ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _,
         },
     },
 };
 
 #[derive(Debug)]
-struct ExtractStep<'a, S> {
-    step: &'a S,
-    fonts_dir: &'a AbsolutePath,
+struct ExtractStep<S> {
+    step: Arc<S>,
+    fonts_dir: AbsolutePath,
 }
 
-impl<S> Step for ExtractStep<'_, S>
+impl<S> Step for ExtractStep<S>
 where
     S: Step,
 {
@@ -32,7 +33,7 @@ where
     type ErrorReportValue = ExtractErrorReport;
     type Error = S::Error;
 
-    fn report_prelude(&self, reporter: &Reporter) {
+    fn report_prelude(&self, reporter: &RootReporter) {
         reporter.report_step(format_args!(
             "Extracting archive to {}...",
             self.fonts_dir.display()
@@ -108,7 +109,7 @@ impl From<ExtractErrorReport> for ReportValue<'static> {
 }
 
 pub(in crate::command::install) fn extract_archive<S>(
-    reporter: &StepReporter<'_, S>,
+    reporter: &StepReporter<S>,
     file: File,
     include: &[glob::Pattern],
     fonts_dir: &AbsolutePath,
@@ -118,8 +119,8 @@ where
     S: Step,
 {
     let reporter = reporter.with_step(ExtractStep {
-        step: reporter.step(),
-        fonts_dir,
+        step: Arc::clone(reporter.step()),
+        fonts_dir: fonts_dir.clone(),
     });
     extract_archive_impl(file, include, fonts_dir, config).report_error(&reporter)
 }

@@ -88,12 +88,12 @@ impl<'a> Report<'a> {
 }
 
 #[derive(Clone)]
-pub(crate) struct Reporter {
+pub(crate) struct RootReporter {
     multi_progress_bar: Arc<Mutex<MultiProgress>>,
     callback: SharedCallback,
 }
 
-impl Debug for Reporter {
+impl Debug for RootReporter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Reporter")
             .field("multi_progress_bar", &"<MultiProgress>")
@@ -102,7 +102,7 @@ impl Debug for Reporter {
     }
 }
 
-impl Reporter {
+impl RootReporter {
     fn new<C>(callback: C) -> Self
     where
         C: for<'r> Fn(Report<'r>) + Send + Sync + 'static,
@@ -126,14 +126,14 @@ impl Reporter {
         })
     }
 
-    pub(crate) fn with_step<S>(&self, step: S) -> StepReporter<'_, S>
+    pub(crate) fn with_step<S>(&self, step: S) -> StepReporter<S>
     where
         S: Step,
     {
         step.report_prelude(self);
         StepReporter {
-            reporter: self,
-            step,
+            root_reporter: self.clone(),
+            step: Arc::new(step),
         }
     }
 
@@ -180,37 +180,46 @@ impl From<NeverReport> for ReportValue<'_> {
     }
 }
 
-pub(crate) trait Step {
+pub(crate) trait Step: Debug {
     type WarnReportValue: Into<ReportValue<'static>>;
     type ErrorReportValue: Into<ReportValue<'static>>;
     type Error;
 
-    fn report_prelude(&self, reporter: &Reporter);
+    fn report_prelude(&self, reporter: &RootReporter);
     fn make_failed(&self) -> Self::Error;
 }
 
 #[derive(Debug)]
-pub(crate) struct StepReporter<'a, S> {
-    reporter: &'a Reporter,
-    step: S,
+pub(crate) struct StepReporter<S> {
+    root_reporter: RootReporter,
+    step: Arc<S>,
 }
 
-impl<S> StepReporter<'_, S>
+impl<S> Clone for StepReporter<S> {
+    fn clone(&self) -> Self {
+        Self {
+            root_reporter: self.root_reporter.clone(),
+            step: Arc::clone(&self.step),
+        }
+    }
+}
+
+impl<S> StepReporter<S>
 where
     S: Step,
 {
-    pub(crate) fn step(&self) -> &S {
+    pub(crate) fn step(&self) -> &Arc<S> {
         &self.step
     }
 
-    pub(crate) fn with_step<T>(&self, step: T) -> StepReporter<'_, T>
+    pub(crate) fn with_step<T>(&self, step: T) -> StepReporter<T>
     where
-        T: Step,
+        T: Step<Error = S::Error>,
     {
-        step.report_prelude(self.reporter);
+        step.report_prelude(&self.root_reporter);
         StepReporter {
-            reporter: self.reporter,
-            step,
+            root_reporter: self.root_reporter.clone(),
+            step: Arc::new(step),
         }
     }
 
@@ -218,15 +227,15 @@ where
     where
         V: Into<ReportValue<'a>>,
     {
-        self.reporter.report_info(report);
+        self.root_reporter.report_info(report);
     }
 
     pub(crate) fn report_warn(&self, report: S::WarnReportValue) {
-        self.reporter.report_warn(report);
+        self.root_reporter.report_warn(report);
     }
 
     pub(crate) fn report_error(&self, report: S::ErrorReportValue) -> S::Error {
-        self.reporter.report_error(report);
+        self.root_reporter.report_error(report);
         self.step.make_failed()
     }
 
@@ -251,7 +260,11 @@ where
             None => UNKNOWN_LEN_STYLE.clone(),
         };
         let pb = ProgressBar::with_draw_target(len, ProgressDrawTarget::stderr()).with_style(style);
-        self.reporter.multi_progress_bar.lock().unwrap().add(pb)
+        self.root_reporter
+            .multi_progress_bar
+            .lock()
+            .unwrap()
+            .add(pb)
     }
 
     pub(crate) async fn with_download_progress_bar<T, E, F>(
@@ -278,7 +291,7 @@ where
 {
     type Item;
 
-    fn report_warn(self, reporter: &StepReporter<'_, S>) -> Option<Self::Item>;
+    fn report_warn(self, reporter: &StepReporter<S>) -> Option<Self::Item>;
 }
 
 impl<S, T, E> StepResultWarnExt<S> for Result<T, E>
@@ -287,7 +300,7 @@ where
 {
     type Item = T;
 
-    fn report_warn(self, reporter: &StepReporter<'_, S>) -> Option<Self::Item> {
+    fn report_warn(self, reporter: &StepReporter<S>) -> Option<Self::Item> {
         self.map_err(|err| reporter.report_warn(err)).ok()
     }
 }
@@ -298,7 +311,7 @@ where
 {
     type Item;
 
-    fn report_error(self, reporter: &StepReporter<'_, S>) -> Result<Self::Item, S::Error>;
+    fn report_error(self, reporter: &StepReporter<S>) -> Result<Self::Item, S::Error>;
 }
 
 impl<S, T, E> StepResultErrorExt<S> for Result<T, E>
@@ -307,7 +320,7 @@ where
 {
     type Item = T;
 
-    fn report_error(self, reporter: &StepReporter<'_, S>) -> Result<Self::Item, S::Error> {
+    fn report_error(self, reporter: &StepReporter<S>) -> Result<Self::Item, S::Error> {
         self.map_err(|err| reporter.report_error(err))
     }
 }

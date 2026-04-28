@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     command::InstallConfig,
     platform::windows::{self, com::ComGuard},
-    util::{app_dirs::AppDirs, error::FormatErrorChain as _, reporter::Reporter},
+    util::{app_dirs::AppDirs, error::FormatErrorChain as _, reporter::RootReporter},
 };
 
 mod cli;
@@ -49,7 +49,7 @@ fn main() -> eyre::Result<()> {
 
     let args = Args::parse();
     let app_dirs = AppDirs::from_directories()?;
-    let reporter = Reporter::message_reporter();
+    let reporter = RootReporter::message_reporter();
     let _com_guard = windows::com::init().wrap_err("COM initialization failed")?;
 
     build_tokio_runtime()?.block_on(run(args, app_dirs, reporter))
@@ -95,7 +95,7 @@ fn build_tokio_runtime() -> eyre::Result<Runtime> {
         .wrap_err("failed to create Tokio runtime")
 }
 
-async fn run(args: Args, app_dirs: AppDirs, reporter: Reporter) -> eyre::Result<()> {
+async fn run(args: Args, app_dirs: AppDirs, reporter: RootReporter) -> eyre::Result<()> {
     let mut ctrl_c = signal::windows::ctrl_c().wrap_err("failed to listen for ctrl-c event")?;
     let cancel_token = CancellationToken::new();
 
@@ -119,7 +119,7 @@ async fn run(args: Args, app_dirs: AppDirs, reporter: Reporter) -> eyre::Result<
 
 async fn run_smoke_test(
     cancel_token: &CancellationToken,
-    reporter: &Reporter,
+    reporter: &RootReporter,
     app_id: &str,
     app_dirs: &AppDirs,
 ) -> eyre::Result<()> {

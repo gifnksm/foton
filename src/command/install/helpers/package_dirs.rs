@@ -12,18 +12,19 @@ use crate::{
     },
 };
 
-pub(in crate::command::install) fn create_new_package_dirs<'a, 'b, 'c>(
-    reporter: &'a StepReporter<'b, InstallStep<'c>>,
+pub(in crate::command::install) fn create_new_package_dirs(
+    reporter: &StepReporter<InstallStep>,
     app_dirs: &AppDirs,
     pkg_id: &PackageId,
-) -> Result<PackageDirsGuard<'a, 'b, 'c>, InstallError> {
+) -> Result<PackageDirsGuard, InstallError> {
+    let reporter = reporter.clone();
     let pkg_dirs = PackageDirs::new(app_dirs, pkg_id);
     package::create_new_package_dirs(&pkg_dirs)
         .map_err(|source| {
             let pkg_id = pkg_id.clone();
             InstallErrorReport::CreatePackageDirs { pkg_id, source }
         })
-        .report_error(reporter)?;
+        .report_error(&reporter)?;
     Ok(PackageDirsGuard {
         armed: true,
         reporter,
@@ -33,13 +34,13 @@ pub(in crate::command::install) fn create_new_package_dirs<'a, 'b, 'c>(
 
 #[must_use]
 #[derive(Debug)]
-pub(in crate::command::install) struct PackageDirsGuard<'a, 'b, 'c> {
+pub(in crate::command::install) struct PackageDirsGuard {
     armed: bool,
-    reporter: &'a StepReporter<'b, InstallStep<'c>>,
+    reporter: StepReporter<InstallStep>,
     pkg_dirs: PackageDirs,
 }
 
-impl Deref for PackageDirsGuard<'_, '_, '_> {
+impl Deref for PackageDirsGuard {
     type Target = PackageDirs;
 
     fn deref(&self) -> &Self::Target {
@@ -47,7 +48,7 @@ impl Deref for PackageDirsGuard<'_, '_, '_> {
     }
 }
 
-impl Drop for PackageDirsGuard<'_, '_, '_> {
+impl Drop for PackageDirsGuard {
     fn drop(&mut self) {
         if !self.armed {
             return;
@@ -61,11 +62,11 @@ impl Drop for PackageDirsGuard<'_, '_, '_> {
                 let pkg_dirs = self.pkg_dirs.clone();
                 InstallWarnReport::RemovePackageDirectoryAfterInstallFailure { pkg_dirs, source }
             })
-            .report_warn(self.reporter);
+            .report_warn(&self.reporter);
     }
 }
 
-impl PackageDirsGuard<'_, '_, '_> {
+impl PackageDirsGuard {
     pub(in crate::command::install) fn disarm(mut self) {
         self.armed = false;
     }
@@ -79,7 +80,7 @@ mod tests {
 
     use crate::{
         package::PackageSpec,
-        util::{path::AbsolutePath, reporter::Reporter},
+        util::{path::AbsolutePath, reporter::RootReporter},
     };
 
     use super::*;
@@ -106,10 +107,8 @@ mod tests {
 
         let pkg_id = make_package_id();
         let pkg_spec = PackageSpec::Id(pkg_id.clone());
-        let reporter = Reporter::message_reporter();
-        let reporter = reporter.with_step(InstallStep {
-            pkg_spec: &pkg_spec,
-        });
+        let reporter = RootReporter::message_reporter();
+        let reporter = reporter.with_step(InstallStep { pkg_spec });
         let app_dirs = AppDirs::new_for_test(AbsolutePath::new(tempdir.path()).unwrap());
 
         create_new_package_dirs(&reporter, &app_dirs, &pkg_id).unwrap_err();
@@ -124,10 +123,8 @@ mod tests {
         let (tempdir, pkg_dirs) = make_package_dirs();
         let pkg_id = make_package_id();
         let pkg_spec = PackageSpec::Id(pkg_id.clone());
-        let reporter = Reporter::message_reporter();
-        let reporter = reporter.with_step(InstallStep {
-            pkg_spec: &pkg_spec,
-        });
+        let reporter = RootReporter::message_reporter();
+        let reporter = reporter.with_step(InstallStep { pkg_spec });
         let app_dirs = AppDirs::new_for_test(AbsolutePath::new(tempdir.path()).unwrap());
 
         {

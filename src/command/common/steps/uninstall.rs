@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     db::{BeginUninstallResult, PackageDatabase, PackageDatabaseError},
     package::{self, PackageDirs, PackageId},
@@ -9,12 +11,13 @@ use crate::{
     },
 };
 
-struct UninstallTxStep<'a, S> {
-    step: &'a S,
-    pkg_id: &'a PackageId,
+#[derive(Debug)]
+struct UninstallTxStep<S> {
+    step: Arc<S>,
+    pkg_id: PackageId,
 }
 
-impl<S> Step for UninstallTxStep<'_, S>
+impl<S> Step for UninstallTxStep<S>
 where
     S: Step,
 {
@@ -22,7 +25,7 @@ where
     type ErrorReportValue = UninstallTxErrorReport;
     type Error = S::Error;
 
-    fn report_prelude(&self, reporter: &crate::util::reporter::Reporter) {
+    fn report_prelude(&self, reporter: &crate::util::reporter::RootReporter) {
         reporter.report_step(format_args!(
             "Beginning transaction to uninstall {}...",
             self.pkg_id
@@ -60,7 +63,7 @@ impl From<UninstallTxErrorReport> for ReportValue<'static> {
 }
 
 pub(in crate::command) fn uninstall_transaction<S>(
-    reporter: &StepReporter<'_, S>,
+    reporter: &StepReporter<S>,
     app_id: &str,
     db: &mut PackageDatabase<'_>,
     app_dirs: &AppDirs,
@@ -70,8 +73,8 @@ where
     S: Step,
 {
     let reporter = reporter.with_step(UninstallTxStep {
-        step: reporter.step(),
-        pkg_id,
+        step: Arc::clone(reporter.step()),
+        pkg_id: pkg_id.clone(),
     });
 
     match db.begin_uninstall(pkg_id) {
@@ -105,7 +108,7 @@ where
 }
 
 fn save<S>(
-    reporter: &StepReporter<'_, UninstallTxStep<'_, S>>,
+    reporter: &StepReporter<UninstallTxStep<S>>,
     db: &mut PackageDatabase<'_>,
 ) -> Result<(), S::Error>
 where

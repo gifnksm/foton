@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use crate::{
     package::FontEntry,
@@ -7,18 +7,18 @@ use crate::{
         fs as fs_util,
         path::{AbsolutePath, FileName},
         reporter::{
-            ReportValue, Reporter, Step, StepReporter, StepResultErrorExt as _,
+            ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _,
             StepResultWarnExt as _,
         },
     },
 };
 
 #[derive(Debug)]
-struct ValidationStep<'a, S> {
-    step: &'a S,
+struct ValidationStep<S> {
+    step: Arc<S>,
 }
 
-impl<S> Step for ValidationStep<'_, S>
+impl<S> Step for ValidationStep<S>
 where
     S: Step,
 {
@@ -26,7 +26,7 @@ where
     type ErrorReportValue = ValidationErrorReport;
     type Error = S::Error;
 
-    fn report_prelude(&self, reporter: &Reporter) {
+    fn report_prelude(&self, reporter: &RootReporter) {
         reporter.report_step(format_args!("Validating fonts..."));
     }
 
@@ -77,7 +77,7 @@ impl From<ValidationErrorReport> for ReportValue<'static> {
 }
 
 pub(in crate::command::install) fn validate_and_prune_fonts<S>(
-    reporter: &StepReporter<'_, S>,
+    reporter: &StepReporter<S>,
     fonts_dir: &AbsolutePath,
     file_names: &[FileName],
 ) -> Result<Vec<FontEntry>, S::Error>
@@ -85,7 +85,7 @@ where
     S: Step,
 {
     let reporter = reporter.with_step(ValidationStep {
-        step: reporter.step(),
+        step: Arc::clone(reporter.step()),
     });
 
     let mut valid_entries = vec![];

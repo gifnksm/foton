@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     package::PackageId,
     platform::windows::primitives::{
@@ -5,16 +7,17 @@ use crate::{
         session::{self, SessionError},
     },
     util::reporter::{
-        ReportValue, Reporter, Step, StepReporter, StepResultErrorExt as _, StepResultWarnExt as _,
+        ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _,
+        StepResultWarnExt as _,
     },
 };
 
 #[derive(Debug)]
-struct UnregistrationStep<'a, S> {
-    step: &'a S,
+struct UnregistrationStep<S> {
+    step: Arc<S>,
 }
 
-impl<S> Step for UnregistrationStep<'_, S>
+impl<S> Step for UnregistrationStep<S>
 where
     S: Step,
 {
@@ -22,7 +25,7 @@ where
     type ErrorReportValue = UnregistrationErrorReport;
     type Error = S::Error;
 
-    fn report_prelude(&self, reporter: &Reporter) {
+    fn report_prelude(&self, reporter: &RootReporter) {
         reporter.report_step(format_args!("Unregistering fonts..."));
     }
 
@@ -69,7 +72,7 @@ impl From<UnregistrationErrorReport> for ReportValue<'static> {
 }
 
 pub(crate) fn unregister_package_fonts<S>(
-    reporter: &StepReporter<'_, S>,
+    reporter: &StepReporter<S>,
     app_id: &str,
     pkg_id: &PackageId,
 ) -> Result<(), S::Error>
@@ -77,7 +80,7 @@ where
     S: Step,
 {
     let reporter = reporter.with_step(UnregistrationStep {
-        step: reporter.step(),
+        step: Arc::clone(reporter.step()),
     });
 
     let entries = registry::list_registered_package_fonts(app_id, pkg_id)
