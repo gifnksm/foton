@@ -1,12 +1,9 @@
 use crate::{
-    db::{
-        BeginUninstallResult, DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError,
-    },
-    package::{self, PackageDirs, PackageId, PackageSpec},
-    platform::windows::steps::unregistration,
+    command::common,
+    db::{DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError},
+    package::{PackageId, PackageSpec},
     util::{
         app_dirs::AppDirs,
-        fs::FsError,
         reporter::{
             NeverReport, ReportValue, Reporter, Step, StepReporter, StepResultErrorExt as _,
         },
@@ -53,19 +50,6 @@ pub(crate) enum UninstallErrorReport {
     LoadDatabase {
         #[error(source)]
         source: PackageDatabaseError,
-    },
-    #[display("failed to save package database")]
-    SaveDatabase {
-        #[error(source)]
-        source: PackageDatabaseError,
-    },
-    #[display(
-        "failed to remove package files for package {pkg_id}; manual cleanup may be required"
-    )]
-    RemovePackageFiles {
-        pkg_id: PackageId,
-        #[error(source)]
-        source: FsError,
     },
     #[display(
         "multiple packages match the specified package `{pkg_spec}`:\n{pkg_ids}",
@@ -121,35 +105,7 @@ pub(crate) fn uninstall_package(
         return Ok(());
     };
 
-    match db.begin_uninstall(&pkg_id) {
-        BeginUninstallResult::CanUninstall => {}
-        // `pkg_id` comes from the current database snapshot, so the entry
-        // should still exist here. Reaching this branch means the in-memory DB state
-        // became internally inconsistent. This is a bug in our state management, not a
-        // recoverable runtime error, so we intentionally panic instead of continuing.
-        BeginUninstallResult::NotFound => unreachable!(),
-    }
-    db.save()
-        .map_err(|source| UninstallErrorReport::SaveDatabase { source })
-        .report_error(&reporter)?;
-
-    unregistration::unregister_package_fonts(&reporter, app_id, &pkg_id)?;
-
-    let pkg_dirs = PackageDirs::new(app_dirs, &pkg_id);
-    package::remove_package_dirs(&pkg_dirs)
-        .map_err(|source| {
-            let pkg_id = pkg_id.clone();
-            UninstallErrorReport::RemovePackageFiles { pkg_id, source }
-        })
-        .report_error(&reporter)?;
-
-    // `begin_uninstall` succeeded and the uninstall side effects completed just above, so
-    // finalizing the same uninstall in the package database should not fail. If it does, the
-    // package database state is internally inconsistent and we intentionally panic.
-    db.complete_uninstall(&pkg_id).unwrap();
-    db.save()
-        .map_err(|source| UninstallErrorReport::SaveDatabase { source })
-        .report_error(&reporter)?;
+    common::steps::uninstall_transaction(&reporter, app_id, &mut db, app_dirs, &pkg_id)?;
 
     Ok(())
 }
