@@ -1,33 +1,30 @@
 use std::ops::Deref;
 
 use crate::{
+    cli::context::StepContext,
     command::{
         InstallError,
         install::{InstallErrorReport, InstallStep, InstallWarnReport},
     },
     package::{self, PackageDirs, PackageId},
-    util::{
-        app_dirs::AppDirs,
-        reporter::{StepReporter, StepResultErrorExt as _, StepResultWarnExt as _},
-    },
+    util::reporter::{StepResultErrorExt as _, StepResultWarnExt as _},
 };
 
 pub(in crate::command::install) fn create_new_package_dirs(
-    reporter: &StepReporter<InstallStep>,
-    app_dirs: &AppDirs,
+    cx: &StepContext<InstallStep>,
     pkg_id: &PackageId,
 ) -> Result<PackageDirsGuard, InstallError> {
-    let reporter = reporter.clone();
-    let pkg_dirs = PackageDirs::new(app_dirs, pkg_id);
+    let reporter = cx.reporter();
+    let pkg_dirs = PackageDirs::new(cx.app_dirs(), pkg_id);
     package::create_new_package_dirs(&pkg_dirs)
         .map_err(|source| {
             let pkg_id = pkg_id.clone();
             InstallErrorReport::CreatePackageDirs { pkg_id, source }
         })
-        .report_error(&reporter)?;
+        .report_error(reporter)?;
     Ok(PackageDirsGuard {
         armed: true,
-        reporter,
+        cx: cx.clone(),
         pkg_dirs,
     })
 }
@@ -36,7 +33,7 @@ pub(in crate::command::install) fn create_new_package_dirs(
 #[derive(Debug)]
 pub(in crate::command::install) struct PackageDirsGuard {
     armed: bool,
-    reporter: StepReporter<InstallStep>,
+    cx: StepContext<InstallStep>,
     pkg_dirs: PackageDirs,
 }
 
@@ -54,7 +51,8 @@ impl Drop for PackageDirsGuard {
             return;
         }
 
-        self.reporter
+        self.cx
+            .reporter()
             .report_info(format_args!("rolling back package fonts directories..."));
 
         let _ = package::remove_package_dirs(&self.pkg_dirs)
@@ -62,7 +60,7 @@ impl Drop for PackageDirsGuard {
                 let pkg_dirs = self.pkg_dirs.clone();
                 InstallWarnReport::RemovePackageDirectoryAfterInstallFailure { pkg_dirs, source }
             })
-            .report_warn(&self.reporter);
+            .report_warn(self.cx.reporter());
     }
 }
 
@@ -76,12 +74,7 @@ impl PackageDirsGuard {
 mod tests {
     use std::fs;
 
-    use tempfile::TempDir;
-
-    use crate::{
-        package::PackageSpec,
-        util::{path::AbsolutePath, reporter::RootReporter},
-    };
+    use crate::{cli::context::Context, package::PackageId, util::testing::TempdirContext};
 
     use super::*;
 
@@ -89,29 +82,23 @@ mod tests {
         "yuru7/hackgen@2.10.0".parse().unwrap()
     }
 
-    fn make_package_dirs() -> (TempDir, PackageDirs) {
-        let tempdir = tempfile::tempdir().unwrap();
-        let app_data_dir = AbsolutePath::new(tempdir.path()).unwrap();
-        let app_dirs = AppDirs::new_for_test(app_data_dir);
+    fn make_package_dirs<R>(cx: &Context<R>) -> PackageDirs {
         let pkg_id = make_package_id();
-        let pkg_dirs = PackageDirs::new(&app_dirs, &pkg_id);
-        (tempdir, pkg_dirs)
+        PackageDirs::new(cx.app_dirs(), &pkg_id)
     }
 
     #[test]
     fn create_new_package_dirs_does_not_remove_existing_package_on_failure() {
-        let (tempdir, pkg_dirs) = make_package_dirs();
+        let cx = TempdirContext::new();
+        let pkg_dirs = make_package_dirs(&cx);
         fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
         let existing_font = pkg_dirs.fonts_dir().join("existing.ttf");
         fs::write(&existing_font, b"font").unwrap();
 
         let pkg_id = make_package_id();
-        let pkg_spec = PackageSpec::Id(pkg_id.clone());
-        let reporter = RootReporter::message_reporter();
-        let reporter = reporter.with_step(InstallStep { pkg_spec });
-        let app_dirs = AppDirs::new_for_test(AbsolutePath::new(tempdir.path()).unwrap());
+        let cx = cx.with_step(InstallStep {});
 
-        create_new_package_dirs(&reporter, &app_dirs, &pkg_id).unwrap_err();
+        create_new_package_dirs(&cx, &pkg_id).unwrap_err();
 
         assert!(pkg_dirs.version_dir().exists());
         assert!(pkg_dirs.fonts_dir().exists());
@@ -120,15 +107,13 @@ mod tests {
 
     #[test]
     fn package_dirs_guard_removes_created_directories_on_drop() {
-        let (tempdir, pkg_dirs) = make_package_dirs();
+        let cx = TempdirContext::new();
+        let pkg_dirs = make_package_dirs(&cx);
         let pkg_id = make_package_id();
-        let pkg_spec = PackageSpec::Id(pkg_id.clone());
-        let reporter = RootReporter::message_reporter();
-        let reporter = reporter.with_step(InstallStep { pkg_spec });
-        let app_dirs = AppDirs::new_for_test(AbsolutePath::new(tempdir.path()).unwrap());
+        let cx = cx.with_step(InstallStep {});
 
         {
-            let _guard = create_new_package_dirs(&reporter, &app_dirs, &pkg_id).unwrap();
+            let _guard = create_new_package_dirs(&cx, &pkg_id).unwrap();
             assert!(pkg_dirs.fonts_dir().exists());
             assert!(pkg_dirs.version_dir().exists());
         }

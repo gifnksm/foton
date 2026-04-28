@@ -7,20 +7,17 @@ use reqwest::{Response, Url};
 use tokio::io::{AsyncSeekExt as _, AsyncWriteExt as _};
 
 use crate::{
-    command::install::InstallConfig,
+    cli::{config::Config, context::StepContext},
     package::{PackageId, PackageSource},
     util::{
         hash::{GenericDigest, GenericHasher},
-        reporter::{
-            NeverReport, ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _,
-        },
+        reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
     },
 };
 
 #[derive(Debug)]
 struct DownloadStep<S> {
     step: Arc<S>,
-    url: Url,
 }
 
 impl<S> Step for DownloadStep<S>
@@ -30,10 +27,6 @@ where
     type WarnReportValue = NeverReport;
     type ErrorReportValue = DownloadErrorReport;
     type Error = S::Error;
-
-    fn report_prelude(&self, reporter: &RootReporter) {
-        reporter.report_step(format_args!("Downloading {}...", self.url));
-    }
 
     fn make_failed(&self) -> Self::Error {
         self.step.make_failed()
@@ -91,18 +84,19 @@ impl From<DownloadErrorReport> for ReportValue<'static> {
 }
 
 pub(in crate::command::install) async fn download_archive<S>(
-    reporter: &StepReporter<S>,
+    cx: &StepContext<S>,
     pkg_id: &PackageId,
     source: &PackageSource,
-    config: &InstallConfig,
 ) -> Result<File, S::Error>
 where
     S: Step,
 {
-    let reporter = reporter.with_step(DownloadStep {
-        step: Arc::clone(reporter.step()),
-        url: source.url.clone(),
+    let cx = cx.with_step(DownloadStep {
+        step: Arc::clone(cx.step()),
     });
+    let reporter = cx.reporter();
+    reporter.report_step(format_args!("Downloading {}...", source.url));
+
     let response = reqwest::get(source.url.clone())
         .await
         .and_then(Response::error_for_status)
@@ -110,27 +104,27 @@ where
             let url = source.url.clone();
             DownloadErrorReport::Get { url, source: err }
         })
-        .report_error(&reporter)?;
+        .report_error(reporter)?;
 
     let len = response.content_length();
     if let Some(len) = len
-        && len > config.max_archive_size_bytes
+        && len > cx.config().install.max_archive_size_bytes
     {
         let reported_size = len;
         return Err(
             reporter.report_error(DownloadErrorReport::ReportedSizeExceedsMax {
                 reported_size,
-                max_size: config.max_archive_size_bytes,
+                max_size: cx.config().install.max_archive_size_bytes,
             }),
         );
     }
     let hasher = source.hash.hasher();
     let (output, digest) = reporter
         .with_download_progress_bar(len, async |pb| {
-            stream_archive_to_tempfile(response.bytes_stream(), hasher, config, pb).await
+            stream_archive_to_tempfile(response.bytes_stream(), hasher, cx.config(), pb).await
         })
         .await
-        .report_error(&reporter)?;
+        .report_error(reporter)?;
     if digest != source.hash {
         let pkg_id = pkg_id.clone();
         let expected = Box::new(source.hash.clone());
@@ -148,7 +142,7 @@ where
 async fn stream_archive_to_tempfile<S>(
     chunks: S,
     mut hasher: GenericHasher,
-    config: &InstallConfig,
+    config: &Config,
     pb: &indicatif::ProgressBar,
 ) -> Result<(File, GenericDigest), DownloadErrorReport>
 where
@@ -164,10 +158,10 @@ where
         let chunk = chunk.map_err(|source| DownloadErrorReport::ReadResponseBody { source })?;
         let chunk_size = chunk.len() as u64;
         total_size += chunk_size;
-        if total_size > config.max_archive_size_bytes {
+        if total_size > config.install.max_archive_size_bytes {
             return Err(DownloadErrorReport::DownloadedSizeExceedsMax {
                 downloaded_size: total_size,
-                max_size: config.max_archive_size_bytes,
+                max_size: config.install.max_archive_size_bytes,
             });
         }
         hasher.update(&chunk);
@@ -192,15 +186,19 @@ mod tests {
     use indicatif::ProgressBar;
     use sha2::{Digest as _, Sha256};
 
+    use crate::cli::config::InstallConfig;
+
     use super::*;
 
     #[tokio::test]
     async fn stream_archive_to_tempfile_rejects_download_size_exceeding_limit() {
         let chunks = stream::once(async { Ok(Bytes::copy_from_slice(b"font")) });
-        let config = InstallConfig {
-            max_archive_size_bytes: 3,
-            max_extracted_files: 1000,
-            max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
+        let config = Config {
+            install: InstallConfig {
+                max_archive_size_bytes: 3,
+                max_extracted_files: 1000,
+                max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
+            },
         };
         let pb = ProgressBar::hidden();
 

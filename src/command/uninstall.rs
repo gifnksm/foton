@@ -1,28 +1,18 @@
 use crate::{
+    cli::context::{RootContext, StepContext},
     command::common,
     db::{DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError},
     package::{PackageId, PackageSpec},
-    util::{
-        app_dirs::AppDirs,
-        reporter::{
-            NeverReport, ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _,
-        },
-    },
+    util::reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
 };
 
 #[derive(Debug)]
-struct UninstallStep {
-    pkg_spec: PackageSpec,
-}
+struct UninstallStep {}
 
 impl Step for UninstallStep {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = UninstallErrorReport;
     type Error = UninstallError;
-
-    fn report_prelude(&self, reporter: &RootReporter) {
-        reporter.report_step(format_args!("Uninstalling {}...", self.pkg_spec));
-    }
 
     fn make_failed(&self) -> Self::Error {
         UninstallError::Failed
@@ -74,18 +64,16 @@ pub(crate) enum UninstallError {
 }
 
 pub(crate) fn uninstall_package(
-    reporter: &RootReporter,
-    app_id: &str,
-    app_dirs: &AppDirs,
+    cx: &RootContext,
     pkg_spec: &PackageSpec,
 ) -> Result<(), UninstallError> {
-    let reporter = reporter.with_step(UninstallStep {
-        pkg_spec: pkg_spec.clone(),
-    });
+    let cx = cx.with_step(UninstallStep {});
+    let reporter = cx.reporter();
+    reporter.report_step(format_args!("Uninstalling {pkg_spec}..."));
 
-    let mut db_lock = DbLockFile::open(app_dirs)
+    let mut db_lock = DbLockFile::open(cx.app_dirs())
         .map_err(|source| UninstallErrorReport::OpenDbLockFile { source })
-        .report_error(&reporter)?;
+        .report_error(reporter)?;
     let db_lock_guard = db_lock
         .try_acquire()
         .map_err(|source| match source {
@@ -94,26 +82,26 @@ pub(crate) fn uninstall_package(
             }
             _ => UninstallErrorReport::AcquireDbLock { source },
         })
-        .report_error(&reporter)?;
+        .report_error(reporter)?;
 
-    let mut db = PackageDatabase::load(app_dirs, &db_lock_guard)
+    let mut db = PackageDatabase::load(cx.app_dirs(), &db_lock_guard)
         .map_err(|source| UninstallErrorReport::LoadDatabase { source })
-        .report_error(&reporter)?;
+        .report_error(reporter)?;
 
-    let Some(pkg_id) = resolve_spec(&reporter, &db, pkg_spec)? else {
+    let Some(pkg_id) = resolve_spec(&cx, &db, pkg_spec)? else {
         reporter.report_info(format_args!(
             "no package matches the specified package `{pkg_spec}`; nothing to do"
         ));
         return Ok(());
     };
 
-    common::steps::uninstall_transaction(&reporter, app_id, &mut db, app_dirs, &pkg_id)?;
+    common::steps::uninstall_transaction(&cx, &mut db, &pkg_id)?;
 
     Ok(())
 }
 
 fn resolve_spec(
-    reporter: &StepReporter<UninstallStep>,
+    cx: &StepContext<UninstallStep>,
     db: &PackageDatabase<'_>,
     spec: &PackageSpec,
 ) -> Result<Option<PackageId>, UninstallError> {
@@ -131,34 +119,26 @@ fn resolve_spec(
             .collect::<Vec<_>>(),
     };
     if candidates.len() > 1 {
-        return Err(
-            reporter.report_error(UninstallErrorReport::MultipleMatchingPackages {
+        return Err(cx
+            .reporter()
+            .report_error(UninstallErrorReport::MultipleMatchingPackages {
                 pkg_spec: spec.clone(),
                 pkg_ids: candidates,
-            }),
-        );
+            }));
     }
     Ok(candidates.into_iter().next())
 }
 
 #[cfg(test)]
 mod tests {
-    use tempfile::TempDir;
 
     use crate::{
         db::{DbLockFile, PackageDatabase},
         package::PackageManifest,
-        util::{app_dirs::AppDirs, path::AbsolutePath, reporter::RootReporter},
+        util::{app_dirs::AppDirs, testing::TempdirContext},
     };
 
     use super::*;
-
-    fn make_app_dirs() -> (TempDir, AppDirs) {
-        let tempdir = tempfile::tempdir().unwrap();
-        let app_data_dir = AbsolutePath::new(tempdir.path()).unwrap();
-        let app_dirs = AppDirs::new_for_test(app_data_dir);
-        (tempdir, app_dirs)
-    }
 
     fn load_db<'a>(
         app_dirs: &AppDirs,
@@ -183,40 +163,31 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         .unwrap()
     }
 
-    fn resolve_for_test(
-        db: &PackageDatabase<'_>,
-        pkg_spec: &PackageSpec,
-    ) -> Result<Option<PackageId>, UninstallError> {
-        let reporter = RootReporter::message_reporter();
-        let reporter = reporter.with_step(UninstallStep {
-            pkg_spec: pkg_spec.clone(),
-        });
-        resolve_spec(&reporter, db, pkg_spec)
-    }
-
     #[test]
     fn resolve_spec_returns_none_for_missing_specs() {
-        let (_tempdir, app_dirs) = make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+        let cx = TempdirContext::new();
+        let cx = cx.with_step(UninstallStep {});
+        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let db = load_db(&app_dirs, &lock_file_guard);
+        let db = load_db(cx.app_dirs(), &lock_file_guard);
 
         for spec in [
             "yuru7/hackgen@2.10.0".parse::<PackageSpec>().unwrap(),
             "yuru7/hackgen".parse::<PackageSpec>().unwrap(),
             "hackgen".parse::<PackageSpec>().unwrap(),
         ] {
-            let resolved = resolve_for_test(&db, &spec).unwrap();
+            let resolved = resolve_spec(&cx, &db, &spec).unwrap();
             assert_eq!(resolved, None);
         }
     }
 
     #[test]
     fn resolve_spec_resolves_installed_entry_from_id_and_qualified_name() {
-        let (_tempdir, app_dirs) = make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+        let cx = TempdirContext::new();
+        let cx = cx.with_step(UninstallStep {});
+        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = load_db(&app_dirs, &lock_file_guard);
+        let mut db = load_db(cx.app_dirs(), &lock_file_guard);
         let manifest = test_manifest("yuru7", "hackgen", "2.10.0");
         let expected = manifest.metadata.id();
         assert!(matches!(
@@ -229,17 +200,18 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
             "yuru7/hackgen@2.10.0".parse::<PackageSpec>().unwrap(),
             "yuru7/hackgen".parse::<PackageSpec>().unwrap(),
         ] {
-            let resolved = resolve_for_test(&db, &spec).unwrap();
+            let resolved = resolve_spec(&cx, &db, &spec).unwrap();
             assert_eq!(resolved, Some(expected.clone()));
         }
     }
 
     #[test]
     fn resolve_spec_reports_multiple_matches_for_name() {
-        let (_tempdir, app_dirs) = make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+        let cx = TempdirContext::new();
+        let cx = cx.with_step(UninstallStep {});
+        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = load_db(&app_dirs, &lock_file_guard);
+        let mut db = load_db(cx.app_dirs(), &lock_file_guard);
 
         let manifest1 = test_manifest("yuru7", "hackgen", "2.10.0");
         let pkg_id1 = manifest1.metadata.id();
@@ -258,17 +230,18 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         db.complete_install(&pkg_id2).unwrap();
 
         let spec = "hackgen".parse::<PackageSpec>().unwrap();
-        let err = resolve_for_test(&db, &spec).unwrap_err();
+        let err = resolve_spec(&cx, &db, &spec).unwrap_err();
 
         assert!(matches!(err, UninstallError::Failed));
     }
 
     #[test]
     fn resolve_spec_resolves_pending_entries() {
-        let (_tempdir, app_dirs) = make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+        let cx = TempdirContext::new();
+        let cx = cx.with_step(UninstallStep {});
+        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = load_db(&app_dirs, &lock_file_guard);
+        let mut db = load_db(cx.app_dirs(), &lock_file_guard);
         let manifest = test_manifest("yuru7", "hackgen", "2.10.0");
         let expected = manifest.metadata.id();
         assert!(matches!(
@@ -277,21 +250,22 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         ));
 
         let spec = "yuru7/hackgen".parse::<PackageSpec>().unwrap();
-        let resolved = resolve_for_test(&db, &spec).unwrap();
+        let resolved = resolve_spec(&cx, &db, &spec).unwrap();
         assert_eq!(resolved, Some(expected.clone()));
 
         db.begin_uninstall(&expected);
 
-        let resolved = resolve_for_test(&db, &spec).unwrap();
+        let resolved = resolve_spec(&cx, &db, &spec).unwrap();
         assert_eq!(resolved, Some(expected));
     }
 
     #[test]
     fn resolve_spec_reports_multiple_matches_for_name_across_pending_states() {
-        let (_tempdir, app_dirs) = make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+        let cx = TempdirContext::new();
+        let cx = cx.with_step(UninstallStep {});
+        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = load_db(&app_dirs, &lock_file_guard);
+        let mut db = load_db(cx.app_dirs(), &lock_file_guard);
 
         let manifest1 = test_manifest("yuru7", "hackgen", "2.10.0");
         assert!(matches!(
@@ -308,7 +282,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         db.begin_uninstall(&pkg_id2);
 
         let spec = "hackgen".parse::<PackageSpec>().unwrap();
-        let err = resolve_for_test(&db, &spec).unwrap_err();
+        let err = resolve_spec(&cx, &db, &spec).unwrap_err();
 
         assert!(matches!(err, UninstallError::Failed));
     }

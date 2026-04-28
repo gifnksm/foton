@@ -1,15 +1,13 @@
 use std::sync::Arc;
 
 use crate::{
+    cli::context::StepContext,
     package::PackageId,
     platform::windows::primitives::{
         registry::{self, RegistryError},
         session::{self, SessionError},
     },
-    util::reporter::{
-        ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _,
-        StepResultWarnExt as _,
-    },
+    util::reporter::{ReportValue, Step, StepResultErrorExt as _, StepResultWarnExt as _},
 };
 
 #[derive(Debug)]
@@ -24,10 +22,6 @@ where
     type WarnReportValue = UnregistrationWarnReport;
     type ErrorReportValue = UnregistrationErrorReport;
     type Error = S::Error;
-
-    fn report_prelude(&self, reporter: &RootReporter) {
-        reporter.report_step(format_args!("Unregistering fonts..."));
-    }
 
     fn make_failed(&self) -> Self::Error {
         self.step.make_failed()
@@ -72,20 +66,21 @@ impl From<UnregistrationErrorReport> for ReportValue<'static> {
 }
 
 pub(crate) fn unregister_package_fonts<S>(
-    reporter: &StepReporter<S>,
-    app_id: &str,
+    cx: &StepContext<S>,
     pkg_id: &PackageId,
 ) -> Result<(), S::Error>
 where
     S: Step,
 {
-    let reporter = reporter.with_step(UnregistrationStep {
-        step: Arc::clone(reporter.step()),
+    let cx = cx.with_step(UnregistrationStep {
+        step: Arc::clone(cx.step()),
     });
+    let reporter = cx.reporter();
+    reporter.report_step(format_args!("Unregistering fonts..."));
 
-    let entries = registry::list_registered_package_fonts(app_id, pkg_id)
+    let entries = registry::list_registered_package_fonts(cx.app_id(), pkg_id)
         .map_err(|source| UnregistrationWarnReport::ListInstalledFonts { source })
-        .report_warn(&reporter);
+        .report_warn(reporter);
 
     if let Some(entries) = entries {
         for entry in entries {
@@ -96,13 +91,13 @@ where
     // Report fatal errors at the point of failure so they stay ordered relative to
     // warnings emitted by later best-effort steps in this function. Callers should
     // return the error without reporting it again.
-    let res = registry::unregister_package_fonts(app_id, pkg_id)
+    let res = registry::unregister_package_fonts(cx.app_id(), pkg_id)
         .map_err(|source| UnregistrationErrorReport::UnregisterFontsFromRegistry { source })
-        .report_error(&reporter);
+        .report_error(reporter);
 
     let _ = session::broadcast_font_change()
         .map_err(|source| UnregistrationWarnReport::BroadcastFontAfterUninstall { source })
-        .report_warn(&reporter);
+        .report_warn(reporter);
 
     res
 }

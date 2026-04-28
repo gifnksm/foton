@@ -10,19 +10,16 @@ use glob::MatchOptions;
 use zip::{ZipArchive, result::ZipError};
 
 use crate::{
-    command::install::InstallConfig,
+    cli::{config::Config, context::StepContext},
     util::{
         path::{AbsolutePath, FileName},
-        reporter::{
-            NeverReport, ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _,
-        },
+        reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
     },
 };
 
 #[derive(Debug)]
 struct ExtractStep<S> {
     step: Arc<S>,
-    fonts_dir: AbsolutePath,
 }
 
 impl<S> Step for ExtractStep<S>
@@ -32,13 +29,6 @@ where
     type WarnReportValue = NeverReport;
     type ErrorReportValue = ExtractErrorReport;
     type Error = S::Error;
-
-    fn report_prelude(&self, reporter: &RootReporter) {
-        reporter.report_step(format_args!(
-            "Extracting archive to {}...",
-            self.fonts_dir.display()
-        ));
-    }
 
     fn make_failed(&self) -> Self::Error {
         self.step.make_failed()
@@ -109,27 +99,30 @@ impl From<ExtractErrorReport> for ReportValue<'static> {
 }
 
 pub(in crate::command::install) fn extract_archive<S>(
-    reporter: &StepReporter<S>,
+    cx: &StepContext<S>,
     file: File,
     include: &[glob::Pattern],
     fonts_dir: &AbsolutePath,
-    config: &InstallConfig,
 ) -> Result<Vec<FileName>, S::Error>
 where
     S: Step,
 {
-    let reporter = reporter.with_step(ExtractStep {
-        step: Arc::clone(reporter.step()),
-        fonts_dir: fonts_dir.clone(),
+    let cx = cx.with_step(ExtractStep {
+        step: Arc::clone(cx.step()),
     });
-    extract_archive_impl(file, include, fonts_dir, config).report_error(&reporter)
+    let reporter = cx.reporter();
+    reporter.report_step(format_args!(
+        "Extracting archive to {}...",
+        fonts_dir.display()
+    ));
+    extract_archive_impl(file, include, fonts_dir, cx.config()).report_error(reporter)
 }
 
 fn extract_archive_impl(
     file: File,
     include: &[glob::Pattern],
     fonts_dir: &AbsolutePath,
-    config: &InstallConfig,
+    config: &Config,
 ) -> Result<Vec<FileName>, ExtractErrorReport> {
     const MATCH_OPTIONS: MatchOptions = MatchOptions {
         case_sensitive: false,
@@ -159,11 +152,11 @@ fn extract_archive_impl(
         if !matches {
             continue;
         }
-        if archive_file.size() > config.max_extracted_file_size_bytes {
+        if archive_file.size() > config.install.max_extracted_file_size_bytes {
             return Err(ExtractErrorReport::ExtractedFileExceedsMaxSize {
                 file_path: archive_path.clone(),
                 file_size: archive_file.size(),
-                max_size: config.max_extracted_file_size_bytes,
+                max_size: config.install.max_extracted_file_size_bytes,
             });
         }
 
@@ -177,8 +170,8 @@ fn extract_archive_impl(
         })?;
         let fs_path = fonts_dir.join(&file_name);
 
-        if files.len() >= config.max_extracted_files {
-            let max_files = config.max_extracted_files;
+        if files.len() >= config.install.max_extracted_files {
+            let max_files = config.install.max_extracted_files;
             return Err(ExtractErrorReport::TooManyExtractableFiles { max_files });
         }
 
@@ -212,6 +205,8 @@ fn extract_archive_impl(
 mod tests {
     use std::io::Seek as _;
 
+    use crate::cli::config::InstallConfig;
+
     use super::*;
 
     use tempfile::TempDir;
@@ -241,18 +236,10 @@ mod tests {
         ]
     }
 
-    fn default_config() -> InstallConfig {
-        InstallConfig {
-            max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
-            max_extracted_files: 1000,
-            max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
-        }
-    }
-
     fn extract_to_tempdir(
         archive: File,
         include: &[glob::Pattern],
-        config: &InstallConfig,
+        config: &Config,
     ) -> Result<(TempDir, Vec<FileName>), Box<ExtractErrorReport>> {
         let tempdir = tempfile::tempdir().unwrap();
         let fonts_dir = AbsolutePath::new(tempdir.path()).unwrap();
@@ -267,7 +254,7 @@ mod tests {
 
         let (_tempdir, files) = {
             let include: &[glob::Pattern] = &include;
-            extract_to_tempdir(archive, include, &default_config())
+            extract_to_tempdir(archive, include, &Config::default())
         }
         .unwrap();
 
@@ -281,7 +268,7 @@ mod tests {
 
         let (_tempdir, files) = {
             let include: &[glob::Pattern] = &include;
-            extract_to_tempdir(archive, include, &default_config())
+            extract_to_tempdir(archive, include, &Config::default())
         }
         .unwrap();
 
@@ -295,7 +282,7 @@ mod tests {
 
         let (_tempdir, files) = {
             let include: &[glob::Pattern] = &include;
-            extract_to_tempdir(archive, include, &default_config())
+            extract_to_tempdir(archive, include, &Config::default())
         }
         .unwrap();
 
@@ -306,7 +293,7 @@ mod tests {
     fn extract_archive_rejects_duplicate_font_file_names() {
         let archive = build_zip(&[("a/font.ttf", b"font-a"), ("b/font.ttf", b"font-b")]);
 
-        let err = extract_to_tempdir(archive, &default_include(), &default_config()).unwrap_err();
+        let err = extract_to_tempdir(archive, &default_include(), &Config::default()).unwrap_err();
         assert!(matches!(
             *err,
             ExtractErrorReport::ExtractedFileAlreadyExists { .. }
@@ -324,7 +311,7 @@ mod tests {
         ]);
 
         let (_tempdir, files) =
-            extract_to_tempdir(archive, &default_include(), &default_config()).unwrap();
+            extract_to_tempdir(archive, &default_include(), &Config::default()).unwrap();
 
         assert_eq!(files, vec!["font.ttf", "font.ttc", "font.otf"]);
     }
@@ -332,10 +319,12 @@ mod tests {
     #[test]
     fn extract_archive_rejects_more_than_max_extracted_files() {
         let archive = build_zip(&[("a.ttf", b"font-a"), ("b.ttf", b"font-b")]);
-        let config = InstallConfig {
-            max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
-            max_extracted_files: 1,
-            max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
+        let config = Config {
+            install: InstallConfig {
+                max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
+                max_extracted_files: 1,
+                max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
+            },
         };
 
         let err = extract_to_tempdir(archive, &default_include(), &config).unwrap_err();
@@ -348,10 +337,12 @@ mod tests {
     #[test]
     fn extract_archive_rejects_entries_exceeding_max_extracted_file_size() {
         let archive = build_zip(&[("font.ttf", b"font")]);
-        let config = InstallConfig {
-            max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
-            max_extracted_files: 1000,
-            max_extracted_file_size_bytes: 3,
+        let config = Config {
+            install: InstallConfig {
+                max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
+                max_extracted_files: 1000,
+                max_extracted_file_size_bytes: 3,
+            },
         };
 
         let err = extract_to_tempdir(archive, &default_include(), &config).unwrap_err();

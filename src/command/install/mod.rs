@@ -1,8 +1,7 @@
 use std::path::Path;
 
-use tokio_util::sync::CancellationToken;
-
 use crate::{
+    cli::context::{RootContext, StepContext},
     command::{
         common,
         install::helpers::{BeginInstallTxResult, DbGuard},
@@ -10,25 +9,18 @@ use crate::{
     db::{DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError},
     package::{Package, PackageDirs, PackageId, PackageManifest, PackageSpec},
     util::{
-        app_dirs::AppDirs,
         fs::FsError,
-        reporter::{ReportValue, RootReporter, Step, StepReporter, StepResultErrorExt as _},
+        reporter::{ReportValue, Step, StepResultErrorExt as _},
     },
 };
 
 #[derive(Debug)]
-struct InstallStep {
-    pkg_spec: PackageSpec,
-}
+struct InstallStep {}
 
 impl Step for InstallStep {
     type WarnReportValue = InstallWarnReport;
     type ErrorReportValue = InstallErrorReport;
     type Error = InstallError;
-
-    fn report_prelude(&self, reporter: &RootReporter) {
-        reporter.report_step(format_args!("Installing {}...", self.pkg_spec));
-    }
 
     fn make_failed(&self) -> Self::Error {
         InstallError::Failed
@@ -102,56 +94,45 @@ pub(crate) enum InstallError {
     Cancelled,
 }
 
-#[derive(Debug)]
-#[expect(clippy::struct_field_names)]
-pub(crate) struct InstallConfig {
-    pub(crate) max_archive_size_bytes: u64,
-    pub(crate) max_extracted_files: usize,
-    pub(crate) max_extracted_file_size_bytes: u64,
-}
-
 mod helpers;
 mod steps;
 
 pub(crate) async fn install_package(
-    cancel_token: &CancellationToken,
-    reporter: &RootReporter,
-    app_id: &str,
+    cx: &RootContext,
     registry_path: &Path,
     pkg_spec: &PackageSpec,
-    app_dirs: &AppDirs,
-    config: &InstallConfig,
 ) -> Result<(), InstallError> {
-    let reporter = reporter.with_step(InstallStep {
-        pkg_spec: pkg_spec.clone(),
-    });
+    let cx = cx.with_step(InstallStep {});
+    cx.reporter()
+        .report_step(format_args!("Installing {pkg_spec}..."));
+    let reporter = cx.reporter();
 
-    let manifest = steps::resolve_package(&reporter, registry_path, pkg_spec)?;
+    let manifest = steps::resolve_package(&cx, registry_path, pkg_spec)?;
     let pkg_id = manifest.metadata.id();
 
-    let mut db_lock = DbLockFile::open(app_dirs)
+    let mut db_lock = DbLockFile::open(cx.app_dirs())
         .map_err(|source| InstallErrorReport::OpenDbLockFile { source })
-        .report_error(&reporter)?;
+        .report_error(reporter)?;
     let db_lock_guard = db_lock
         .try_acquire()
         .map_err(|source| match source {
             DbLockFileError::AlreadyLocked { .. } => InstallErrorReport::DbAlreadyLocked { source },
             _ => InstallErrorReport::AcquireDbLock { source },
         })
-        .report_error(&reporter)?;
+        .report_error(reporter)?;
 
-    let db = PackageDatabase::load(app_dirs, &db_lock_guard)
+    let db = PackageDatabase::load(cx.app_dirs(), &db_lock_guard)
         .map_err(|source| InstallErrorReport::LoadDatabase { source })
-        .report_error(&reporter)?;
+        .report_error(reporter)?;
 
-    let Some(db) = begin_install(&reporter, app_id, app_dirs, db, &manifest)? else {
+    let Some(db) = begin_install(&cx, db, &manifest)? else {
         return Ok(());
     };
 
-    let pkg_dirs = helpers::create_new_package_dirs(&reporter, app_dirs, &pkg_id)?;
-    let package = stage_package(cancel_token, &reporter, &pkg_dirs, &manifest, config).await?;
+    let pkg_dirs = helpers::create_new_package_dirs(&cx, &pkg_id)?;
+    let package = stage_package(&cx, &pkg_dirs, &manifest).await?;
 
-    let registration = steps::register_package_fonts(&reporter, app_id, &package)?;
+    let registration = steps::register_package_fonts(&cx, &package)?;
 
     db.complete_install()?;
 
@@ -162,15 +143,14 @@ pub(crate) async fn install_package(
 }
 
 fn begin_install<'db>(
-    reporter: &StepReporter<InstallStep>,
-    app_id: &str,
-    app_dirs: &AppDirs,
+    cx: &StepContext<InstallStep>,
     mut db: PackageDatabase<'db>,
     manifest: &PackageManifest,
 ) -> Result<Option<DbGuard<'db>>, InstallError> {
-    let pkg_id = manifest.metadata.id();
+    let reporter = cx.reporter();
+    let qualified_name = &manifest.metadata.qualified_name;
     loop {
-        let cleanup_versions = match helpers::begin_install(reporter, db, manifest)? {
+        let cleanup_versions = match helpers::begin_install(cx, db, manifest)? {
             BeginInstallTxResult::CanInstall(db) => return Ok(Some(db)),
             BeginInstallTxResult::AlreadyInstalled(_db) => {
                 reporter.report_info(format_args!("package is already installed, skipping"));
@@ -187,7 +167,7 @@ fn begin_install<'db>(
                 "pending installation detected, uninstalling following packages before continuing:\n{}",
                 versions
                     .iter()
-                    .map(|version| format!("- {name}@{version}", name = pkg_id.qualified_name()))
+                    .map(|version| format!("- {qualified_name}@{version}"))
                     .collect::<Vec<_>>()
                     .join("\n")
             ));
@@ -199,7 +179,7 @@ fn begin_install<'db>(
                     "pending uninstallation detected, uninstalling following packages before continuing:\n{}",
                     versions
                         .iter()
-                        .map(|version| format!("- {name}@{version}", name = pkg_id.qualified_name()))
+                        .map(|version| format!("- {qualified_name}@{version}"))
                         .collect::<Vec<_>>()
                         .join("\n")
                 ));
@@ -209,47 +189,40 @@ fn begin_install<'db>(
         };
 
         for version in cleanup_versions {
-            let uninstall_pkg_id = PackageId::new(pkg_id.qualified_name().clone(), version);
-            common::steps::uninstall_transaction(
-                reporter,
-                app_id,
-                &mut db,
-                app_dirs,
-                &uninstall_pkg_id,
-            )?;
+            let uninstall_pkg_id = PackageId::new(qualified_name.clone(), version);
+            common::steps::uninstall_transaction(cx, &mut db, &uninstall_pkg_id)?;
         }
     }
 }
 
 async fn stage_package(
-    cancel_token: &CancellationToken,
-    reporter: &StepReporter<InstallStep>,
+    cx: &StepContext<InstallStep>,
     pkg_dirs: &PackageDirs,
     manifest: &PackageManifest,
-    config: &InstallConfig,
 ) -> Result<Package, InstallError> {
     let pkg_id = manifest.metadata.id();
+    let reporter = cx.reporter();
     let package_fonts_dir = pkg_dirs.fonts_dir();
 
     let mut file_paths = vec![];
 
     for source in &manifest.sources {
-        let file = cancel_token
-            .run_until_cancelled(steps::download_archive(reporter, &pkg_id, source, config))
+        let file = cx
+            .cancel_token()
+            .run_until_cancelled(steps::download_archive(cx, &pkg_id, source))
             .await
             .unwrap_or(Err(InstallError::Cancelled))?;
 
         file_paths.extend(steps::extract_archive(
-            reporter,
+            cx,
             file,
             &source.include,
             package_fonts_dir,
-            config,
         )?);
     }
 
-    let valid_entries = steps::validate_and_prune_fonts(reporter, package_fonts_dir, &file_paths)?;
-    if cancel_token.is_cancelled() {
+    let valid_entries = steps::validate_and_prune_fonts(cx, package_fonts_dir, &file_paths)?;
+    if cx.cancel_token().is_cancelled() {
         return Err(InstallError::Cancelled);
     }
 
@@ -263,6 +236,6 @@ async fn stage_package(
         valid_entries.len()
     ));
 
-    let package = Package::new(pkg_id, pkg_dirs.clone(), valid_entries);
+    let package = Package::new(pkg_id.clone(), pkg_dirs.clone(), valid_entries);
     Ok(package)
 }
