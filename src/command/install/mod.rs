@@ -3,6 +3,10 @@ use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    command::{
+        common,
+        install::helpers::{BeginInstallTxResult, DbGuard},
+    },
     db::{DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError},
     package::{Package, PackageDirs, PackageId, PackageManifest, PackageSpec},
     util::{
@@ -82,15 +86,6 @@ enum InstallErrorReport {
     },
     #[display("no valid font files found in package {pkg_id}")]
     NoValidFonts { pkg_id: PackageId },
-    #[display(
-        "failed to remove package {uninstall_pkg_id} directories during cleanup before installing package {install_pkg_id}"
-    )]
-    CleanupRemovePackageDirs {
-        uninstall_pkg_id: PackageId,
-        install_pkg_id: PackageId,
-        #[error(source)]
-        source: FsError,
-    },
 }
 
 impl From<InstallErrorReport> for ReportValue<'static> {
@@ -147,7 +142,7 @@ pub(crate) async fn install_package(
         .map_err(|source| InstallErrorReport::LoadDatabase { source })
         .report_error(&reporter)?;
 
-    let Some(db) = helpers::begin_install(&reporter, app_id, app_dirs, db, &manifest)? else {
+    let Some(db) = begin_install(&reporter, app_id, app_dirs, db, &manifest)? else {
         return Ok(());
     };
 
@@ -162,6 +157,66 @@ pub(crate) async fn install_package(
     registration.disarm();
 
     Ok(())
+}
+
+fn begin_install<'a, 'b, 'c, 'd>(
+    reporter: &'a StepReporter<'b, InstallStep<'c>>,
+    app_id: &str,
+    app_dirs: &AppDirs,
+    mut db: PackageDatabase<'d>,
+    manifest: &PackageManifest,
+) -> Result<Option<DbGuard<'a, 'b, 'c, 'd>>, InstallError> {
+    let pkg_id = manifest.metadata.id();
+    loop {
+        let cleanup_versions = match helpers::begin_install(reporter, db, manifest)? {
+            BeginInstallTxResult::CanInstall(db) => return Ok(Some(db)),
+            BeginInstallTxResult::AlreadyInstalled(_db) => {
+                reporter.report_info(format_args!("package is already installed, skipping"));
+                return Ok(None);
+            }
+            BeginInstallTxResult::OtherVersionInstalled(_db, version) => {
+                reporter.report_info(format_args!(
+                    "another version of the package is already installed (version {version}), skipping"
+                ));
+                return Ok(None);
+            }
+            BeginInstallTxResult::PendingInstallFound(returned_db, versions) => {
+                reporter.report_info(format_args!(
+                "pending installation detected, uninstalling following packages before continuing:\n{}",
+                versions
+                    .iter()
+                    .map(|version| format!("- {name}@{version}", name = pkg_id.qualified_name()))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ));
+                db = returned_db;
+                versions
+            }
+            BeginInstallTxResult::PendingUninstallFound(returned_db, versions) => {
+                reporter.report_info(format_args!(
+                    "pending uninstallation detected, uninstalling following packages before continuing:\n{}",
+                    versions
+                        .iter()
+                        .map(|version| format!("- {name}@{version}", name = pkg_id.qualified_name()))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ));
+                db = returned_db;
+                versions
+            }
+        };
+
+        for version in cleanup_versions {
+            let uninstall_pkg_id = PackageId::new(pkg_id.qualified_name().clone(), version);
+            common::steps::uninstall_transaction(
+                reporter,
+                app_id,
+                &mut db,
+                app_dirs,
+                &uninstall_pkg_id,
+            )?;
+        }
+    }
 }
 
 async fn stage_package(

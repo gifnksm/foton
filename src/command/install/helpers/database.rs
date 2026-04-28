@@ -1,15 +1,13 @@
+use std::collections::BTreeSet;
+
 use crate::{
     command::{
         InstallError,
         install::{InstallErrorReport, InstallStep},
     },
-    db::{BeginInstallResult, BeginUninstallResult, PackageDatabase},
-    package::{self, PackageDirs, PackageId, PackageManifest},
-    platform::windows::steps::unregistration,
-    util::{
-        app_dirs::AppDirs,
-        reporter::{StepReporter, StepResultErrorExt as _},
-    },
+    db::{BeginInstallResult, PackageDatabase},
+    package::{PackageId, PackageManifest, PackageVersion},
+    util::reporter::{StepReporter, StepResultErrorExt as _},
 };
 
 #[derive(Debug)]
@@ -21,85 +19,40 @@ pub(in crate::command::install) struct DbGuard<'a, 'b, 'c, 'd> {
     pkg_id: PackageId,
 }
 
+#[derive(Debug)]
+pub(in crate::command::install) enum BeginInstallTxResult<'a, 'b, 'c, 'd> {
+    CanInstall(DbGuard<'a, 'b, 'c, 'd>),
+    AlreadyInstalled(PackageDatabase<'d>),
+    OtherVersionInstalled(PackageDatabase<'d>, PackageVersion),
+    PendingInstallFound(PackageDatabase<'d>, BTreeSet<PackageVersion>),
+    PendingUninstallFound(PackageDatabase<'d>, BTreeSet<PackageVersion>),
+}
+
 pub(in crate::command::install) fn begin_install<'a, 'b, 'c, 'd>(
     reporter: &'a StepReporter<'b, InstallStep<'c>>,
-    app_id: &str,
-    app_dirs: &AppDirs,
     mut db: PackageDatabase<'d>,
     manifest: &PackageManifest,
-) -> Result<Option<DbGuard<'a, 'b, 'c, 'd>>, InstallError> {
+) -> Result<BeginInstallTxResult<'a, 'b, 'c, 'd>, InstallError> {
     let pkg_id = manifest.metadata.id();
-    loop {
-        let cleanup_versions = match db.begin_install(manifest) {
-            BeginInstallResult::CanInstall => break,
-            BeginInstallResult::AlreadyInstalled => {
-                reporter.report_info(format_args!("package is already installed, skipping"));
-                return Ok(None);
-            }
-            BeginInstallResult::OtherVersionInstalled(version) => {
-                reporter.report_info(format_args!(
-                    "another version of the package is already installed (version {version}), skipping"
-                ));
-                return Ok(None);
-            }
-            BeginInstallResult::HavePendingInstall(versions) => {
-                reporter.report_info(format_args!(
-                "pending installation detected, uninstalling following packages before continuing:\n{}",
-                versions
-                    .iter()
-                    .map(|version| format!("- {name}@{version}", name = pkg_id.qualified_name()))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ));
-                versions
-            }
-            BeginInstallResult::HavePendingUninstall(versions) => {
-                reporter.report_info(format_args!(
-                "pending uninstallation detected, uninstalling following packages before continuing:\n{}",
-                versions
-                    .iter()
-                    .map(|version| format!("- {name}@{version}", name = pkg_id.qualified_name()))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ));
-                versions
-            }
-        };
-
-        for version in cleanup_versions {
-            let uninstall_pkg_id = PackageId::new(pkg_id.qualified_name().clone(), version);
-            match db.begin_uninstall(&uninstall_pkg_id) {
-                BeginUninstallResult::CanUninstall => {}
-                // `cleanup_versions` comes from the current database snapshot, so the entry
-                // should still exist here. Reaching this branch means the in-memory DB state
-                // became internally inconsistent. This is a bug in our state management, not a
-                // recoverable runtime error, so we intentionally panic instead of continuing.
-                BeginUninstallResult::NotFound => unreachable!(),
-            }
-            save(reporter, &mut db)?;
-
-            unregistration::unregister_package_fonts(reporter, app_id, &uninstall_pkg_id)?;
-            let pkg_dirs = PackageDirs::new(app_dirs, &uninstall_pkg_id);
-            package::remove_package_dirs(&pkg_dirs)
-                .map_err(|source| InstallErrorReport::CleanupRemovePackageDirs {
-                    uninstall_pkg_id: uninstall_pkg_id.clone(),
-                    install_pkg_id: pkg_id.clone(),
-                    source,
-                })
-                .report_error(reporter)?;
-
-            // `begin_uninstall` succeeded just above, so completing the same uninstall should
-            // not fail. If it does, the package database state is internally inconsistent.
-            // This is a bug in our state management, and continuing would risk compounding the
-            // inconsistency, so we intentionally panic here.
-            db.complete_uninstall(&uninstall_pkg_id).unwrap();
-            save(reporter, &mut db)?;
+    match db.begin_install(manifest) {
+        BeginInstallResult::CanInstall => {}
+        BeginInstallResult::AlreadyInstalled => {
+            return Ok(BeginInstallTxResult::AlreadyInstalled(db));
+        }
+        BeginInstallResult::OtherVersionInstalled(version) => {
+            return Ok(BeginInstallTxResult::OtherVersionInstalled(db, version));
+        }
+        BeginInstallResult::PendingInstallFound(versions) => {
+            return Ok(BeginInstallTxResult::PendingInstallFound(db, versions));
+        }
+        BeginInstallResult::PendingUninstallFound(versions) => {
+            return Ok(BeginInstallTxResult::PendingUninstallFound(db, versions));
         }
     }
 
     save(reporter, &mut db)?;
 
-    Ok(Some(DbGuard {
+    Ok(BeginInstallTxResult::CanInstall(DbGuard {
         installation_persisted: false,
         installation_completed_in_memory: false,
         reporter,

@@ -185,10 +185,10 @@ impl<'a> PackageDatabase<'a> {
             }
         }
         if !pending_uninstalls.is_empty() {
-            return BeginInstallResult::HavePendingUninstall(pending_uninstalls);
+            return BeginInstallResult::PendingUninstallFound(pending_uninstalls);
         }
         if !pending_installs.is_empty() {
-            return BeginInstallResult::HavePendingInstall(pending_installs);
+            return BeginInstallResult::PendingInstallFound(pending_installs);
         }
         self.persist_db
             .packages
@@ -329,8 +329,8 @@ pub(crate) enum BeginInstallResult {
     CanInstall,
     AlreadyInstalled,
     OtherVersionInstalled(PackageVersion),
-    HavePendingInstall(BTreeSet<PackageVersion>),
-    HavePendingUninstall(BTreeSet<PackageVersion>),
+    PendingInstallFound(BTreeSet<PackageVersion>),
+    PendingUninstallFound(BTreeSet<PackageVersion>),
 }
 
 #[derive(Debug, Clone, derive_more::IsVariant)]
@@ -424,7 +424,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let result = db.begin_install(&manifest);
         assert!(matches!(
             result,
-            BeginInstallResult::HavePendingInstall(ref versions)
+            BeginInstallResult::PendingInstallFound(ref versions)
                 if versions.contains(&Version::new(2, 10, 0).into())
         ));
     }
@@ -522,7 +522,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         let result = db.begin_install(&manifest);
         assert!(matches!(
             result,
-            BeginInstallResult::HavePendingUninstall(ref versions)
+            BeginInstallResult::PendingUninstallFound(ref versions)
                 if versions.contains(&Version::new(2, 10, 0).into())
         ));
     }
