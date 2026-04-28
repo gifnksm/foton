@@ -51,6 +51,22 @@ impl FromStr for PackageNamespace {
     }
 }
 
+impl TryFrom<String> for PackageNamespace {
+    type Error = ParsePackageNamespaceError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for PackageNamespace {
+    type Error = ParsePackageNamespaceError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
 impl Display for PackageNamespace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.0, f)
@@ -133,10 +149,10 @@ mod tests {
     #[test]
     fn package_namespace_new_accepts_valid_names() {
         for name_str in [
-            "hackgen",
-            "HackGen",
-            "hackgen-nerd",
-            "hackgen_nerd",
+            "example",
+            "Example",
+            "example-font",
+            "example_font",
             "a0",
             "x",
         ] {
@@ -149,12 +165,12 @@ mod tests {
     fn package_namespace_new_rejects_invalid_names() {
         for name in [
             "",
-            "0hackgen",
-            "-hackgen",
-            "_hackgen",
-            "hackgen/nerd",
-            r"hackgen\nerd",
-            "hackgen:nerd",
+            "0example",
+            "-example",
+            "_example",
+            "example/font",
+            r"example\font",
+            "example:font",
         ] {
             PackageNamespace::new(name).unwrap_err();
         }

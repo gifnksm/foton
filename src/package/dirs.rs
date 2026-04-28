@@ -76,51 +76,35 @@ pub(crate) fn remove_package_dirs(pkg_dirs: &PackageDirs) -> Result<(), FsError>
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::Path};
+    use std::{fs, sync::LazyLock};
 
-    use tempfile::TempDir;
+    use crate::util::testing;
 
     use super::*;
 
-    fn test_package_id() -> PackageId {
-        "example-namespace/example-package@0.1.0".parse().unwrap()
-    }
+    static PKG_ID: LazyLock<PackageId> =
+        LazyLock::new(|| "example-namespace/example-font@0.1.0".parse().unwrap());
 
     #[test]
     fn package_dirs_new_uses_app_dirs_data_local_dir() {
         let data_local_dir = AbsolutePath::new(r"C:\path\to\data").unwrap();
-        let app_dirs = &AppDirs::new_for_test(data_local_dir);
-        let pkg_dirs = PackageDirs::new(app_dirs, &test_package_id());
+        let app_dirs = &AppDirs::new_for_test(data_local_dir.clone());
+        let pkg_dirs = PackageDirs::new(app_dirs, &PKG_ID);
         assert_eq!(
             pkg_dirs.namespace_dir(),
-            Path::new(r"C:\path\to\data\packages\example-namespace")
+            &data_local_dir.join("packages").join("example-namespace"),
         );
         assert_eq!(
             pkg_dirs.name_dir(),
-            Path::new(r"C:\path\to\data\packages\example-namespace\example-package")
+            &pkg_dirs.namespace_dir().join("example-font"),
         );
-        assert_eq!(
-            pkg_dirs.version_dir(),
-            Path::new(r"C:\path\to\data\packages\example-namespace\example-package\0.1.0")
-        );
-        assert_eq!(
-            pkg_dirs.fonts_dir(),
-            Path::new(r"C:\path\to\data\packages\example-namespace\example-package\0.1.0\fonts")
-        );
-    }
-
-    fn make_package_dirs() -> (TempDir, PackageDirs) {
-        let tempdir = tempfile::tempdir().unwrap();
-        let app_data_dir = AbsolutePath::new(tempdir.path()).unwrap();
-        let app_dirs = AppDirs::new_for_test(app_data_dir);
-        let pkg_id = "yuru7/hackgen@2.10.0".parse().unwrap();
-        let pkg_dirs = PackageDirs::new(&app_dirs, &pkg_id);
-        (tempdir, pkg_dirs)
+        assert_eq!(pkg_dirs.version_dir(), &pkg_dirs.name_dir().join("0.1.0"));
+        assert_eq!(pkg_dirs.fonts_dir(), &pkg_dirs.version_dir().join("fonts"));
     }
 
     #[test]
     fn remove_package_dirs_removes_empty_package_directories() {
-        let (_tempdir, pkg_dirs) = make_package_dirs();
+        let (_tempdir, _app_dirs, pkg_dirs) = testing::make_package_dirs(&PKG_ID);
         fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
 
         remove_package_dirs(&pkg_dirs).unwrap();
@@ -133,7 +117,7 @@ mod tests {
 
     #[test]
     fn remove_package_dirs_stops_when_parent_directory_is_not_empty() {
-        let (_tempdir, pkg_dirs) = make_package_dirs();
+        let (_tempdir, _app_dirs, pkg_dirs) = testing::make_package_dirs(&PKG_ID);
         fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
         let sibling = pkg_dirs.name_dir().join("other-version");
         fs::create_dir(&sibling).unwrap();
@@ -149,7 +133,7 @@ mod tests {
 
     #[test]
     fn remove_package_dirs_ignores_missing_directories() {
-        let (_tempdir, pkg_dirs) = make_package_dirs();
+        let (_tempdir, _app_dirs, pkg_dirs) = testing::make_package_dirs(&PKG_ID);
 
         remove_package_dirs(&pkg_dirs).unwrap();
 

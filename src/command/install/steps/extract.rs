@@ -214,16 +214,14 @@ mod tests {
 
     fn build_zip(entries: &[(&str, &[u8])]) -> File {
         let mut file = tempfile::tempfile().unwrap();
-        {
-            let mut writer = ZipWriter::new(&mut file);
-            for (name, contents) in entries {
-                writer
-                    .start_file(name, SimpleFileOptions::default())
-                    .unwrap();
-                writer.write_all(contents).unwrap();
-            }
-            writer.finish().unwrap();
+        let mut writer = ZipWriter::new(&mut file);
+        for (name, contents) in entries {
+            writer
+                .start_file(name, SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(contents).unwrap();
         }
+        writer.finish().unwrap();
         file.rewind().unwrap();
         file
     }
@@ -321,9 +319,8 @@ mod tests {
         let archive = build_zip(&[("a.ttf", b"font-a"), ("b.ttf", b"font-b")]);
         let config = Config {
             install: InstallConfig {
-                max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
                 max_extracted_files: 1,
-                max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
+                ..InstallConfig::default()
             },
         };
 
@@ -339,9 +336,8 @@ mod tests {
         let archive = build_zip(&[("font.ttf", b"font")]);
         let config = Config {
             install: InstallConfig {
-                max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
-                max_extracted_files: 1000,
                 max_extracted_file_size_bytes: 3,
+                ..InstallConfig::default()
             },
         };
 

@@ -342,50 +342,27 @@ pub(crate) enum BeginUninstallResult {
 #[cfg(test)]
 mod tests {
     use semver::Version;
-    use tempfile::TempDir;
 
     use super::*;
-    use crate::db::DbLockFile;
+    use crate::{db::DbLockFile, util::testing};
 
-    fn make_app_dirs() -> (TempDir, AppDirs) {
-        let tempdir = tempfile::tempdir().unwrap();
-        let data_local_dir = AbsolutePath::new(tempdir.path()).unwrap();
-        let app_dirs = AppDirs::new_for_test(data_local_dir);
-        (tempdir, app_dirs)
-    }
-
-    fn load_db<'a>(
-        app_dirs: &AppDirs,
-        lock_file_guard: &'a DbLockFileGuard<'a>,
-    ) -> PackageDatabase<'a> {
-        PackageDatabase::load(app_dirs, lock_file_guard).unwrap()
-    }
-
-    fn test_manifest(version: &str) -> PackageManifest {
-        toml::from_str(&format!(
-            r#"
-[package]
-name = "yuru7/hackgen"
-version = "{version}"
-
-[[sources]]
-url = "https://example.com/hackgen.zip"
-hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
-"#
-        ))
-        .unwrap()
+    fn get_entry_state(db: &PackageDatabase<'_>, id: &PackageId) -> PackageState {
+        let (state, manifest) = db.entry_by_id(id).unwrap();
+        assert_eq!(manifest.metadata.id(), *id);
+        state
     }
 
     #[test]
     fn save_and_load_round_trip_installed_entry() {
-        let (_tempdir, app_dirs) = make_app_dirs();
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
 
+        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let pkg_id = manifest.metadata.id();
+
         {
-            let manifest = test_manifest("2.10.0");
-            let pkg_id = manifest.metadata.id();
-            let mut db = load_db(&app_dirs, &lock_file_guard);
+            let mut db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
 
             assert!(matches!(
                 db.begin_install(&manifest),
@@ -395,26 +372,18 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
             db.save().unwrap();
         }
 
-        let db = load_db(&app_dirs, &lock_file_guard);
-        let pkg_name = "yuru7/hackgen".parse::<PackageQualifiedName>().unwrap();
-        let entries = db.entries_by_qualified_name(&pkg_name).collect::<Vec<_>>();
-
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].0, PackageState::Installed);
-        assert_eq!(
-            entries[0].1.metadata.version,
-            PackageVersion::from(Version::new(2, 10, 0))
-        );
+        let db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
+        assert_eq!(get_entry_state(&db, &pkg_id), PackageState::Installed);
     }
 
     #[test]
     fn begin_install_reports_pending_install_versions() {
-        let (_tempdir, app_dirs) = make_app_dirs();
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
 
-        let manifest = test_manifest("2.10.0");
-        let mut db = load_db(&app_dirs, &lock_file_guard);
+        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let mut db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
 
         assert!(matches!(
             db.begin_install(&manifest),
@@ -425,20 +394,21 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         assert!(matches!(
             result,
             BeginInstallResult::PendingInstallFound(ref versions)
-                if versions.contains(&Version::new(2, 10, 0).into())
+                if versions.contains(&Version::new(0, 1, 0).into())
         ));
     }
 
     #[test]
     fn begin_install_reports_other_installed_version() {
-        let (_tempdir, app_dirs) = make_app_dirs();
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
 
-        let installed_manifest = test_manifest("2.10.0");
+        let installed_manifest =
+            testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let installed_pkg_id = installed_manifest.metadata.id();
-        let next_manifest = test_manifest("2.11.0");
-        let mut db = load_db(&app_dirs, &lock_file_guard);
+        let next_manifest = testing::make_manifest("example-namespace", "example-font", "0.2.0");
+        let mut db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
 
         assert!(matches!(
             db.begin_install(&installed_manifest),
@@ -450,20 +420,19 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         assert!(matches!(
             result,
             BeginInstallResult::OtherVersionInstalled(version)
-                if version == Version::new(2, 10, 0)
+                if version == Version::new(0, 1, 0)
         ));
     }
 
     #[test]
     fn cancel_install_removes_pending_entry() {
-        let (_tempdir, app_dirs) = make_app_dirs();
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
 
-        let manifest = test_manifest("2.10.0");
+        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
-        let pkg_name = pkg_id.qualified_name().clone();
-        let mut db = load_db(&app_dirs, &lock_file_guard);
+        let mut db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
 
         assert!(matches!(
             db.begin_install(&manifest),
@@ -471,19 +440,18 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         ));
         db.cancel_install(&pkg_id).unwrap();
 
-        assert_eq!(db.entries_by_qualified_name(&pkg_name).count(), 0);
+        assert!(db.entry_by_id(&pkg_id).is_none());
     }
 
     #[test]
     fn complete_uninstall_removes_last_version_entry() {
-        let (_tempdir, app_dirs) = make_app_dirs();
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
 
-        let manifest = test_manifest("2.10.0");
+        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
-        let pkg_name = pkg_id.qualified_name().clone();
-        let mut db = load_db(&app_dirs, &lock_file_guard);
+        let mut db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
 
         assert!(matches!(
             db.begin_install(&manifest),
@@ -496,18 +464,18 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         ));
         db.complete_uninstall(&pkg_id).unwrap();
 
-        assert_eq!(db.entries_by_qualified_name(&pkg_name).count(), 0);
+        assert!(db.entry_by_id(&pkg_id).is_none());
     }
 
     #[test]
     fn begin_install_reports_pending_uninstall_versions() {
-        let (_tempdir, app_dirs) = make_app_dirs();
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
 
-        let manifest = test_manifest("2.10.0");
+        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
-        let mut db = load_db(&app_dirs, &lock_file_guard);
+        let mut db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
 
         assert!(matches!(
             db.begin_install(&manifest),
@@ -523,7 +491,7 @@ hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
         assert!(matches!(
             result,
             BeginInstallResult::PendingUninstallFound(ref versions)
-                if versions.contains(&Version::new(2, 10, 0).into())
+                if versions.contains(&Version::new(0, 1, 0).into())
         ));
     }
 }

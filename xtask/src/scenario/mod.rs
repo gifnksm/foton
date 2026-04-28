@@ -63,7 +63,7 @@ pub(crate) struct RunArgs {
 pub(crate) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()> {
     match command {
         ScenarioCommand::Run { scenario, args } => {
-            let (_temp_dir_guard, params) = args.build_parameters()?;
+            let (_tempdir_guard, params) = args.build_parameters()?;
             let (res, report) = RunReport::capture(
                 params.run_id,
                 RunKind::Scenario(*scenario),
@@ -93,22 +93,21 @@ impl RunArgs {
         } else {
             build::build_foton_exe()?
         };
-        let (temp_dir_guard, output_dir) = if let Some(output_dir) = &self.output_dir {
+        let (tempdir_guard, output_dir) = if let Some(output_dir) = &self.output_dir {
             fs_util::create_dir_all("output directory", output_dir)?;
             (None, output_dir.clone())
         } else {
-            let temp_dir =
-                TempDir::new().wrap_err("failed to create temporary output directory")?;
-            let path = Utf8PathBuf::from_path_buf(temp_dir.path().to_owned()).map_err(|path| {
+            let tempdir = TempDir::new().wrap_err("failed to create temporary output directory")?;
+            let path = Utf8PathBuf::from_path_buf(tempdir.path().to_owned()).map_err(|path| {
                 eyre!(
                     "failed to convert temporary output directory path to UTF-8: {}",
                     path.display()
                 )
             })?;
-            (Some(temp_dir), path)
+            (Some(tempdir), path)
         };
         Ok((
-            temp_dir_guard,
+            tempdir_guard,
             ScenarioParameters {
                 foton_exe,
                 output_dir,
