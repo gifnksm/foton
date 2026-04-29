@@ -20,7 +20,7 @@ impl Step for UninstallStep {
 }
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
-pub(crate) enum UninstallErrorReport {
+enum UninstallErrorReport {
     #[display("failed to open database lock file")]
     OpenDbLockFile {
         #[error(source)]
@@ -134,20 +134,10 @@ mod tests {
 
     use crate::{
         db::{DbLockFile, PackageDatabase},
-        util::{
-            app_dirs::AppDirs,
-            testing::{self, TempdirContext},
-        },
+        util::testing::{self, TempdirContext},
     };
 
     use super::*;
-
-    fn load_db<'a>(
-        app_dirs: &AppDirs,
-        lock_file_guard: &'a crate::db::DbLockFileGuard<'_>,
-    ) -> PackageDatabase<'a> {
-        PackageDatabase::load(app_dirs, lock_file_guard).unwrap()
-    }
 
     #[test]
     fn resolve_spec_returns_none_for_missing_specs() {
@@ -155,7 +145,7 @@ mod tests {
         let cx = cx.with_step(UninstallStep {});
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let db = load_db(cx.app_dirs(), &lock_file_guard);
+        let db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
 
         for spec in [
             "example-namespace/example-font@0.1.0"
@@ -177,7 +167,7 @@ mod tests {
         let cx = cx.with_step(UninstallStep {});
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = load_db(cx.app_dirs(), &lock_file_guard);
+        let mut db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let expected = manifest.metadata.id();
         assert!(matches!(
@@ -205,7 +195,7 @@ mod tests {
         let cx = cx.with_step(UninstallStep {});
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = load_db(cx.app_dirs(), &lock_file_guard);
+        let mut db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
 
         let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id1 = manifest1.metadata.id();
@@ -235,7 +225,7 @@ mod tests {
         let cx = cx.with_step(UninstallStep {});
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = load_db(cx.app_dirs(), &lock_file_guard);
+        let mut db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let expected = manifest.metadata.id();
         assert!(matches!(
@@ -261,7 +251,7 @@ mod tests {
         let cx = cx.with_step(UninstallStep {});
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = load_db(cx.app_dirs(), &lock_file_guard);
+        let mut db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
 
         let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         assert!(matches!(

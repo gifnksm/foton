@@ -118,6 +118,7 @@ async fn run(args: Args, app_dirs: AppDirs, reporter: RootReporter) -> eyre::Res
         }
         Command::Uninstall(args) => command::uninstall_package(&cx, &args.pkg_spec)?,
         Command::List(args) => command::list_package(&cx, &args)?,
+        Command::Info(args) => command::info_package(&cx, &args.pkg_spec)?,
     }
 
     Ok(())
