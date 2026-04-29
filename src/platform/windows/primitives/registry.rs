@@ -6,6 +6,22 @@ use windows_registry::{CURRENT_USER, Value};
 
 use crate::{package::PackageId, util::path::AbsolutePath};
 
+cfg_select! {
+    all(test, not(build_for_sandbox)) => {
+        // Registry-touching tests must run under the sandbox harness so they cannot
+        // affect the user's real registry or session state.
+        fn assert_sandbox_test_only() {
+            if std::env::var_os("FOTON_UNSAFE_ALLOW_REGISTRY_TESTS").is_some() {
+                return;
+            }
+            panic!("registry primitives must only run in sandbox tests; use `cargo xtask sandbox run --test` instead.");
+        }
+    }
+    _ => {
+        fn assert_sandbox_test_only() {}
+    }
+}
+
 mod key {
     use std::fmt::Display;
 
@@ -109,6 +125,7 @@ pub(crate) fn list_registered_package_fonts(
     app_id: &str,
     pkg_id: &PackageId,
 ) -> Result<Vec<RegisteredFont>, RegistryError> {
+    assert_sandbox_test_only();
     let path = key::package_version(app_id, pkg_id);
 
     let key = match CURRENT_USER.open(&path) {
@@ -146,6 +163,7 @@ where
     I: IntoIterator<Item = F>,
     F: AsRef<RegisteredFont>,
 {
+    assert_sandbox_test_only();
     let path = key::package_version(app_id, pkg_id);
 
     match CURRENT_USER.open(&path) {
@@ -180,6 +198,7 @@ pub(crate) fn unregister_package_fonts(
     app_id: &str,
     pkg_id: &PackageId,
 ) -> Result<(), RegistryError> {
+    assert_sandbox_test_only();
     let path = key::package_version(app_id, pkg_id);
 
     if let Err(err) = CURRENT_USER.remove_tree(&path) {
