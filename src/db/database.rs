@@ -65,35 +65,45 @@ pub(crate) enum PackageDatabaseError {
 pub(crate) struct PackageDatabase<'a> {
     persist_path: AbsolutePath,
     persist_db: PersistedPackageDb,
-    _lock_file_guard: &'a DbLockFileGuard<'a>,
+    _lock_file_guard: DbLockFileGuard<'a>,
+}
+
+fn load(path: &AbsolutePath) -> Result<PersistedPackageDb, PackageDatabaseError> {
+    if !path.as_path().exists() {
+        return Ok(PersistedPackageDb::default());
+    }
+
+    let file = File::open(path).map_err(|source| {
+        let path = path.clone();
+        PackageDatabaseError::OpenDatabase { path, source }
+    })?;
+    let mut reader = BufReader::new(file);
+    let db = persist::from_reader(&mut reader).map_err(|source| {
+        let path = path.clone();
+        PackageDatabaseError::DeserializeDatabase { path, source }
+    })?;
+
+    Ok(db)
 }
 
 impl<'a> PackageDatabase<'a> {
     pub(crate) fn load(
         app_dirs: &AppDirs,
-        lock_file_guard: &'a DbLockFileGuard<'a>,
+        lock_file_guard: DbLockFileGuard<'a>,
     ) -> Result<Self, PackageDatabaseError> {
         let persist_path = app_dirs.db_json_file();
-
-        let persist_db = if persist_path.as_path().exists() {
-            let file = File::open(&persist_path).map_err(|source| {
-                let path = persist_path.clone();
-                PackageDatabaseError::OpenDatabase { path, source }
-            })?;
-            let mut reader = BufReader::new(file);
-            persist::from_reader(&mut reader).map_err(|source| {
-                let path = persist_path.clone();
-                PackageDatabaseError::DeserializeDatabase { path, source }
-            })?
-        } else {
-            PersistedPackageDb::default()
-        };
-
+        let persist_db = load(&persist_path)?;
         Ok(Self {
             persist_path,
             persist_db,
             _lock_file_guard: lock_file_guard,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reload(&mut self) -> Result<(), PackageDatabaseError> {
+        self.persist_db = load(&self.persist_path)?;
+        Ok(())
     }
 
     pub(crate) fn save(&mut self) -> Result<(), PackageDatabaseError> {
@@ -364,13 +374,13 @@ mod tests {
     fn save_and_load_round_trip_installed_entry() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
-        let lock_file_guard = lock_file.try_acquire().unwrap();
 
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
 
         {
-            let mut db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
+            let lock_file_guard = lock_file.try_acquire().unwrap();
+            let mut db = PackageDatabase::load(&app_dirs, lock_file_guard).unwrap();
 
             assert!(matches!(
                 db.begin_install(&manifest),
@@ -380,8 +390,11 @@ mod tests {
             db.save().unwrap();
         }
 
-        let db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
-        assert_eq!(get_entry_state(&db, &pkg_id), PackageState::Installed);
+        {
+            let lock_file_guard = lock_file.try_acquire().unwrap();
+            let db = PackageDatabase::load(&app_dirs, lock_file_guard).unwrap();
+            assert_eq!(get_entry_state(&db, &pkg_id), PackageState::Installed);
+        }
     }
 
     #[test]
@@ -391,7 +404,7 @@ mod tests {
         let lock_file_guard = lock_file.try_acquire().unwrap();
 
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
-        let mut db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
+        let mut db = PackageDatabase::load(&app_dirs, lock_file_guard).unwrap();
 
         assert!(matches!(
             db.begin_install(&manifest),
@@ -416,7 +429,7 @@ mod tests {
             testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let installed_pkg_id = installed_manifest.metadata.id();
         let next_manifest = testing::make_manifest("example-namespace", "example-font", "0.2.0");
-        let mut db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
+        let mut db = PackageDatabase::load(&app_dirs, lock_file_guard).unwrap();
 
         assert!(matches!(
             db.begin_install(&installed_manifest),
@@ -440,7 +453,7 @@ mod tests {
 
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
-        let mut db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
+        let mut db = PackageDatabase::load(&app_dirs, lock_file_guard).unwrap();
 
         assert!(matches!(
             db.begin_install(&manifest),
@@ -459,7 +472,7 @@ mod tests {
 
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
-        let mut db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
+        let mut db = PackageDatabase::load(&app_dirs, lock_file_guard).unwrap();
 
         assert!(matches!(
             db.begin_install(&manifest),
@@ -483,7 +496,7 @@ mod tests {
 
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
-        let mut db = PackageDatabase::load(&app_dirs, &lock_file_guard).unwrap();
+        let mut db = PackageDatabase::load(&app_dirs, lock_file_guard).unwrap();
 
         assert!(matches!(
             db.begin_install(&manifest),
