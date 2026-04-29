@@ -78,7 +78,7 @@ pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), List
         })
         .report_error(reporter)?;
 
-    let db = PackageDatabase::load(cx.app_dirs(), &db_lock_guard)
+    let db = PackageDatabase::load(cx.app_dirs(), db_lock_guard)
         .map_err(|source| ListErrorReport::LoadDatabase { source })
         .report_error(reporter)?;
 

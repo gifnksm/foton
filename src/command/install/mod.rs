@@ -121,7 +121,7 @@ pub(crate) async fn install_package(
         })
         .report_error(reporter)?;
 
-    let db = PackageDatabase::load(cx.app_dirs(), &db_lock_guard)
+    let db = PackageDatabase::load(cx.app_dirs(), db_lock_guard)
         .map_err(|source| InstallErrorReport::LoadDatabase { source })
         .report_error(reporter)?;
 

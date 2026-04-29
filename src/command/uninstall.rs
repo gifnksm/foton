@@ -76,7 +76,7 @@ pub(crate) fn uninstall_package(
         })
         .report_error(reporter)?;
 
-    let mut db = PackageDatabase::load(cx.app_dirs(), &db_lock_guard)
+    let mut db = PackageDatabase::load(cx.app_dirs(), db_lock_guard)
         .map_err(|source| UninstallErrorReport::LoadDatabase { source })
         .report_error(reporter)?;
 

@@ -110,7 +110,7 @@ mod tests {
         let cx = cx.with_step(TestStep {});
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
+        let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
 
         for spec in [
             "example-namespace/example-font@0.1.0"
@@ -135,7 +135,7 @@ mod tests {
         let cx = cx.with_step(TestStep {});
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
+        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let expected = manifest.metadata.id();
         assert!(matches!(
@@ -165,7 +165,7 @@ mod tests {
         let cx = cx.with_step(TestStep {});
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
+        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
 
         let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id1 = manifest1.metadata.id();
@@ -195,7 +195,7 @@ mod tests {
         let cx = cx.with_step(TestStep {});
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
+        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let expected = manifest.metadata.id();
         assert!(matches!(
@@ -228,7 +228,7 @@ mod tests {
         let cx = cx.with_step(TestStep {});
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
+        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
 
         let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         assert!(matches!(

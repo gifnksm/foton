@@ -141,15 +141,18 @@ mod tests {
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
 
-        let db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
-        let guard = match begin_install(&cx, db, &manifest).unwrap() {
+        let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+        let mut guard = match begin_install(&cx, db, &manifest).unwrap() {
             BeginInstallTxResult::CanInstall(guard) => guard,
             other => panic!("unexpected begin_install result: {other:?}"),
         };
 
-        let db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
+        // Reload from disk while keeping the install guard alive so this assertion verifies
+        // `begin_install()` persisted `PendingInstall` before completion, rather than only
+        // checking the guard's in-memory DB state.
+        guard.db.reload().unwrap();
         assert_eq!(
-            get_entry_state(&db, &pkg_id),
+            get_entry_state(&guard.db, &pkg_id),
             Some(PackageState::PendingInstall)
         );
 
@@ -161,20 +164,25 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = cx.with_step(InstallStep {});
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = lock_file.try_acquire().unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
 
-        let db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
-        let guard = match begin_install(&cx, db, &manifest).unwrap() {
-            BeginInstallTxResult::CanInstall(guard) => guard,
-            other => panic!("unexpected begin_install result: {other:?}"),
-        };
+        {
+            let lock_file_guard = lock_file.try_acquire().unwrap();
+            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let guard = match begin_install(&cx, db, &manifest).unwrap() {
+                BeginInstallTxResult::CanInstall(guard) => guard,
+                other => panic!("unexpected begin_install result: {other:?}"),
+            };
 
-        drop(guard);
+            drop(guard);
+        }
 
-        let db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
-        assert_eq!(get_entry_state(&db, &pkg_id), None);
+        {
+            let lock_file_guard = lock_file.try_acquire().unwrap();
+            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            assert_eq!(get_entry_state(&db, &pkg_id), None);
+        }
     }
 
     #[test]
@@ -182,19 +190,24 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = cx.with_step(InstallStep {});
         let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = lock_file.try_acquire().unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
 
-        let db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
-        let guard = match begin_install(&cx, db, &manifest).unwrap() {
-            BeginInstallTxResult::CanInstall(guard) => guard,
-            other => panic!("unexpected begin_install result: {other:?}"),
-        };
+        {
+            let lock_file_guard = lock_file.try_acquire().unwrap();
+            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let guard = match begin_install(&cx, db, &manifest).unwrap() {
+                BeginInstallTxResult::CanInstall(guard) => guard,
+                other => panic!("unexpected begin_install result: {other:?}"),
+            };
 
-        guard.complete_install().unwrap();
+            guard.complete_install().unwrap();
+        }
 
-        let db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
-        assert_eq!(get_entry_state(&db, &pkg_id), Some(PackageState::Installed));
+        {
+            let lock_file_guard = lock_file.try_acquire().unwrap();
+            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            assert_eq!(get_entry_state(&db, &pkg_id), Some(PackageState::Installed));
+        }
     }
 }
