@@ -2,7 +2,7 @@ use std::io;
 
 use crate::{
     cli::{args::ListArgs, context::RootContext},
-    db::{DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError},
+    command::common,
     package::{PackageId, PackageManifest, PackageState},
     util::reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
 };
@@ -22,26 +22,6 @@ impl Step for ListStep {
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
 pub(crate) enum ListErrorReport {
-    #[display("failed to open database lock file")]
-    OpenDbLockFile {
-        #[error(source)]
-        source: DbLockFileError,
-    },
-    #[display("another install or uninstall operation is already in progress")]
-    DbAlreadyLocked {
-        #[error(source)]
-        source: DbLockFileError,
-    },
-    #[display("failed to acquire database lock")]
-    AcquireDbLock {
-        #[error(source)]
-        source: DbLockFileError,
-    },
-    #[display("failed to load package database")]
-    LoadDatabase {
-        #[error(source)]
-        source: PackageDatabaseError,
-    },
     #[display("failed to write entry to stdout")]
     WriteEntry {
         #[error(source)]
@@ -67,20 +47,8 @@ pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), List
     let cx = cx.with_step(ListStep {});
     let reporter = cx.reporter();
 
-    let mut db_lock = DbLockFile::open(cx.app_dirs())
-        .map_err(|source| ListErrorReport::OpenDbLockFile { source })
-        .report_error(reporter)?;
-    let db_lock_guard = db_lock
-        .try_acquire()
-        .map_err(|source| match source {
-            DbLockFileError::AlreadyLocked { .. } => ListErrorReport::DbAlreadyLocked { source },
-            _ => ListErrorReport::AcquireDbLock { source },
-        })
-        .report_error(reporter)?;
-
-    let db = PackageDatabase::load(cx.app_dirs(), db_lock_guard)
-        .map_err(|source| ListErrorReport::LoadDatabase { source })
-        .report_error(reporter)?;
+    let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
+    let db = common::steps::load_database(&cx, &mut db_lock_file)?;
 
     let renderer = if *show_pending {
         (&AllEntryRender {}) as &dyn EntryRender

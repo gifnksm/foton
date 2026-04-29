@@ -120,8 +120,7 @@ impl Drop for DbGuard<'_> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        command::install::InstallStep,
-        db::DbLockFile,
+        command::{common, install::InstallStep},
         package::PackageState,
         util::testing::{self, TempdirContext},
     };
@@ -136,12 +135,11 @@ mod tests {
     fn begin_install_persists_pending_install_before_completion() {
         let cx = TempdirContext::new();
         let cx = cx.with_step(InstallStep {});
-        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = lock_file.try_acquire().unwrap();
+        let mut db_lock_file = common::steps::open_db_lock_file(&cx).unwrap();
+        let db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
 
-        let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
         let mut guard = match begin_install(&cx, db, &manifest).unwrap() {
             BeginInstallTxResult::CanInstall(guard) => guard,
             other => panic!("unexpected begin_install result: {other:?}"),
@@ -163,13 +161,12 @@ mod tests {
     fn dropping_install_guard_rolls_back_persisted_pending_install() {
         let cx = TempdirContext::new();
         let cx = cx.with_step(InstallStep {});
-        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
+        let mut db_lock_file = common::steps::open_db_lock_file(&cx).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
 
         {
-            let lock_file_guard = lock_file.try_acquire().unwrap();
-            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
             let guard = match begin_install(&cx, db, &manifest).unwrap() {
                 BeginInstallTxResult::CanInstall(guard) => guard,
                 other => panic!("unexpected begin_install result: {other:?}"),
@@ -179,8 +176,7 @@ mod tests {
         }
 
         {
-            let lock_file_guard = lock_file.try_acquire().unwrap();
-            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
             assert_eq!(get_entry_state(&db, &pkg_id), None);
         }
     }
@@ -189,13 +185,12 @@ mod tests {
     fn complete_install_persists_installed_state() {
         let cx = TempdirContext::new();
         let cx = cx.with_step(InstallStep {});
-        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
+        let mut db_lock_file = common::steps::open_db_lock_file(&cx).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
 
         {
-            let lock_file_guard = lock_file.try_acquire().unwrap();
-            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
             let guard = match begin_install(&cx, db, &manifest).unwrap() {
                 BeginInstallTxResult::CanInstall(guard) => guard,
                 other => panic!("unexpected begin_install result: {other:?}"),
@@ -205,8 +200,7 @@ mod tests {
         }
 
         {
-            let lock_file_guard = lock_file.try_acquire().unwrap();
-            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
             assert_eq!(get_entry_state(&db, &pkg_id), Some(PackageState::Installed));
         }
     }

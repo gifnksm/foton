@@ -80,37 +80,19 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        db::{DbLockFile, PackageDatabase},
-        util::testing::{self, TempdirContext},
+        command::common,
+        db::BeginInstallResult,
+        util::testing::{self, TempdirContext, TestError, TestStep},
     };
 
     use super::*;
-
-    #[derive(Debug)]
-    struct TestStep {}
-
-    impl Step for TestStep {
-        type WarnReportValue = NeverReport;
-        type ErrorReportValue = NeverReport;
-        type Error = TestError;
-
-        fn make_failed(&self) -> Self::Error {
-            TestError::Failed
-        }
-    }
-
-    #[derive(Debug)]
-    enum TestError {
-        Failed,
-    }
 
     #[test]
     fn resolve_spec_in_db_returns_none_for_missing_specs() {
         let cx = TempdirContext::new();
         let cx = cx.with_step(TestStep {});
-        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = lock_file.try_acquire().unwrap();
-        let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+        let mut lock_file = common::steps::open_db_lock_file(&cx).unwrap();
+        let db = common::steps::load_database(&cx, &mut lock_file).unwrap();
 
         for spec in [
             "example-namespace/example-font@0.1.0"
@@ -133,14 +115,13 @@ mod tests {
     fn resolve_spec_in_db_resolves_installed_entry_from_id_and_qualified_name() {
         let cx = TempdirContext::new();
         let cx = cx.with_step(TestStep {});
-        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+        let mut lock_file = common::steps::open_db_lock_file(&cx).unwrap();
+        let mut db = common::steps::load_database(&cx, &mut lock_file).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let expected = manifest.metadata.id();
         assert!(matches!(
             db.begin_install(&manifest),
-            crate::db::BeginInstallResult::CanInstall
+            BeginInstallResult::CanInstall
         ));
         db.complete_install(&expected).unwrap();
 
@@ -163,15 +144,14 @@ mod tests {
     fn resolve_spec_in_db_reports_multiple_matches_for_name() {
         let cx = TempdirContext::new();
         let cx = cx.with_step(TestStep {});
-        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+        let mut lock_file = common::steps::open_db_lock_file(&cx).unwrap();
+        let mut db = common::steps::load_database(&cx, &mut lock_file).unwrap();
 
         let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id1 = manifest1.metadata.id();
         assert!(matches!(
             db.begin_install(&manifest1),
-            crate::db::BeginInstallResult::CanInstall
+            BeginInstallResult::CanInstall
         ));
         db.complete_install(&pkg_id1).unwrap();
 
@@ -179,7 +159,7 @@ mod tests {
         let pkg_id2 = manifest2.metadata.id();
         assert!(matches!(
             db.begin_install(&manifest2),
-            crate::db::BeginInstallResult::CanInstall
+            BeginInstallResult::CanInstall
         ));
         db.complete_install(&pkg_id2).unwrap();
 
@@ -193,14 +173,13 @@ mod tests {
     fn resolve_spec_resolves_pending_entries() {
         let cx = TempdirContext::new();
         let cx = cx.with_step(TestStep {});
-        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+        let mut lock_file = common::steps::open_db_lock_file(&cx).unwrap();
+        let mut db = common::steps::load_database(&cx, &mut lock_file).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let expected = manifest.metadata.id();
         assert!(matches!(
             db.begin_install(&manifest),
-            crate::db::BeginInstallResult::CanInstall
+            BeginInstallResult::CanInstall
         ));
 
         let spec = "example-namespace/example-font"
@@ -226,21 +205,20 @@ mod tests {
     fn resolve_spec_in_db_reports_multiple_matches_for_name_across_pending_states() {
         let cx = TempdirContext::new();
         let cx = cx.with_step(TestStep {});
-        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+        let mut lock_file = common::steps::open_db_lock_file(&cx).unwrap();
+        let mut db = common::steps::load_database(&cx, &mut lock_file).unwrap();
 
         let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         assert!(matches!(
             db.begin_install(&manifest1),
-            crate::db::BeginInstallResult::CanInstall
+            BeginInstallResult::CanInstall
         ));
 
         let manifest2 = testing::make_manifest("other-namespace", "example-font", "1.0.0");
         let pkg_id2 = manifest2.metadata.id();
         assert!(matches!(
             db.begin_install(&manifest2),
-            crate::db::BeginInstallResult::CanInstall
+            BeginInstallResult::CanInstall
         ));
         db.begin_uninstall(&pkg_id2);
 

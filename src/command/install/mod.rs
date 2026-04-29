@@ -6,11 +6,11 @@ use crate::{
         common,
         install::helpers::{BeginInstallTxResult, DbGuard},
     },
-    db::{DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError},
+    db::{PackageDatabase, PackageDatabaseError},
     package::{Package, PackageDirs, PackageId, PackageManifest, PackageSpec},
     util::{
         fs::FsError,
-        reporter::{ReportValue, Step, StepResultErrorExt as _},
+        reporter::{ReportValue, Step},
     },
 };
 
@@ -45,26 +45,6 @@ impl From<InstallWarnReport> for ReportValue<'static> {
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
 enum InstallErrorReport {
-    #[display("failed to open database lock file")]
-    OpenDbLockFile {
-        #[error(source)]
-        source: DbLockFileError,
-    },
-    #[display("another install or uninstall operation is already in progress")]
-    DbAlreadyLocked {
-        #[error(source)]
-        source: DbLockFileError,
-    },
-    #[display("failed to acquire database lock")]
-    AcquireDbLock {
-        #[error(source)]
-        source: DbLockFileError,
-    },
-    #[display("failed to load package database")]
-    LoadDatabase {
-        #[error(source)]
-        source: PackageDatabaseError,
-    },
     #[display("failed to save package database")]
     SaveDatabase {
         #[error(source)]
@@ -105,25 +85,12 @@ pub(crate) async fn install_package(
     let cx = cx.with_step(InstallStep {});
     cx.reporter()
         .report_step(format_args!("Installing {pkg_spec}..."));
-    let reporter = cx.reporter();
 
     let manifest = steps::resolve_package(&cx, registry_path, pkg_spec)?;
     let pkg_id = manifest.metadata.id();
 
-    let mut db_lock = DbLockFile::open(cx.app_dirs())
-        .map_err(|source| InstallErrorReport::OpenDbLockFile { source })
-        .report_error(reporter)?;
-    let db_lock_guard = db_lock
-        .try_acquire()
-        .map_err(|source| match source {
-            DbLockFileError::AlreadyLocked { .. } => InstallErrorReport::DbAlreadyLocked { source },
-            _ => InstallErrorReport::AcquireDbLock { source },
-        })
-        .report_error(reporter)?;
-
-    let db = PackageDatabase::load(cx.app_dirs(), db_lock_guard)
-        .map_err(|source| InstallErrorReport::LoadDatabase { source })
-        .report_error(reporter)?;
+    let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
+    let db = common::steps::load_database(&cx, &mut db_lock_file)?;
 
     let Some(db) = begin_install(&cx, db, &manifest)? else {
         return Ok(());

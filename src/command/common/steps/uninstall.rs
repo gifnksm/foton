@@ -124,29 +124,13 @@ mod tests {
     };
 
     use crate::{
-        command::UninstallError,
-        db::{BeginInstallResult, DbLockFile, PackageDatabase},
+        command::common,
+        db::{BeginInstallResult, PackageDatabase},
         package::{PackageId, PackageState},
-        util::{
-            reporter::{NeverReport, Step},
-            testing::{self, TempdirContext},
-        },
+        util::testing::{self, TempdirContext, TestStep},
     };
 
     use super::*;
-
-    #[derive(Debug)]
-    struct TestStep;
-
-    impl Step for TestStep {
-        type WarnReportValue = NeverReport;
-        type ErrorReportValue = UninstallTxErrorReport;
-        type Error = UninstallError;
-
-        fn make_failed(&self) -> Self::Error {
-            UninstallError::Failed
-        }
-    }
 
     fn test_app_id() -> String {
         static TEST_ID: AtomicUsize = AtomicUsize::new(0);
@@ -171,20 +155,19 @@ mod tests {
     )]
     fn uninstall_transaction_removes_db_record_and_package_files_on_success() {
         let cx = TempdirContext::with_app_id(test_app_id());
-        let cx = cx.with_step(TestStep);
+        let cx = cx.with_step(TestStep {});
         let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
         fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
         fs::write(pkg_dirs.fonts_dir().join("example.ttf"), b"font").unwrap();
 
-        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
+        let mut db_lock_file = common::steps::open_db_lock_file(&cx).unwrap();
         let manifest = testing::make_manifest(
             PKG_ID.namespace().clone(),
             PKG_ID.name().clone(),
             PKG_ID.version().clone(),
         );
         {
-            let lock_file_guard = lock_file.try_acquire().unwrap();
-            let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let mut db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
             assert!(matches!(
                 db.begin_install(&manifest),
                 BeginInstallResult::CanInstall
@@ -196,8 +179,7 @@ mod tests {
         }
 
         {
-            let lock_file_guard = lock_file.try_acquire().unwrap();
-            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
             assert_eq!(get_entry_state(&db, &PKG_ID), None);
             assert!(!pkg_dirs.fonts_dir().exists());
             assert!(!pkg_dirs.version_dir().exists());

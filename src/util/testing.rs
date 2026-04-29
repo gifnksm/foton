@@ -8,10 +8,32 @@ use crate::{
         PackageDirs, PackageId, PackageManifest, PackageName, PackageNamespace, PackageVersion,
     },
     registry::PackageRegistry,
-    util::{app_dirs::AppDirs, path::AbsolutePath, reporter::RootReporter},
+    util::{
+        app_dirs::AppDirs,
+        path::AbsolutePath,
+        reporter::{NeverReport, RootReporter, Step},
+    },
 };
 
 const APP_ID: &str = "io.github.gifnksm.foton-test";
+
+#[derive(Debug)]
+pub(crate) struct TestStep {}
+
+impl Step for TestStep {
+    type WarnReportValue = NeverReport;
+    type ErrorReportValue = NeverReport;
+    type Error = TestError;
+
+    fn make_failed(&self) -> Self::Error {
+        TestError::Failed
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum TestError {
+    Failed,
+}
 
 #[derive(Debug)]
 pub(crate) struct TempdirContext {

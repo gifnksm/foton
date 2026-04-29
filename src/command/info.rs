@@ -3,7 +3,6 @@ use std::io;
 use crate::{
     cli::context::RootContext,
     command::common,
-    db::{DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError},
     package::{PackageManifest, PackageMetadata, PackageSource, PackageSpec, PackageState},
     util::reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
 };
@@ -23,26 +22,6 @@ impl Step for InfoStep {
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
 enum InfoErrorReport {
-    #[display("failed to open database lock file")]
-    OpenDbLockFile {
-        #[error(source)]
-        source: DbLockFileError,
-    },
-    #[display("another install or uninstall operation is already in progress")]
-    DbAlreadyLocked {
-        #[error(source)]
-        source: DbLockFileError,
-    },
-    #[display("failed to acquire database lock")]
-    AcquireDbLock {
-        #[error(source)]
-        source: DbLockFileError,
-    },
-    #[display("failed to load package database")]
-    LoadDatabase {
-        #[error(source)]
-        source: PackageDatabaseError,
-    },
     #[display("no package matches the specified package `{pkg_spec}`")]
     NoMatchingPackage { pkg_spec: PackageSpec },
     #[display("failed to write package info to stdout")]
@@ -68,20 +47,8 @@ pub(crate) fn info_package(cx: &RootContext, pkg_spec: &PackageSpec) -> Result<(
     let cx = cx.with_step(InfoStep {});
     let reporter = cx.reporter();
 
-    let mut db_lock = DbLockFile::open(cx.app_dirs())
-        .map_err(|source| InfoErrorReport::OpenDbLockFile { source })
-        .report_error(reporter)?;
-    let db_lock_guard = db_lock
-        .try_acquire()
-        .map_err(|source| match source {
-            DbLockFileError::AlreadyLocked { .. } => InfoErrorReport::DbAlreadyLocked { source },
-            _ => InfoErrorReport::AcquireDbLock { source },
-        })
-        .report_error(reporter)?;
-
-    let db = PackageDatabase::load(cx.app_dirs(), db_lock_guard)
-        .map_err(|source| InfoErrorReport::LoadDatabase { source })
-        .report_error(reporter)?;
+    let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
+    let db = common::steps::load_database(&cx, &mut db_lock_file)?;
 
     let Some((state, manifest)) = common::steps::resolve_spec_in_db(&cx, &db, pkg_spec)? else {
         return Err(reporter.report_error(InfoErrorReport::NoMatchingPackage {
