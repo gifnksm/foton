@@ -4,7 +4,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use color_eyre::eyre;
+use color_eyre::eyre::{self, ensure};
 use serde::{Deserialize, Serialize};
 
 use crate::scenario::Scenario;
@@ -75,10 +75,50 @@ impl From<&eyre::Result<()>> for RunOutcome {
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct ExecResult {
     pub(crate) name: String,
+    pub(crate) arguments: Vec<String>,
     pub(crate) success: bool,
     pub(crate) exit_status: String,
     pub(crate) stdout: String,
     pub(crate) stderr: String,
+}
+
+impl ExecResult {
+    pub(crate) fn ensure_success(&self) -> eyre::Result<&Self> {
+        ensure!(
+            self.success,
+            "{} failed with exit status {}. stderr:\n{}",
+            self.name,
+            self.exit_status,
+            self.stderr
+        );
+        Ok(self)
+    }
+
+    pub(crate) fn ensure_stdout<P>(&self, predicate: P) -> eyre::Result<&Self>
+    where
+        P: FnOnce(&str) -> bool,
+    {
+        ensure!(
+            predicate(&self.stdout),
+            "{} stdout did not satisfy the expected condition. stdout:\n{}",
+            self.name,
+            self.stdout
+        );
+        Ok(self)
+    }
+
+    pub(crate) fn ensure_stderr<P>(&self, predicate: P) -> eyre::Result<&Self>
+    where
+        P: FnOnce(&str) -> bool,
+    {
+        ensure!(
+            predicate(&self.stderr),
+            "{} stderr did not satisfy the expected condition. stderr:\n{}",
+            self.name,
+            self.stderr
+        );
+        Ok(self)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -114,15 +154,21 @@ impl RunReport {
         eprintln!("  Run ID: {}", self.id);
         eprintln!("  Run Kind: {}", self.kind);
 
-        for output in &self.exec_results {
+        for (i, res) in self.exec_results.iter().enumerate() {
             eprintln!();
-            if !output.stdout.is_empty() {
-                eprintln!("---- {} stdout ----", output.name);
-                eprintln!("{}", output.stdout);
+            eprintln!("  Exec #{i}: {}", res.name);
+            eprintln!("    Exit Status: {}", res.exit_status);
+            eprintln!("    Stdout: ({} bytes)", res.stdout.len());
+            if !res.stdout.is_empty() {
+                for line in res.stdout.lines() {
+                    eprintln!("      {line}");
+                }
             }
-            if !output.stderr.is_empty() {
-                eprintln!("---- {} stderr ----", output.name);
-                eprintln!("{}", output.stderr);
+            eprintln!("    Stderr: ({} bytes)", res.stderr.len());
+            if !res.stderr.is_empty() {
+                for line in res.stderr.lines() {
+                    eprintln!("      {line}");
+                }
             }
         }
 

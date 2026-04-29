@@ -1,3 +1,5 @@
+use std::process::Command;
+
 use cargo_metadata::camino::Utf8PathBuf;
 use color_eyre::eyre::{self, WrapErr as _, eyre};
 use serde::{Deserialize, Serialize};
@@ -145,4 +147,18 @@ pub(crate) fn run(
         Scenario::HelpCheck => help_check::run(params, exec_results),
         Scenario::SmokeTest => smoke_test::run(params, exec_results),
     }
+}
+
+fn exec_foton<'a, F>(
+    params: &ScenarioParameters,
+    exec_results: &'a mut Vec<ExecResult>,
+    f: F,
+) -> eyre::Result<&'a mut ExecResult>
+where
+    F: FnOnce(&mut Command),
+{
+    let mut cmd = Command::new(&params.foton_exe);
+    f(&mut cmd);
+    let res = crate::util::process::exec_command("foton", &params.output_dir, &mut cmd)?;
+    Ok(exec_results.push_mut(res))
 }

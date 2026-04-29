@@ -15,6 +15,8 @@ pub(crate) enum Command {
     Install(InstallArgs),
     /// Uninstall an installed package.
     Uninstall(UninstallArgs),
+    /// List installed packages.
+    List(ListArgs),
 }
 
 #[derive(Debug, clap::Args)]
@@ -32,4 +34,11 @@ pub(crate) struct UninstallArgs {
     /// Package specifier: name, qualified name, or package ID.
     #[clap(value_name = "PKG_SPEC")]
     pub(crate) pkg_spec: PackageSpec,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct ListArgs {
+    /// Include packages in pending-install and pending-uninstall states.
+    #[clap(long)]
+    pub(crate) show_pending: bool,
 }

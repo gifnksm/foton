@@ -1,8 +1,6 @@
-use std::process::Command;
+use color_eyre::eyre;
 
-use color_eyre::eyre::{self, ensure};
-
-use crate::{report::ExecResult, scenario::ScenarioParameters, util::process as process_util};
+use crate::{report::ExecResult, scenario::ScenarioParameters};
 
 const PKG_SPEC: &str = "yuru7/hackgen";
 
@@ -10,34 +8,42 @@ pub(super) fn run(
     params: &ScenarioParameters,
     exec_results: &mut Vec<ExecResult>,
 ) -> eyre::Result<()> {
-    let res = process_util::exec_command(
-        "foton",
-        &params.output_dir,
-        Command::new(&params.foton_exe).args([
+    super::exec_foton(params, exec_results, |cmd| {
+        cmd.args(["list"]);
+    })?
+    .ensure_success()?
+    .ensure_stdout(str::is_empty)?;
+
+    super::exec_foton(params, exec_results, |cmd| {
+        cmd.args([
             "install",
             PKG_SPEC,
             "--registry",
             params.registry_dir.as_str(),
-        ]),
-    )?;
-    let res = exec_results.push_mut(res);
-    ensure!(
-        res.success,
-        "foton exited with non-zero status: {}",
-        res.exit_status
-    );
+        ]);
+    })?
+    .ensure_success()?;
 
-    let res = process_util::exec_command(
-        "foton",
-        &params.output_dir,
-        Command::new(&params.foton_exe).args(["uninstall", PKG_SPEC]),
-    )?;
-    let res = exec_results.push_mut(res);
-    ensure!(
-        res.success,
-        "foton exited with non-zero status: {}",
-        res.exit_status
-    );
+    super::exec_foton(params, exec_results, |cmd| {
+        cmd.args(["list"]);
+    })?
+    .ensure_success()?
+    .ensure_stdout(|stdout| {
+        stdout
+            .lines()
+            .any(|line| line.starts_with("yuru7/hackgen@"))
+    })?;
+
+    super::exec_foton(params, exec_results, |cmd| {
+        cmd.args(["uninstall", PKG_SPEC]);
+    })?
+    .ensure_success()?;
+
+    super::exec_foton(params, exec_results, |cmd| {
+        cmd.args(["list"]);
+    })?
+    .ensure_success()?
+    .ensure_stdout(str::is_empty)?;
 
     Ok(())
 }
