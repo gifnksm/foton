@@ -4,8 +4,9 @@ use std::{
 };
 
 use cargo_metadata::camino::Utf8Path;
-use color_eyre::eyre::{self, WrapErr as _, ensure};
+use color_eyre::eyre::{self, WrapErr as _, ensure, eyre};
 use serde::{Deserialize, Serialize};
+use walkdir::WalkDir;
 
 pub(crate) fn create_file<N, P>(name: N, path: P) -> eyre::Result<File>
 where
@@ -78,6 +79,38 @@ where
     let bytes = fs::copy(src, dst)
         .wrap_err_with(|| format!("failed to copy {name}:\n  src: {src}\n  dst: {dst}"))?;
     Ok(bytes)
+}
+
+pub(crate) fn copy_dir<N, P, Q>(name: N, src: P, dst: Q) -> eyre::Result<()>
+where
+    N: Display,
+    P: AsRef<Utf8Path>,
+    Q: AsRef<Utf8Path>,
+{
+    let src = src.as_ref();
+    let dst = dst.as_ref();
+
+    ensure_dir_exists(format_args!("{name} source"), src)?;
+    ensure_dir_exists(format_args!("{name} destination"), dst)?;
+
+    for entry in WalkDir::new(src) {
+        let entry =
+            entry.wrap_err_with(|| format!("failed to read {name} source directory: {src}"))?;
+        let src_path = Utf8Path::from_path(entry.path()).ok_or_else(|| {
+            eyre!(
+                "failed to convert {name} source directory entry path to UTF-8: {}",
+                entry.path().display()
+            )
+        })?;
+        let relative_path = src_path.strip_prefix(src).unwrap();
+        let dst_path = dst.join(relative_path);
+        if entry.file_type().is_dir() {
+            create_dir_all(&name, &dst_path)?;
+            continue;
+        }
+        copy(&name, src_path, dst_path)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn read_to_string<N, P>(name: N, path: P) -> eyre::Result<String>

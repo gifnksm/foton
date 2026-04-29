@@ -1,7 +1,7 @@
 #[cfg(not(windows))]
 compile_error!("foton is supported on Windows only.");
 
-use std::{env, io, path::Path, process, sync::Arc};
+use std::{env, io, process, sync::Arc};
 
 use clap::{CommandFactory as _, Parser as _};
 use clap_complete::{Generator, Shell};
@@ -9,7 +9,11 @@ use color_eyre::eyre::{self, WrapErr as _, bail, eyre};
 use tokio::{runtime::Runtime, signal};
 
 use crate::{
-    cli::{config::Config, context::RootContext},
+    cli::{
+        args::{Args, Command},
+        config::Config,
+        context::RootContext,
+    },
     platform::windows::{self, com::ComGuard},
     util::{app_dirs::AppDirs, error::FormatErrorChain as _, reporter::RootReporter},
 };
@@ -23,12 +27,6 @@ mod registry;
 mod util;
 
 const APP_ID: &str = "io.github.gifnksm.foton";
-
-#[derive(clap::Parser)]
-struct Args {
-    #[clap(long)]
-    smoke_test: bool,
-}
 
 fn main() -> eyre::Result<()> {
     color_eyre::install()?;
@@ -113,21 +111,13 @@ async fn run(args: Args, app_dirs: AppDirs, reporter: RootReporter) -> eyre::Res
         }
     });
 
-    let Args { smoke_test } = args;
-    if smoke_test {
-        run_smoke_test(&cx).await?;
+    let Args { command } = args;
+    match command {
+        Command::Install(args) => {
+            command::install_package(&cx, &args.registry_path, &args.pkg_spec).await?;
+        }
+        Command::Uninstall(args) => command::uninstall_package(&cx, &args.pkg_spec)?,
     }
-
-    Ok(())
-}
-
-async fn run_smoke_test(cx: &RootContext) -> eyre::Result<()> {
-    let registry_path = Path::new("packages");
-    let pkg_spec = "yuru7/hackgen".parse()?;
-
-    command::install_package(cx, registry_path, &pkg_spec).await?;
-
-    command::uninstall_package(cx, &pkg_spec)?;
 
     Ok(())
 }

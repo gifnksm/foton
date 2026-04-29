@@ -3304,6 +3304,7 @@ dependencies = [
  "serde_json",
  "strum",
  "tempfile",
+ "walkdir",
  "wsbx",
 ]
 

@@ -6,10 +6,11 @@ use tempfile::TempDir;
 
 use crate::{
     report::{ExecResult, RunId, RunKind, RunReport},
-    util::{build, fs as fs_util},
+    util::{build, env as env_util, fs as fs_util},
 };
 
 mod help_check;
+mod smoke_test;
 
 #[derive(
     Debug,
@@ -28,6 +29,7 @@ mod help_check;
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum Scenario {
     HelpCheck,
+    SmokeTest,
 }
 
 /// Commands for running scenarios.
@@ -58,6 +60,9 @@ pub(crate) struct RunArgs {
     /// Directory where scenario outputs are written. If omitted, a temporary directory is used.
     #[clap(long)]
     output_dir: Option<Utf8PathBuf>,
+    /// Package registry directory used by the scenario. If omitted, the repository `packages` directory is used.
+    #[clap(long)]
+    registry: Option<Utf8PathBuf>,
 }
 
 pub(crate) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()> {
@@ -93,6 +98,11 @@ impl RunArgs {
         } else {
             build::build_foton_exe()?
         };
+        let registry_dir = if let Some(path) = self.registry.clone() {
+            path
+        } else {
+            env_util::registry_dir()?
+        };
         let (tempdir_guard, output_dir) = if let Some(output_dir) = &self.output_dir {
             fs_util::create_dir_all("output directory", output_dir)?;
             (None, output_dir.clone())
@@ -110,6 +120,7 @@ impl RunArgs {
             tempdir_guard,
             ScenarioParameters {
                 foton_exe,
+                registry_dir,
                 output_dir,
                 run_id: RunId::new(),
             },
@@ -120,6 +131,7 @@ impl RunArgs {
 #[derive(Debug)]
 pub(crate) struct ScenarioParameters {
     pub(crate) foton_exe: Utf8PathBuf,
+    pub(crate) registry_dir: Utf8PathBuf,
     pub(crate) output_dir: Utf8PathBuf,
     pub(crate) run_id: RunId,
 }
@@ -131,5 +143,6 @@ pub(crate) fn run(
 ) -> eyre::Result<()> {
     match scenario {
         Scenario::HelpCheck => help_check::run(params, exec_results),
+        Scenario::SmokeTest => smoke_test::run(params, exec_results),
     }
 }
