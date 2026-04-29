@@ -21,11 +21,18 @@ pub(crate) struct TempdirContext {
 
 impl TempdirContext {
     pub(crate) fn new() -> Self {
+        Self::with_app_id(APP_ID)
+    }
+
+    pub(crate) fn with_app_id<S>(app_id: S) -> Self
+    where
+        S: Into<Arc<str>>,
+    {
         let (tempdir, app_dirs) = make_app_dirs();
         let config = Config::default();
         let reporter = RootReporter::message_reporter();
         let cx = RootContext::new(
-            APP_ID.into(),
+            app_id.into(),
             Arc::new(app_dirs),
             Arc::new(config),
             reporter,
