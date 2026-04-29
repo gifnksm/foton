@@ -47,6 +47,10 @@ where
 
     Ok(ExecResult {
         name,
+        arguments: cmd
+            .get_args()
+            .map(|arg| arg.display().to_string())
+            .collect(),
         success: status.success(),
         exit_status: status.to_string(),
         stdout,

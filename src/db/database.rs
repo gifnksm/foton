@@ -118,6 +118,14 @@ impl<'a> PackageDatabase<'a> {
         Ok(())
     }
 
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (PackageState, &PackageManifest)> {
+        self.persist_db
+            .packages
+            .values()
+            .flat_map(|version_map| version_map.versions.values())
+            .map(|entry| (entry.state, &entry.manifest))
+    }
+
     pub(crate) fn entry_by_id(
         &self,
         pkg_id: &PackageId,

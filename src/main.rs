@@ -117,6 +117,7 @@ async fn run(args: Args, app_dirs: AppDirs, reporter: RootReporter) -> eyre::Res
             command::install_package(&cx, &args.registry_path, &args.pkg_spec).await?;
         }
         Command::Uninstall(args) => command::uninstall_package(&cx, &args.pkg_spec)?,
+        Command::List(args) => command::list_package(&cx, &args)?,
     }
 
     Ok(())
