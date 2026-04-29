@@ -175,6 +175,7 @@ struct MappingPaths {
     xtask_exe: Utf8PathBuf,
     config_dir: Utf8PathBuf,
     bootstrap_config: Utf8PathBuf,
+    registry_dir: Utf8PathBuf,
     output_dir: Utf8PathBuf,
     report_json: Utf8PathBuf,
     complete_stamp: Utf8PathBuf,
@@ -187,6 +188,7 @@ impl MappingPaths {
         let xtask_exe = bin_dir.join("xtask.exe");
         let config_dir = base_dir.join("config");
         let bootstrap_config = config_dir.join("bootstrap.config.json");
+        let registry_dir = base_dir.join("registry");
         let output_dir = base_dir.join("output");
         let report = output_dir.join(".report.json");
         let complete_stamp = output_dir.join(".complete.stamp");
@@ -197,6 +199,7 @@ impl MappingPaths {
             xtask_exe,
             config_dir,
             bootstrap_config,
+            registry_dir,
             output_dir,
             report_json: report,
             complete_stamp,
@@ -263,6 +266,7 @@ fn prepare_host_artifacts(
     fs_util::create_dir_all("base", &host_paths.base_dir)?;
     fs_util::create_dir_all("binary", &host_paths.bin_dir)?;
     fs_util::create_dir_all("config", &host_paths.config_dir)?;
+    fs_util::create_dir_all("registry", &host_paths.registry_dir)?;
     fs_util::create_dir_all("output", &host_paths.output_dir)?;
 
     let _bytes = fs_util::copy("xtask.exe", &xtask_exe, &host_paths.xtask_exe)?;
@@ -301,6 +305,12 @@ fn prepare_host_artifacts(
         &bootstrap_config,
     )?;
 
+    fs_util::copy_dir(
+        "registry",
+        &env_util::registry_dir()?,
+        &host_paths.registry_dir,
+    )?;
+
     Ok(())
 }
 
@@ -323,6 +333,11 @@ fn configure_mapped_folders(
         .mapped_folder(
             MappedFolder::new(&host_paths.config_dir)
                 .sandbox_folder(&sandbox_paths.config_dir)
+                .read_only(true),
+        )
+        .mapped_folder(
+            MappedFolder::new(&host_paths.registry_dir)
+                .sandbox_folder(&sandbox_paths.registry_dir)
                 .read_only(true),
         )
         .mapped_folder(
@@ -446,6 +461,7 @@ fn build_bootstrap_config(
     SandboxBootstrapConfig {
         foton_exe: sandbox_paths.foton_exe.clone(),
         xtask_exe: sandbox_paths.xtask_exe.clone(),
+        registry_dir: sandbox_paths.registry_dir.clone(),
         output_dir: sandbox_paths.output_dir.clone(),
         complete_stamp: sandbox_paths.complete_stamp.clone(),
         run_id,

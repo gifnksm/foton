@@ -14,6 +14,7 @@ use crate::{
 pub(crate) struct SandboxBootstrapConfig {
     pub(crate) foton_exe: Utf8PathBuf,
     pub(crate) xtask_exe: Utf8PathBuf,
+    pub(crate) registry_dir: Utf8PathBuf,
     pub(crate) output_dir: Utf8PathBuf,
     pub(crate) complete_stamp: Utf8PathBuf,
     pub(crate) run_id: RunId,
@@ -118,6 +119,7 @@ fn dispatch_child(config: &SandboxBootstrapConfig) -> eyre::Result<()> {
                 let params = scenario::ScenarioParameters {
                     foton_exe: config.foton_exe.clone(),
                     output_dir: config.output_dir.clone(),
+                    registry_dir: config.registry_dir.clone(),
                     run_id: config.run_id,
                 };
                 scenario::run(*scenario, &params, exec_results)

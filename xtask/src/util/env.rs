@@ -42,3 +42,7 @@ pub(crate) fn current_exe() -> eyre::Result<Utf8PathBuf> {
         .ok_or_else(|| eyre!("failed to convert current executable path to UTF-8"))?;
     Ok(path)
 }
+
+pub(crate) fn registry_dir() -> eyre::Result<Utf8PathBuf> {
+    Ok(repository_root_dir()?.join("packages"))
+}
