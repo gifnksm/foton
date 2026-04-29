@@ -1,11 +1,10 @@
 use std::io;
 
 use crate::{
-    cli::context::{RootContext, StepContext},
+    cli::context::RootContext,
+    command::common,
     db::{DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError},
-    package::{
-        PackageId, PackageManifest, PackageMetadata, PackageSource, PackageSpec, PackageState,
-    },
+    package::{PackageManifest, PackageMetadata, PackageSource, PackageSpec, PackageState},
     util::reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
 };
 
@@ -43,14 +42,6 @@ enum InfoErrorReport {
     LoadDatabase {
         #[error(source)]
         source: PackageDatabaseError,
-    },
-    #[display(
-        "multiple packages match the specified package `{pkg_spec}`:\n{pkg_ids}",
-        pkg_ids = pkg_ids.iter().map(|id| format!("- {id}")).collect::<Vec<_>>().join("\n")
-    )]
-    MultipleMatchingPackages {
-        pkg_spec: PackageSpec,
-        pkg_ids: Vec<PackageId>,
     },
     #[display("no package matches the specified package `{pkg_spec}`")]
     NoMatchingPackage { pkg_spec: PackageSpec },
@@ -92,7 +83,7 @@ pub(crate) fn info_package(cx: &RootContext, pkg_spec: &PackageSpec) -> Result<(
         .map_err(|source| InfoErrorReport::LoadDatabase { source })
         .report_error(reporter)?;
 
-    let Some((state, manifest)) = resolve_spec(&cx, &db, pkg_spec)? else {
+    let Some((state, manifest)) = common::steps::resolve_spec_in_db(&cx, &db, pkg_spec)? else {
         return Err(reporter.report_error(InfoErrorReport::NoMatchingPackage {
             pkg_spec: pkg_spec.clone(),
         }));
@@ -103,34 +94,6 @@ pub(crate) fn info_package(cx: &RootContext, pkg_spec: &PackageSpec) -> Result<(
         .report_error(reporter)?;
 
     Ok(())
-}
-
-fn resolve_spec<'a>(
-    cx: &StepContext<InfoStep>,
-    db: &'a PackageDatabase<'_>,
-    spec: &PackageSpec,
-) -> Result<Option<(PackageState, &'a PackageManifest)>, InfoError> {
-    let candidates = match spec {
-        PackageSpec::Id(id) => {
-            return Ok(db.entry_by_id(id));
-        }
-        PackageSpec::QualifiedName(qualified_name) => db
-            .entries_by_qualified_name(qualified_name)
-            .collect::<Vec<_>>(),
-        PackageSpec::Name(name) => db.entries_by_name(name).collect::<Vec<_>>(),
-    };
-    if candidates.len() > 1 {
-        return Err(cx
-            .reporter()
-            .report_error(InfoErrorReport::MultipleMatchingPackages {
-                pkg_spec: spec.clone(),
-                pkg_ids: candidates
-                    .into_iter()
-                    .map(|(_state, manifest)| manifest.metadata.id())
-                    .collect(),
-            }));
-    }
-    Ok(candidates.into_iter().next())
 }
 
 fn render_package_info<W>(
@@ -185,97 +148,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        db::{DbLockFile, PackageDatabase},
-        util::testing::{self, TempdirContext},
-    };
+    use crate::util::testing;
 
     use super::*;
-
-    #[test]
-    fn resolve_spec_returns_none_for_missing_specs() {
-        let cx = TempdirContext::new();
-        let cx = cx.with_step(InfoStep {});
-        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = lock_file.try_acquire().unwrap();
-        let db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
-
-        for spec in [
-            "example-namespace/example-font@0.1.0"
-                .parse::<PackageSpec>()
-                .unwrap(),
-            "example-namespace/example-font"
-                .parse::<PackageSpec>()
-                .unwrap(),
-            "example-font".parse::<PackageSpec>().unwrap(),
-        ] {
-            let resolved = resolve_spec(&cx, &db, &spec).unwrap();
-            assert_eq!(
-                resolved.map(|(state, manifest)| (state, manifest.metadata.id())),
-                None
-            );
-        }
-    }
-
-    #[test]
-    fn resolve_spec_resolves_installed_entry_from_id_and_qualified_name() {
-        let cx = TempdirContext::new();
-        let cx = cx.with_step(InfoStep {});
-        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
-        let expected = manifest.metadata.id();
-        assert!(matches!(
-            db.begin_install(&manifest),
-            crate::db::BeginInstallResult::CanInstall
-        ));
-        db.complete_install(&expected).unwrap();
-
-        for spec in [
-            "example-namespace/example-font@0.1.0"
-                .parse::<PackageSpec>()
-                .unwrap(),
-            "example-namespace/example-font"
-                .parse::<PackageSpec>()
-                .unwrap(),
-        ] {
-            let resolved = resolve_spec(&cx, &db, &spec)
-                .unwrap()
-                .map(|(state, manifest)| (state, manifest.metadata.id()));
-            assert_eq!(resolved, Some((PackageState::Installed, expected.clone())));
-        }
-    }
-
-    #[test]
-    fn resolve_spec_reports_multiple_matches_for_name() {
-        let cx = TempdirContext::new();
-        let cx = cx.with_step(InfoStep {});
-        let mut lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), &lock_file_guard).unwrap();
-
-        let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
-        let pkg_id1 = manifest1.metadata.id();
-        assert!(matches!(
-            db.begin_install(&manifest1),
-            crate::db::BeginInstallResult::CanInstall
-        ));
-        db.complete_install(&pkg_id1).unwrap();
-
-        let manifest2 = testing::make_manifest("other-namespace", "example-font", "1.0.0");
-        let pkg_id2 = manifest2.metadata.id();
-        assert!(matches!(
-            db.begin_install(&manifest2),
-            crate::db::BeginInstallResult::CanInstall
-        ));
-        db.complete_install(&pkg_id2).unwrap();
-
-        let spec = "example-font".parse::<PackageSpec>().unwrap();
-        let err = resolve_spec(&cx, &db, &spec).unwrap_err();
-
-        assert!(matches!(err, InfoError::Failed));
-    }
 
     #[test]
     fn render_package_info_prints_all_present_fields() {
