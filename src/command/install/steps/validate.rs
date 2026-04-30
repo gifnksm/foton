@@ -33,7 +33,10 @@ where
 enum ValidationWarnReport {
     #[display("removing unsupported font file: {path}", path = path.display())]
     RemovingUnsupportedFontFile { path: AbsolutePath },
-    #[display("failed to remove unsupported font file: {path}; manual cleanup may be required", path = path.display())]
+    #[display(
+        "failed to remove unsupported font file: {path}\nmanual cleanup may be required",
+        path = path.display()
+    )]
     RemoveUnsupportedFontFile {
         path: AbsolutePath,
         #[error(source)]

@@ -39,7 +39,7 @@ enum UninstallTxErrorReport {
         source: PackageDatabaseError,
     },
     #[display(
-        "failed to remove package files for package {pkg_id}; manual cleanup may be required"
+        "failed to remove package files for package {pkg_id}\nmanual cleanup may be required"
     )]
     RemovePackageFiles {
         pkg_id: PackageId,

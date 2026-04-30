@@ -36,7 +36,7 @@ enum UnregistrationWarnReport {
         source: RegistryError,
     },
     #[display(
-        "failed to broadcast font change after uninstall; applications may continue to use stale font information until refresh"
+        "failed to broadcast font change after uninstall\napplications may continue to use stale font information until refresh"
     )]
     BroadcastFontAfterUninstall {
         #[error(source)]

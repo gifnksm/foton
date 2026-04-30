@@ -323,6 +323,7 @@ mod tests {
                 max_extracted_files: 1,
                 ..InstallConfig::default()
             },
+            ..FotonConfig::default()
         };
 
         let err = extract_to_tempdir(archive, &default_include(), &config).unwrap_err();
@@ -340,6 +341,7 @@ mod tests {
                 max_extracted_file_size_bytes: 3,
                 ..InstallConfig::default()
             },
+            ..FotonConfig::default()
         };
 
         let err = extract_to_tempdir(archive, &default_include(), &config).unwrap_err();

@@ -83,6 +83,7 @@ pub(crate) struct ExecResult {
 }
 
 impl ExecResult {
+    #[track_caller]
     pub(crate) fn ensure_success(&self) -> eyre::Result<&Self> {
         ensure!(
             self.success,
@@ -94,6 +95,7 @@ impl ExecResult {
         Ok(self)
     }
 
+    #[track_caller]
     pub(crate) fn ensure_stdout<P>(&self, predicate: P) -> eyre::Result<&Self>
     where
         P: FnOnce(&str) -> bool,
@@ -107,6 +109,7 @@ impl ExecResult {
         Ok(self)
     }
 
+    #[track_caller]
     pub(crate) fn ensure_stderr<P>(&self, predicate: P) -> eyre::Result<&Self>
     where
         P: FnOnce(&str) -> bool,

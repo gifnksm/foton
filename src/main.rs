@@ -122,9 +122,7 @@ async fn run(
     let Args { command } = args;
 
     match command {
-        Command::Install(args) => {
-            command::install_package(&cx, &args.registry_path, &args.pkg_spec).await?;
-        }
+        Command::Install(args) => command::install_package(&cx, &args).await?,
         Command::Uninstall(args) => command::uninstall_package(&cx, &args.pkg_spec)?,
         Command::List(args) => command::list_package(&cx, &args)?,
         Command::Info(args) => command::info_package(&cx, &args.pkg_spec)?,

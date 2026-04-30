@@ -198,6 +198,7 @@ mod tests {
                 max_archive_size_bytes: 3,
                 ..InstallConfig::default()
             },
+            ..FotonConfig::default()
         };
         let pb = ProgressBar::hidden();
 
