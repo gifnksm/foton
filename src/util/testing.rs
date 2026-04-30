@@ -1,9 +1,9 @@
-use std::{fmt::Debug, ops::Deref, sync::Arc};
+use std::{fmt::Debug, fs, ops::Deref, sync::Arc};
 
 use tempfile::TempDir;
 
 use crate::{
-    cli::{config::Config, context::RootContext},
+    cli::{config::FotonConfig, context::RootContext},
     package::{
         PackageDirs, PackageId, PackageManifest, PackageName, PackageNamespace, PackageVersion,
     },
@@ -51,7 +51,7 @@ impl TempdirContext {
         S: Into<Arc<str>>,
     {
         let (tempdir, app_dirs) = make_app_dirs();
-        let config = Config::default();
+        let config = FotonConfig::default();
         let reporter = RootReporter::message_reporter();
         let cx = RootContext::new(
             app_id.into(),
@@ -76,8 +76,11 @@ impl Deref for TempdirContext {
 
 pub(crate) fn make_app_dirs() -> (TempDir, AppDirs) {
     let tempdir = tempfile::tempdir().unwrap();
-    let data_local_dir = AbsolutePath::new(tempdir.path()).unwrap();
-    let app_dirs = AppDirs::new_for_test(data_local_dir);
+    let data_local_dir = AbsolutePath::new(tempdir.path()).unwrap().join("data");
+    let config_dir = AbsolutePath::new(tempdir.path()).unwrap().join("config");
+    fs::create_dir_all(&data_local_dir).unwrap();
+    fs::create_dir_all(&config_dir).unwrap();
+    let app_dirs = AppDirs::new_for_test(data_local_dir, config_dir);
     (tempdir, app_dirs)
 }
 
