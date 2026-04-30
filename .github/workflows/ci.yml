@@ -211,8 +211,8 @@ jobs:
       - run: just ci-test
         shell: bash
 
-  coverage:
-    name: Coverage (test)
+  test-coverage:
+    name: Test Coverage
     needs: set-matrix
     strategy:
       fail-fast: true
@@ -236,6 +236,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: target/codecov.json
+          flags: test
           fail_ci_if_error: false
 
   release-dry-run:
@@ -273,6 +274,37 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo xtask scenario run --scenario "${{ matrix.scenario }}"
         shell: bash
+
+  scenario-coverage:
+    name: Scenario Coverage (${{ matrix.scenario }})
+    needs: set-scenario-matrix
+    strategy:
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.set-scenario-matrix.outputs.scenario) }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - run: |
+          # shellcheck source=/dev/null
+          source <(cargo llvm-cov show-env --sh)
+          cargo llvm-cov clean --workspace
+          cargo xtask scenario run --scenario "${{ matrix.scenario }}"
+          cargo llvm-cov report -p foton -p xtask --codecov --output-path target/codecov.json
+        shell: bash
+      - uses: codecov/codecov-action@v6
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: target/codecov.json
+          flags: scenario-${{ matrix.scenario }}
+          fail_ci_if_error: false
 
   actionlint:
     runs-on: ubuntu-latest
@@ -317,9 +349,10 @@ jobs:
       - sync-rdme
       - machete
       - test
-      - coverage
+      - test-coverage
       - release-dry-run
       - scenario
+      - scenario-coverage
       - actionlint
       - typos
       - markdownlint

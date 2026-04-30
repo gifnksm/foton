@@ -8,7 +8,7 @@ coverage:
         informational: true
 
 comment:
-  layout: "condensed_header, condensed_files, components, condensed_footer"
+  layout: "condensed_header, condensed_files, components, flags, condensed_footer"
   hide_project_coverage: true
 
 component_management:
