@@ -47,6 +47,7 @@ directories = "6.0.0"
 fd-lock = "4.0.4"
 futures-core = "0.3.32"
 futures-util = "0.3.32"
+git2 = { version = "0.20.4", default-features = false, features = ["https", "vendored-libgit2"] }
 glob = "0.3.3"
 indicatif = "0.18.4"
 regex = "1.12.3"

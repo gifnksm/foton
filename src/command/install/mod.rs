@@ -1,16 +1,20 @@
-use std::path::Path;
+use std::collections::BTreeSet;
 
 use crate::{
-    cli::context::{RootContext, StepContext},
+    cli::{
+        args::InstallArgs,
+        context::{RootContext, StepContext},
+    },
     command::{
         common,
         install::helpers::{BeginInstallTxResult, DbGuard},
     },
     db::{PackageDatabase, PackageDatabaseError},
-    package::{Package, PackageDirs, PackageId, PackageManifest, PackageSpec},
+    package::{Package, PackageDirs, PackageId, PackageManifest},
+    registry::{self, FetchRegistryError, RegistryId, RegistrySource},
     util::{
         fs::FsError,
-        reporter::{ReportValue, Step},
+        reporter::{ReportValue, Step, StepResultErrorExt as _},
     },
 };
 
@@ -29,7 +33,10 @@ impl Step for InstallStep {
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
 enum InstallWarnReport {
-    #[display("failed to remove package directory after install failure: {}; manual cleanup may be required", pkg_dirs.version_dir().display())]
+    #[display(
+        "failed to remove package directory after install failure: {path}\nmanual cleanup may be required",
+        path = pkg_dirs.version_dir().display()
+    )]
     RemovePackageDirectoryAfterInstallFailure {
         pkg_dirs: PackageDirs,
         #[error(source)]
@@ -45,6 +52,22 @@ impl From<InstallWarnReport> for ReportValue<'static> {
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
 enum InstallErrorReport {
+    #[display(
+        "specified registry `{id}` not found in configuration\navailable registries:\n{registry_ids}",
+            registry_ids = registry_ids.iter().map(|id| format!("- {id}")).collect::<Vec<_>>().join("\n")
+    )]
+    RegistryNotFound {
+        id: RegistryId,
+        registry_ids: BTreeSet<RegistryId>,
+    },
+    #[display("no enabled registries found in configuration")]
+    NoEnabledRegistries,
+    #[display("failed to fetch registry `{id}`")]
+    FetchRegistry {
+        id: RegistryId,
+        #[error(source)]
+        source: Box<FetchRegistryError>,
+    },
     #[display("failed to save package database")]
     SaveDatabase {
         #[error(source)]
@@ -79,14 +102,33 @@ mod steps;
 
 pub(crate) async fn install_package(
     cx: &RootContext,
-    registry_path: &Path,
-    pkg_spec: &PackageSpec,
+    args: &InstallArgs,
 ) -> Result<(), InstallError> {
+    let InstallArgs { registry, pkg_spec } = args;
+
     let cx = cx.with_step(InstallStep {});
     cx.reporter()
         .report_step(format_args!("Installing {pkg_spec}..."));
 
-    let manifest = steps::resolve_package(&cx, registry_path, pkg_spec)?;
+    let registries = resolve_registries(&cx, registry.as_ref())?;
+    if registries.is_empty() {
+        return Err(cx
+            .reporter()
+            .report_error(InstallErrorReport::NoEnabledRegistries));
+    }
+
+    let indexes = registries
+        .into_iter()
+        .map(|(id, source)| {
+            registry::fetch_registry(cx.app_dirs(), &id, source).map_err(|source| {
+                let source = Box::new(source);
+                InstallErrorReport::FetchRegistry { id, source }
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .report_error(cx.reporter())?;
+
+    let manifest = steps::resolve_package(&cx, &indexes, pkg_spec)?;
     let pkg_id = manifest.metadata.id();
 
     let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
@@ -107,6 +149,38 @@ pub(crate) async fn install_package(
     registration.disarm();
 
     Ok(())
+}
+
+fn resolve_registries<'a>(
+    cx: &'a StepContext<InstallStep>,
+    registries: Option<&Vec<RegistryId>>,
+) -> Result<Vec<(RegistryId, &'a RegistrySource)>, InstallError> {
+    let config_registries = &cx.config().registries;
+    let Some(registry_ids) = registries
+        .as_ref()
+        .map(|registries| registries.iter().cloned().collect::<BTreeSet<_>>())
+    else {
+        return Ok(config_registries
+            .iter()
+            .filter(|(_id, registry)| registry.enabled)
+            .map(|(id, registry)| (id.clone(), &registry.source))
+            .collect());
+    };
+    let registries: Vec<_> = registry_ids
+        .iter()
+        .map(|id| {
+            config_registries
+                .get(id)
+                .map(|registry| (id.clone(), &registry.source))
+                .ok_or_else(|| {
+                    let id = id.clone();
+                    let registry_ids = config_registries.keys().cloned().collect();
+                    InstallErrorReport::RegistryNotFound { id, registry_ids }
+                })
+        })
+        .collect::<Result<_, _>>()
+        .report_error(cx.reporter())?;
+    Ok(registries)
 }
 
 fn begin_install<'db>(

@@ -15,12 +15,7 @@ pub(super) fn run(
     .ensure_stdout(str::is_empty)?;
 
     super::exec_foton(params, exec_results, |cmd| {
-        cmd.args([
-            "install",
-            PKG_SPEC,
-            "--registry",
-            params.registry_dir.as_str(),
-        ]);
+        cmd.args(["install", PKG_SPEC]);
     })?
     .ensure_success()?;
 

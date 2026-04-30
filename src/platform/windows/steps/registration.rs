@@ -34,7 +34,7 @@ where
 #[derive(Debug, derive_more::Display, derive_more::Error)]
 enum RegistrationWarnReport {
     #[display(
-        "failed to load font into current session: {path}; the font was registered persistently but may not be available until next logon",
+        "failed to load font into current session: {path}\nthe font was registered persistently but may not be available until next logon",
         path = path.display()
     )]
     LoadFont {
@@ -43,7 +43,7 @@ enum RegistrationWarnReport {
         source: SessionError,
     },
     #[display(
-        "failed to broadcast font change after install; applications may not see the new font immediately"
+        "failed to broadcast font change after install\napplications may not see the new font immediately"
     )]
     BroadcastFontAfterInstall {
         #[error(source)]

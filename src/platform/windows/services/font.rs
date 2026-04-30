@@ -26,7 +26,8 @@ pub(crate) enum FontValidatorError {
         source: Box<FontInspectorError>,
     },
     #[display(
-        "failed to convert font title to string for file: {path}; the title may contain invalid UTF-8", path = path.display()
+        "failed to convert font title to string for file: {path}\nthe title may contain invalid UTF-8",
+        path = path.display()
     )]
     ConvertFontTitleToString { path: PathBuf },
 }

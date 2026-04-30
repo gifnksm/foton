@@ -1,4 +1,4 @@
-use std::{fmt::Debug, fs, ops::Deref, sync::Arc};
+use std::{fmt::Debug, ops::Deref, sync::Arc};
 
 use tempfile::TempDir;
 
@@ -7,10 +7,9 @@ use crate::{
     package::{
         PackageDirs, PackageId, PackageManifest, PackageName, PackageNamespace, PackageVersion,
     },
-    registry::PackageRegistry,
+    registry::{RegistryId, RegistryIndex},
     util::{
         app_dirs::AppDirs,
-        path::AbsolutePath,
         reporter::{NeverReport, RootReporter, Step},
     },
 };
@@ -76,11 +75,7 @@ impl Deref for TempdirContext {
 
 pub(crate) fn make_app_dirs() -> (TempDir, AppDirs) {
     let tempdir = tempfile::tempdir().unwrap();
-    let data_local_dir = AbsolutePath::new(tempdir.path()).unwrap().join("data");
-    let config_dir = AbsolutePath::new(tempdir.path()).unwrap().join("config");
-    fs::create_dir_all(&data_local_dir).unwrap();
-    fs::create_dir_all(&config_dir).unwrap();
-    let app_dirs = AppDirs::new_for_test(data_local_dir, config_dir);
+    let app_dirs = AppDirs::new_for_test(tempdir.path()).unwrap();
     (tempdir, app_dirs)
 }
 
@@ -90,9 +85,10 @@ pub(crate) fn make_package_dirs(pkg_id: &PackageId) -> (TempDir, AppDirs, Packag
     (tempdir, app_dirs, pkg_dirs)
 }
 
-pub(crate) fn make_registry() -> (TempDir, PackageRegistry) {
+pub(crate) fn make_registry() -> (TempDir, RegistryIndex) {
     let tempdir = TempDir::new().unwrap();
-    let registry = PackageRegistry::new(tempdir.path().to_path_buf());
+    let id = RegistryId::new("test-registry").unwrap();
+    let registry = RegistryIndex::open(id, tempdir.path().to_path_buf()).unwrap();
     (tempdir, registry)
 }
 

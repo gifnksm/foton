@@ -1,6 +1,4 @@
-use std::path::PathBuf;
-
-use crate::package::PackageSpec;
+use crate::{package::PackageSpec, registry::RegistryId};
 
 /// Install and uninstall fonts from package registries.
 #[derive(clap::Parser)]
@@ -23,9 +21,11 @@ pub(crate) enum Command {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct InstallArgs {
-    /// Package registry directory to resolve the package from.
-    #[clap(long = "registry", value_name = "PATH")]
-    pub(crate) registry_path: PathBuf,
+    /// Package registry IDs to resolve the package from.
+    ///
+    /// Use a comma-separated list such as `--registry local,foton`.
+    #[clap(long, value_name = "REGISTRY_ID", value_delimiter = ',')]
+    pub(crate) registry: Option<Vec<RegistryId>>,
     /// Package specifier: name, qualified name, or package ID.
     #[clap(value_name = "PKG_SPEC")]
     pub(crate) pkg_spec: PackageSpec,

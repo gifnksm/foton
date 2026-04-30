@@ -1,10 +1,10 @@
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
     cli::context::StepContext,
     command::{InstallError, install::InstallStep},
-    package::{PackageId, PackageManifest, PackageName, PackageQualifiedName, PackageSpec},
-    registry::{PackageRegistry, PackageRegistryError},
+    package::{PackageId, PackageManifest, PackageSpec},
+    registry::{RegistryId, RegistryIndex, RegistryIndexError},
     util::reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
 };
 
@@ -25,31 +25,19 @@ impl Step for ResolveStep {
 
 #[derive(Debug, derive_more::Display, derive_more::Error)]
 enum ResolveErrorReport {
-    #[display("failed to find package by {name}")]
-    FindLatestPackagesByName {
-        name: PackageName,
+    #[display("failed to find package by {pkg_spec}")]
+    FindLatestPackagesBySpec {
+        pkg_spec: PackageSpec,
         #[error(source)]
-        source: PackageRegistryError,
-    },
-    #[display("failed to find package by {qualified_name}")]
-    FindLatestPackageByQualifiedName {
-        qualified_name: PackageQualifiedName,
-        #[error(source)]
-        source: PackageRegistryError,
-    },
-    #[display("failed to find package by {pkg_id}")]
-    FindPackageById {
-        pkg_id: PackageId,
-        #[error(source)]
-        source: PackageRegistryError,
+        source: RegistryIndexError,
     },
     #[display(
         "multiple packages match the specified package `{pkg_spec}`:\n{pkg_ids}\nspecify one of the matching package IDs listed above explicitly to disambiguate",
-        pkg_ids = pkg_ids.iter().map(|id| format!("- {id}")).collect::<Vec<_>>().join("\n")
+        pkg_ids = pkg_ids.iter().map(|(registry, id)| format!("- {id} (in {registry})")).collect::<Vec<_>>().join("\n")
     )]
     MultipleMatchingPackages {
         pkg_spec: PackageSpec,
-        pkg_ids: Vec<PackageId>,
+        pkg_ids: Vec<(RegistryId, PackageId)>,
     },
     #[display("no package found matching the specified package `{pkg_spec}`")]
     PackageNotFoundForSpec { pkg_spec: PackageSpec },
@@ -63,7 +51,7 @@ impl From<ResolveErrorReport> for ReportValue<'static> {
 
 pub(crate) fn resolve_package(
     cx: &StepContext<InstallStep>,
-    registry_path: &Path,
+    indexes: &[RegistryIndex],
     pkg_spec: &PackageSpec,
 ) -> Result<PackageManifest, InstallError> {
     let cx = cx.with_step(ResolveStep {
@@ -72,60 +60,43 @@ pub(crate) fn resolve_package(
     let reporter = cx.reporter();
     reporter.report_step(format_args!("Resolving {pkg_spec}..."));
 
-    let registry = PackageRegistry::new(registry_path.to_path_buf());
-
-    let manifests = match pkg_spec {
-        PackageSpec::Name(name) => registry
-            .find_latest_packages_by_name(name)
+    let mut manifests = vec![];
+    for index in indexes {
+        let pkgs = index
+            .find_latest_packages_by_spec(pkg_spec)
             .map_err(|source| {
-                let name = name.clone();
-                ResolveErrorReport::FindLatestPackagesByName { name, source }
+                let pkg_spec = pkg_spec.clone();
+                ResolveErrorReport::FindLatestPackagesBySpec { pkg_spec, source }
             })
-            .report_error(reporter)?
-            .into_values()
-            .collect::<Vec<_>>(),
-        PackageSpec::QualifiedName(qualified_name) => registry
-            .find_latest_package_by_qualified_name(qualified_name)
-            .map_err(|source| {
-                let qualified_name = qualified_name.clone();
-                ResolveErrorReport::FindLatestPackageByQualifiedName {
-                    qualified_name,
-                    source,
-                }
-            })
-            .report_error(reporter)?
-            .into_iter()
-            .collect(),
-        PackageSpec::Id(pkg_id) => registry
-            .find_package_by_id(pkg_id)
-            .map_err(|source| {
-                let pkg_id = pkg_id.clone();
-                ResolveErrorReport::FindPackageById { pkg_id, source }
-            })
-            .report_error(reporter)?
-            .into_iter()
-            .collect(),
-    };
+            .report_error(reporter)?;
+        manifests.extend(pkgs.into_values().map(|manifest| (index.id(), manifest)));
+    }
 
     if manifests.len() > 1 {
         let pkg_spec = pkg_spec.clone();
-        let pkg_ids = manifests.into_iter().map(|pkg| pkg.metadata.id()).collect();
+        let pkg_ids = manifests
+            .into_iter()
+            .map(|(registry, pkg)| (registry.clone(), pkg.metadata.id()))
+            .collect();
         return Err(reporter
             .report_error(ResolveErrorReport::MultipleMatchingPackages { pkg_spec, pkg_ids }));
     }
-    let Some(manifest) = manifests.into_iter().next() else {
+    let Some((registry, manifest)) = manifests.into_iter().next() else {
         let pkg_spec = pkg_spec.clone();
         return Err(reporter.report_error(ResolveErrorReport::PackageNotFoundForSpec { pkg_spec }));
     };
 
-    reporter.report_info(format_args!("found package {}", manifest.metadata.id()));
+    reporter.report_info(format_args!(
+        "found package {} in registry {registry}",
+        manifest.metadata.id()
+    ));
 
     Ok(manifest)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{fs, path::Path};
 
     use tempfile::TempDir;
 
@@ -152,7 +123,21 @@ mod tests {
     ) -> Result<PackageManifest, InstallError> {
         let cx = TempdirContext::new();
         let cx = cx.with_step(InstallStep {});
-        resolve_package(&cx, registry_path, pkg_spec)
+        let index = RegistryIndex::open(
+            "test-registry".parse().unwrap(),
+            registry_path.to_path_buf(),
+        )
+        .unwrap();
+        resolve_package(&cx, &[index], pkg_spec)
+    }
+
+    fn resolve_for_test_with_indexes(
+        indexes: &[RegistryIndex],
+        pkg_spec: &PackageSpec,
+    ) -> Result<PackageManifest, InstallError> {
+        let cx = TempdirContext::new();
+        let cx = cx.with_step(InstallStep {});
+        resolve_package(&cx, indexes, pkg_spec)
     }
 
     #[test]
@@ -188,6 +173,31 @@ mod tests {
 
         let spec: PackageSpec = "example-namespace/example-font".parse().unwrap();
         let err = resolve_for_test(tempdir.path(), &spec).unwrap_err();
+
+        assert!(matches!(err, InstallError::Failed));
+    }
+
+    #[test]
+    fn resolve_package_reports_multiple_matching_packages_across_registries() {
+        let tempdir1 = TempDir::new().unwrap();
+        let tempdir2 = TempDir::new().unwrap();
+        write_manifest(
+            tempdir1.path(),
+            "example-namespace",
+            "example-font",
+            "0.2.0",
+        );
+        write_manifest(tempdir2.path(), "other-namespace", "example-font", "1.0.0");
+
+        let indexes = vec![
+            RegistryIndex::open("registry-a".parse().unwrap(), tempdir1.path().to_path_buf())
+                .unwrap(),
+            RegistryIndex::open("registry-b".parse().unwrap(), tempdir2.path().to_path_buf())
+                .unwrap(),
+        ];
+
+        let spec: PackageSpec = "example-font".parse().unwrap();
+        let err = resolve_for_test_with_indexes(&indexes, &spec).unwrap_err();
 
         assert!(matches!(err, InstallError::Failed));
     }
