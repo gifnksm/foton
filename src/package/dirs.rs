@@ -87,19 +87,42 @@ mod tests {
 
     #[test]
     fn package_dirs_new_uses_app_dirs_data_local_dir() {
-        let data_local_dir = AbsolutePath::new(r"C:\path\to\data").unwrap();
-        let app_dirs = &AppDirs::new_for_test(data_local_dir.clone());
-        let pkg_dirs = PackageDirs::new(app_dirs, &PKG_ID);
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
+        let pkg_dirs = PackageDirs::new(&app_dirs, &PKG_ID);
         assert_eq!(
             pkg_dirs.namespace_dir(),
-            &data_local_dir.join("packages").join("example-namespace"),
+            &app_dirs
+                .data_local_dir()
+                .join("packages")
+                .join("example-namespace"),
         );
         assert_eq!(
             pkg_dirs.name_dir(),
-            &pkg_dirs.namespace_dir().join("example-font"),
+            &app_dirs
+                .data_local_dir()
+                .join("packages")
+                .join("example-namespace")
+                .join("example-font"),
         );
-        assert_eq!(pkg_dirs.version_dir(), &pkg_dirs.name_dir().join("0.1.0"));
-        assert_eq!(pkg_dirs.fonts_dir(), &pkg_dirs.version_dir().join("fonts"));
+        assert_eq!(
+            pkg_dirs.version_dir(),
+            &app_dirs
+                .data_local_dir()
+                .join("packages")
+                .join("example-namespace")
+                .join("example-font")
+                .join("0.1.0")
+        );
+        assert_eq!(
+            pkg_dirs.fonts_dir(),
+            &app_dirs
+                .data_local_dir()
+                .join("packages")
+                .join("example-namespace")
+                .join("example-font")
+                .join("0.1.0")
+                .join("fonts")
+        );
     }
 
     #[test]

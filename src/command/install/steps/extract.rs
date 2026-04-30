@@ -10,7 +10,7 @@ use glob::MatchOptions;
 use zip::{ZipArchive, result::ZipError};
 
 use crate::{
-    cli::{config::Config, context::StepContext},
+    cli::{config::FotonConfig, context::StepContext},
     util::{
         path::{AbsolutePath, FileName},
         reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
@@ -122,7 +122,7 @@ fn extract_archive_impl(
     file: File,
     include: &[glob::Pattern],
     fonts_dir: &AbsolutePath,
-    config: &Config,
+    config: &FotonConfig,
 ) -> Result<Vec<FileName>, ExtractErrorReport> {
     const MATCH_OPTIONS: MatchOptions = MatchOptions {
         case_sensitive: false,
@@ -237,7 +237,7 @@ mod tests {
     fn extract_to_tempdir(
         archive: File,
         include: &[glob::Pattern],
-        config: &Config,
+        config: &FotonConfig,
     ) -> Result<(TempDir, Vec<FileName>), Box<ExtractErrorReport>> {
         let tempdir = tempfile::tempdir().unwrap();
         let fonts_dir = AbsolutePath::new(tempdir.path()).unwrap();
@@ -252,7 +252,7 @@ mod tests {
 
         let (_tempdir, files) = {
             let include: &[glob::Pattern] = &include;
-            extract_to_tempdir(archive, include, &Config::default())
+            extract_to_tempdir(archive, include, &FotonConfig::default())
         }
         .unwrap();
 
@@ -266,7 +266,7 @@ mod tests {
 
         let (_tempdir, files) = {
             let include: &[glob::Pattern] = &include;
-            extract_to_tempdir(archive, include, &Config::default())
+            extract_to_tempdir(archive, include, &FotonConfig::default())
         }
         .unwrap();
 
@@ -280,7 +280,7 @@ mod tests {
 
         let (_tempdir, files) = {
             let include: &[glob::Pattern] = &include;
-            extract_to_tempdir(archive, include, &Config::default())
+            extract_to_tempdir(archive, include, &FotonConfig::default())
         }
         .unwrap();
 
@@ -291,7 +291,8 @@ mod tests {
     fn extract_archive_rejects_duplicate_font_file_names() {
         let archive = build_zip(&[("a/font.ttf", b"font-a"), ("b/font.ttf", b"font-b")]);
 
-        let err = extract_to_tempdir(archive, &default_include(), &Config::default()).unwrap_err();
+        let err =
+            extract_to_tempdir(archive, &default_include(), &FotonConfig::default()).unwrap_err();
         assert!(matches!(
             *err,
             ExtractErrorReport::ExtractedFileAlreadyExists { .. }
@@ -309,7 +310,7 @@ mod tests {
         ]);
 
         let (_tempdir, files) =
-            extract_to_tempdir(archive, &default_include(), &Config::default()).unwrap();
+            extract_to_tempdir(archive, &default_include(), &FotonConfig::default()).unwrap();
 
         assert_eq!(files, vec!["font.ttf", "font.ttc", "font.otf"]);
     }
@@ -317,7 +318,7 @@ mod tests {
     #[test]
     fn extract_archive_rejects_more_than_max_extracted_files() {
         let archive = build_zip(&[("a.ttf", b"font-a"), ("b.ttf", b"font-b")]);
-        let config = Config {
+        let config = FotonConfig {
             install: InstallConfig {
                 max_extracted_files: 1,
                 ..InstallConfig::default()
@@ -334,7 +335,7 @@ mod tests {
     #[test]
     fn extract_archive_rejects_entries_exceeding_max_extracted_file_size() {
         let archive = build_zip(&[("font.ttf", b"font")]);
-        let config = Config {
+        let config = FotonConfig {
             install: InstallConfig {
                 max_extracted_file_size_bytes: 3,
                 ..InstallConfig::default()

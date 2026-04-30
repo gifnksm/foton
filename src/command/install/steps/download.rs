@@ -7,7 +7,7 @@ use reqwest::{Response, Url};
 use tokio::io::{AsyncSeekExt as _, AsyncWriteExt as _};
 
 use crate::{
-    cli::{config::Config, context::StepContext},
+    cli::{config::FotonConfig, context::StepContext},
     package::{PackageId, PackageSource},
     util::{
         hash::{GenericDigest, GenericHasher},
@@ -142,7 +142,7 @@ where
 async fn stream_archive_to_tempfile<S>(
     chunks: S,
     mut hasher: GenericHasher,
-    config: &Config,
+    config: &FotonConfig,
     pb: &indicatif::ProgressBar,
 ) -> Result<(File, GenericDigest), DownloadErrorReport>
 where
@@ -193,7 +193,7 @@ mod tests {
     #[tokio::test]
     async fn stream_archive_to_tempfile_rejects_download_size_exceeding_limit() {
         let chunks = stream::once(async { Ok(Bytes::copy_from_slice(b"font")) });
-        let config = Config {
+        let config = FotonConfig {
             install: InstallConfig {
                 max_archive_size_bytes: 3,
                 ..InstallConfig::default()

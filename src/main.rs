@@ -11,7 +11,7 @@ use tokio::{runtime::Runtime, signal};
 use crate::{
     cli::{
         args::{Args, Command},
-        config::Config,
+        config::FotonConfig,
         context::RootContext,
     },
     platform::windows::{self, com::ComGuard},
@@ -45,11 +45,14 @@ fn main() -> eyre::Result<()> {
     }
 
     let args = Args::parse();
+
     let app_dirs = AppDirs::from_directories()?;
     let reporter = RootReporter::message_reporter();
+    let config =
+        cli::config::load_config(&app_dirs).wrap_err("failed to load configuration file")?;
     let _com_guard = windows::com::init().wrap_err("COM initialization failed")?;
 
-    build_tokio_runtime()?.block_on(run(args, app_dirs, reporter))
+    build_tokio_runtime()?.block_on(run(app_dirs, config, args, reporter))
 }
 
 fn print_completion(bin_name: &str, shell: &str) -> eyre::Result<()> {
@@ -92,12 +95,17 @@ fn build_tokio_runtime() -> eyre::Result<Runtime> {
         .wrap_err("failed to create Tokio runtime")
 }
 
-async fn run(args: Args, app_dirs: AppDirs, reporter: RootReporter) -> eyre::Result<()> {
+async fn run(
+    app_dirs: AppDirs,
+    config: FotonConfig,
+    args: Args,
+    reporter: RootReporter,
+) -> eyre::Result<()> {
     let mut ctrl_c = signal::windows::ctrl_c().wrap_err("failed to listen for ctrl-c event")?;
     let cx = RootContext::new(
         APP_ID.into(),
         Arc::new(app_dirs),
-        Config::default().into(),
+        Arc::new(config),
         reporter,
     );
 
@@ -112,6 +120,7 @@ async fn run(args: Args, app_dirs: AppDirs, reporter: RootReporter) -> eyre::Res
     });
 
     let Args { command } = args;
+
     match command {
         Command::Install(args) => {
             command::install_package(&cx, &args.registry_path, &args.pkg_spec).await?;

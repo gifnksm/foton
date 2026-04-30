@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    cli::config::Config,
+    cli::config::FotonConfig,
     util::{
         app_dirs::AppDirs,
         reporter::{RootReporter, Step, StepReporter},
@@ -14,7 +14,7 @@ use crate::{
 pub(crate) struct Context<R> {
     app_id: Arc<str>,
     app_dirs: Arc<AppDirs>,
-    config: Arc<Config>,
+    config: Arc<FotonConfig>,
     reporter: R,
     cancel_token: CancellationToken,
 }
@@ -26,7 +26,7 @@ impl<R> Context<R> {
     pub(crate) fn new(
         app_id: Arc<str>,
         app_dirs: Arc<AppDirs>,
-        config: Arc<Config>,
+        config: Arc<FotonConfig>,
         reporter: R,
     ) -> Self {
         let cancel_token = CancellationToken::new();
@@ -51,7 +51,7 @@ impl<R> Context<R> {
         &self.reporter
     }
 
-    pub(crate) fn config(&self) -> &Config {
+    pub(crate) fn config(&self) -> &FotonConfig {
         &self.config
     }
 

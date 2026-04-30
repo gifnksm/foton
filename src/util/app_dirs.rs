@@ -7,11 +7,6 @@ use crate::util::{
     path::AbsolutePath,
 };
 
-#[derive(Debug)]
-pub(crate) struct AppDirs {
-    data_local_dir: AbsolutePath,
-}
-
 const APP_QUALIFIER: &str = "";
 const APP_ORGANIZATION: &str = "io.github.gifnksm";
 const APP_APPLICATION: &str = "foton";
@@ -32,9 +27,16 @@ pub(crate) enum AppDirsError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::IsVariant, derive_more::Display)]
+#[display(rename_all = "kebab-case")]
 pub(crate) enum DirKind {
-    #[display("data-local")]
     DataLocal,
+    Config,
+}
+
+#[derive(Debug)]
+pub(crate) struct AppDirs {
+    data_local_dir: AbsolutePath,
+    config_dir: AbsolutePath,
 }
 
 impl AppDirs {
@@ -50,18 +52,37 @@ impl AppDirs {
             });
         };
 
+        let Some(config_dir) = AbsolutePath::new(dirs.config_dir()) else {
+            return Err(AppDirsError::NotAbsolute {
+                kind: DirKind::Config,
+                path: dirs.config_dir().to_owned(),
+            });
+        };
+
         fs_util::create_dir_all(&data_local_dir).map_err(|source| AppDirsError::CreateDir {
             kind: DirKind::DataLocal,
             path: data_local_dir.clone(),
             source,
         })?;
 
-        Ok(Self { data_local_dir })
+        fs_util::create_dir_all(&config_dir).map_err(|source| AppDirsError::CreateDir {
+            kind: DirKind::Config,
+            path: config_dir.clone(),
+            source,
+        })?;
+
+        Ok(Self {
+            data_local_dir,
+            config_dir,
+        })
     }
 
     #[cfg(test)]
-    pub(crate) fn new_for_test(data_local_dir: AbsolutePath) -> Self {
-        Self { data_local_dir }
+    pub(crate) fn new_for_test(data_local_dir: AbsolutePath, config_dir: AbsolutePath) -> Self {
+        Self {
+            data_local_dir,
+            config_dir,
+        }
     }
 
     pub(crate) fn data_local_dir(&self) -> &AbsolutePath {
@@ -74,5 +95,9 @@ impl AppDirs {
 
     pub(crate) fn db_lock_file(&self) -> AbsolutePath {
         self.data_local_dir.join("db.lock")
+    }
+
+    pub(crate) fn config_file(&self) -> AbsolutePath {
+        self.config_dir.join("config.toml")
     }
 }
