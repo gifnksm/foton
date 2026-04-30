@@ -26,7 +26,7 @@ license = { link = "#license" }
 crates-io = true
 rust-version = true
 github-actions = { workflows = "ci.yml" }
-codecov = true
+codecov = { component = "foton" }
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }.{ archive-format }"

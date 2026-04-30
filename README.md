@@ -7,7 +7,7 @@
 [![crates.io](https://img.shields.io/crates/v/foton.svg?logo=rust&style=flat-square)](https://crates.io/crates/foton)
 [![Rust: ^1.95.0](https://img.shields.io/badge/rust-^1.95.0-93450a.svg?logo=rust&style=flat-square)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field)
 [![GitHub Actions: CI](https://img.shields.io/github/actions/workflow/status/gifnksm/foton/ci.yml.svg?label=CI&logo=github&style=flat-square)](https://github.com/gifnksm/foton/actions/workflows/ci.yml)
-[![Codecov](https://img.shields.io/codecov/c/github/gifnksm/foton.svg?label=codecov&logo=codecov&style=flat-square)](https://codecov.io/gh/gifnksm/foton)
+[![Codecov](https://img.shields.io/codecov/c/github/gifnksm/foton.svg?label=codecov&logo=codecov&style=flat-square&component=foton)](https://codecov.io/gh/gifnksm/foton)
 <!-- cargo-sync-rdme ]] -->
 
 A simple font package manager for Windows using GitHub Releases.
