@@ -48,7 +48,7 @@ impl From<InfoErrorReport> for ReportValue<'static> {
 
 #[derive(Debug, Snafu)]
 pub(crate) enum InfoError {
-    #[snafu(display("failed to print package information"))]
+    #[snafu(display("failed to print package information; see previous messages for details"))]
     Failed,
 }
 

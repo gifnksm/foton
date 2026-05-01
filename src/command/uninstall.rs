@@ -30,7 +30,7 @@ impl RootReportScope for UninstallScope {
 
 #[derive(Debug, Snafu)]
 pub(crate) enum UninstallError {
-    #[snafu(display("failed to uninstall package"))]
+    #[snafu(display("failed to uninstall package; see previous messages for details"))]
     Failed,
 }
 

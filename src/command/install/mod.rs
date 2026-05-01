@@ -68,7 +68,7 @@ impl From<InstallErrorReport> for ReportValue<'static> {
 
 #[derive(Debug, Snafu)]
 pub(crate) enum InstallError {
-    #[snafu(display("failed to install package"))]
+    #[snafu(display("failed to install package; see previous messages for details"))]
     Failed,
     #[snafu(display("install cancelled"))]
     Cancelled,
