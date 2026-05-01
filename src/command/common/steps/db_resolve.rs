@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use snafu::Snafu;
+
 use crate::{
     cli::context::StepContext,
     db::PackageDatabase,
@@ -25,12 +27,12 @@ where
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum DbResolveErrorReport {
-    #[display(
+    #[snafu(display(
         "multiple packages match the specified package `{pkg_spec}`:\n{pkg_ids}",
         pkg_ids = pkg_ids.iter().map(|id| format!("- {id}")).collect::<Vec<_>>().join("\n")
-    )]
+    ))]
     MultipleMatchingPackages {
         pkg_spec: PackageSpec,
         pkg_ids: Vec<PackageId>,
@@ -46,7 +48,7 @@ impl From<DbResolveErrorReport> for ReportValue<'static> {
 pub(in crate::command) fn resolve_spec_in_db<'a, S>(
     cx: &StepContext<S>,
     db: &'a PackageDatabase<'_>,
-    spec: &PackageSpec,
+    pkg_spec: &PackageSpec,
 ) -> Result<Option<(PackageState, &'a PackageManifest)>, S::Error>
 where
     S: Step,
@@ -54,7 +56,7 @@ where
     let cx = cx.with_step(DbResolveStep {
         step: Arc::clone(cx.step()),
     });
-    let candidates = match spec {
+    let candidates = match pkg_spec {
         PackageSpec::Id(id) => {
             return Ok(db.entry_by_id(id));
         }
@@ -64,15 +66,16 @@ where
         PackageSpec::Name(name) => db.entries_by_name(name).collect::<Vec<_>>(),
     };
     if candidates.len() > 1 {
-        return Err(cx
-            .reporter()
-            .report_error(DbResolveErrorReport::MultipleMatchingPackages {
-                pkg_spec: spec.clone(),
+        return Err(cx.reporter().report_error(
+            MultipleMatchingPackagesSnafu {
+                pkg_spec,
                 pkg_ids: candidates
                     .into_iter()
                     .map(|(_state, manifest)| manifest.metadata.id())
-                    .collect(),
-            }));
+                    .collect::<Vec<_>>(),
+            }
+            .build(),
+        ));
     }
     Ok(candidates.into_iter().next())
 }

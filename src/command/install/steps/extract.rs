@@ -7,6 +7,7 @@ use std::{
 };
 
 use glob::MatchOptions;
+use snafu::{IntoError as _, OptionExt as _, ResultExt as _, Snafu};
 use zip::{ZipArchive, result::ZipError};
 
 use crate::{
@@ -35,61 +36,38 @@ where
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum ExtractErrorReport {
-    #[display("failed to read archive")]
-    ReadArchive {
-        #[error(source)]
-        source: ZipError,
-    },
-    #[display("failed to extract file with index {index}")]
-    ExtractFile {
-        index: usize,
-        #[error(source)]
-        source: ZipError,
-    },
-    #[display(
+    #[snafu(display("failed to read archive"))]
+    ReadArchive { source: ZipError },
+    #[snafu(display("failed to extract file with index {index}"))]
+    ExtractFile { index: usize, source: ZipError },
+    #[snafu(display(
         "archive entry `{file_path}` has extracted size {file_size} exceeding the maximum allowed size of {max_size}",
         file_path = file_path.display(),
-    )]
+    ))]
     ExtractedFileExceedsMaxSize {
         file_path: PathBuf,
         file_size: u64,
         max_size: u64,
     },
-    #[display("failed to get file name for archive entry with index {index}")]
+    #[snafu(display("failed to get file name for archive entry with index {index}"))]
     GetFileName { index: usize },
-    #[display(
+    #[snafu(display(
         "invalid file name `{file_name}` in archive entry with index {index}",
         file_name = file_name.display()
-    )]
+    ))]
     InvalidFileName { file_name: OsString, index: usize },
-    #[display("archive contains more than {max_files} extractable font files")]
+    #[snafu(display("archive contains more than {max_files} extractable font files"))]
     TooManyExtractableFiles { max_files: usize },
-    #[display("extracted font file already exists: {path}", path = path.display())]
-    ExtractedFileAlreadyExists {
-        path: AbsolutePath,
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("failed to create font file: {path}", path = path.display())]
-    CreateExtractedFile {
-        path: AbsolutePath,
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("failed to copy extracted font file to destination: {path}", path = path.display())]
-    CopyExtractedFile {
-        path: AbsolutePath,
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("failed to flush font file: {path}", path = path.display())]
-    FlushExtractedFile {
-        path: AbsolutePath,
-        #[error(source)]
-        source: io::Error,
-    },
+    #[snafu(display("extracted font file already exists: {path}", path = path.display()))]
+    ExtractedFileAlreadyExists { path: PathBuf, source: io::Error },
+    #[snafu(display("failed to create font file: {path}", path = path.display()))]
+    CreateExtractedFile { path: PathBuf, source: io::Error },
+    #[snafu(display("failed to copy extracted font file to destination: {path}", path = path.display()))]
+    CopyExtractedFile { path: PathBuf, source: io::Error },
+    #[snafu(display("failed to flush font file: {path}", path = path.display()))]
+    FlushExtractedFile { path: PathBuf, source: io::Error },
 }
 
 impl From<ExtractErrorReport> for ReportValue<'static> {
@@ -131,14 +109,10 @@ fn extract_archive_impl(
     };
 
     let mut files = vec![];
-    let mut archive =
-        ZipArchive::new(file).map_err(|source| ExtractErrorReport::ReadArchive { source })?;
+    let mut archive = ZipArchive::new(file).context(ReadArchiveSnafu)?;
 
     for i in 0..archive.len() {
-        let mut archive_file = archive.by_index(i).map_err(|source| {
-            let index = i;
-            ExtractErrorReport::ExtractFile { index, source }
-        })?;
+        let mut archive_file = archive.by_index(i).context(ExtractFileSnafu { index: i })?;
 
         if !archive_file.is_file() {
             continue;
@@ -152,49 +126,47 @@ fn extract_archive_impl(
         if !matches {
             continue;
         }
-        if archive_file.size() > config.install.max_extracted_file_size_bytes {
-            return Err(ExtractErrorReport::ExtractedFileExceedsMaxSize {
-                file_path: archive_path.clone(),
+        snafu::ensure!(
+            archive_file.size() <= config.install.max_extracted_file_size_bytes,
+            ExtractedFileExceedsMaxSizeSnafu {
+                file_path: archive_path,
                 file_size: archive_file.size(),
                 max_size: config.install.max_extracted_file_size_bytes,
-            });
-        }
+            }
+        );
 
         let file_name = archive_path
             .file_name()
-            .ok_or(ExtractErrorReport::GetFileName { index: i })?
+            .context(GetFileNameSnafu { index: i })?
             .to_owned();
-        let file_name = FileName::new(&file_name).ok_or_else(|| {
-            let index = i;
-            ExtractErrorReport::InvalidFileName { file_name, index }
+        let file_name = FileName::new(&file_name).context(InvalidFileNameSnafu {
+            file_name,
+            index: i,
         })?;
         let fs_path = fonts_dir.join(&file_name);
 
-        if files.len() >= config.install.max_extracted_files {
-            let max_files = config.install.max_extracted_files;
-            return Err(ExtractErrorReport::TooManyExtractableFiles { max_files });
-        }
+        snafu::ensure!(
+            files.len() < config.install.max_extracted_files,
+            TooManyExtractableFilesSnafu {
+                max_files: config.install.max_extracted_files
+            }
+        );
 
         let mut file = File::options()
             .write(true)
             .create_new(true)
             .open(&fs_path)
             .map_err(|source| {
-                let path = fs_path.clone();
                 if source.kind() == io::ErrorKind::AlreadyExists {
-                    ExtractErrorReport::ExtractedFileAlreadyExists { path, source }
+                    ExtractedFileAlreadyExistsSnafu { path: &fs_path }.into_error(source)
                 } else {
-                    ExtractErrorReport::CreateExtractedFile { path, source }
+                    CreateExtractedFileSnafu { path: &fs_path }.into_error(source)
                 }
             })?;
-        io::copy(&mut archive_file, &mut file).map_err(|source| {
-            let path = fs_path.clone();
-            ExtractErrorReport::CopyExtractedFile { path, source }
-        })?;
-        file.flush().map_err(|source| {
-            let path = fs_path.clone();
-            ExtractErrorReport::FlushExtractedFile { path, source }
-        })?;
+        io::copy(&mut archive_file, &mut file)
+            .context(CopyExtractedFileSnafu { path: &fs_path })?;
+        file.flush()
+            .context(FlushExtractedFileSnafu { path: &fs_path })?;
 
         files.push(file_name);
     }

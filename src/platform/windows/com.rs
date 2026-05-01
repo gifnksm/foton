@@ -1,12 +1,10 @@
+use snafu::{ResultExt as _, Snafu};
 use windows::Win32::System::Com::{self, COINIT_MULTITHREADED};
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum ComError {
-    #[display("failed to initialize COM library")]
-    Initialize {
-        #[error(source)]
-        source: windows_core::Error,
-    },
+    #[snafu(display("failed to initialize COM library"))]
+    Initialize { source: windows_core::Error },
 }
 
 pub(crate) fn init() -> Result<ComGuard, ComError> {
@@ -14,7 +12,7 @@ pub(crate) fn init() -> Result<ComGuard, ComError> {
     // COM initialization flag constant.
     unsafe { Com::CoInitializeEx(None, COINIT_MULTITHREADED) }
         .ok()
-        .map_err(|source| ComError::Initialize { source })?;
+        .context(InitializeSnafu)?;
     Ok(ComGuard { armed: true })
 }
 

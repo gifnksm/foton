@@ -1,34 +1,36 @@
 use std::path::{Path, PathBuf};
 
+use snafu::{OptionExt as _, ResultExt as _, Snafu};
+
 use crate::{
     package::FontEntry,
     platform::windows::primitives::font_inspector::{FontInspector, FontInspectorError},
     util::path::FileName,
 };
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum FontValidatorError {
-    #[display("failed to create FontInspector")]
+    #[snafu(display("failed to create FontInspector"))]
     CreateFontInspector {
-        #[error(source)]
+        #[snafu(source(from(FontInspectorError, Box::new)))]
         source: Box<FontInspectorError>,
     },
-    #[display("failed to check if font file is supported: {path}", path = path.display())]
+    #[snafu(display("failed to check if font file is supported: {path}", path = path.display()))]
     CheckSupport {
         path: PathBuf,
-        #[error(source)]
+        #[snafu(source(from(FontInspectorError, Box::new)))]
         source: Box<FontInspectorError>,
     },
-    #[display("failed to get font title for file: {path}", path = path.display())]
+    #[snafu(display("failed to get font title for file: {path}", path = path.display()))]
     GetFontTitle {
         path: PathBuf,
-        #[error(source)]
+        #[snafu(source(from(FontInspectorError, Box::new)))]
         source: Box<FontInspectorError>,
     },
-    #[display(
+    #[snafu(display(
         "failed to convert font title to string for file: {path}\nthe title may contain invalid UTF-8",
         path = path.display()
-    )]
+    ))]
     ConvertFontTitleToString { path: PathBuf },
 }
 
@@ -39,10 +41,7 @@ pub(crate) struct FontValidator {
 
 impl FontValidator {
     pub(crate) fn new() -> Result<Self, FontValidatorError> {
-        let inspector = FontInspector::new().map_err(|source| {
-            let source = Box::new(source);
-            FontValidatorError::CreateFontInspector { source }
-        })?;
+        let inspector = FontInspector::new().context(CreateFontInspectorSnafu)?;
         Ok(Self { inspector })
     }
 
@@ -59,11 +58,7 @@ impl FontValidator {
         let supported = self
             .inspector
             .is_supported_font_file(&path)
-            .map_err(|source| {
-                let path = path.clone();
-                let source = Box::new(source);
-                FontValidatorError::CheckSupport { path, source }
-            })?;
+            .context(CheckSupportSnafu { path: &path })?;
 
         if !supported {
             return Ok(None);
@@ -72,17 +67,12 @@ impl FontValidator {
         let title = self
             .inspector
             .get_font_title(&path)
-            .map_err(|source| {
-                let path = path.clone();
-                let source = Box::new(source);
-                FontValidatorError::GetFontTitle { path, source }
-            })?
+            .context(GetFontTitleSnafu { path: &path })?
             .unwrap_or_else(|| file_name.to_os_string());
 
-        let title = title.to_str().ok_or_else(|| {
-            let path = path.clone();
-            FontValidatorError::ConvertFontTitleToString { path }
-        })?;
+        let title = title
+            .to_str()
+            .context(ConvertFontTitleToStringSnafu { path: &path })?;
 
         Ok(Some(FontEntry::new(title, file_name)))
     }

@@ -8,17 +8,18 @@ use std::{
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use snafu::Snafu;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct PackageName(Arc<str>);
 
 const PACKAGE_NAME_REGEX_STR: &str = r"^[a-zA-Z][-_0-9a-zA-Z]*$";
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum ParsePackageNameError {
-    #[display(
+    #[snafu(display(
         "invalid package name `{name}`: must start with an ASCII letter and contain only ASCII letters, digits, `-` or `_`"
-    )]
+    ))]
     InvalidFormat { name: String },
 }
 
@@ -31,9 +32,7 @@ impl PackageName {
             LazyLock::new(|| Regex::new(PACKAGE_NAME_REGEX_STR).unwrap());
 
         let name = name.into();
-        if !NAME_REGEX.is_match(&name) {
-            return Err(ParsePackageNameError::InvalidFormat { name });
-        }
+        snafu::ensure!(NAME_REGEX.is_match(&name), InvalidFormatSnafu { name });
         Ok(Self(name.into()))
     }
 

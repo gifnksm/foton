@@ -2,8 +2,10 @@ use std::{
     collections::BTreeSet,
     fs::File,
     io::{self, BufReader},
+    path::PathBuf,
 };
 
+use snafu::{IntoError as _, OptionExt as _, ResultExt as _, Snafu};
 use tempfile::NamedTempFile;
 
 use crate::{
@@ -17,43 +19,23 @@ use crate::{
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum PackageDatabaseError {
-    #[display("failed to open database file: {}", path.display())]
-    OpenDatabase {
-        path: AbsolutePath,
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("failed to create temporary file for database: {}", path.display())]
-    CreateTempFile {
-        path: AbsolutePath,
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("failed to deserialize database file: {}", path.display())]
-    DeserializeDatabase {
-        path: AbsolutePath,
-        #[error(source)]
-        source: PersistError,
-    },
-    #[display("failed to serialize database to temporary file: {}", path.display())]
-    SerializeDatabase {
-        path: AbsolutePath,
-        #[error(source)]
-        source: PersistError,
-    },
-    #[display("failed to persist temporary file to database file: {}", path.display())]
-    PersistTempFile {
-        path: AbsolutePath,
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("database entry not found for package ID: {pkg_id}")]
+    #[snafu(display("failed to open database file: {}", path.display()))]
+    OpenDatabase { path: PathBuf, source: io::Error },
+    #[snafu(display("failed to create temporary file for database: {}", path.display()))]
+    CreateTempFile { path: PathBuf, source: io::Error },
+    #[snafu(display("failed to deserialize database file: {}", path.display()))]
+    DeserializeDatabase { path: PathBuf, source: PersistError },
+    #[snafu(display("failed to serialize database to temporary file: {}", path.display()))]
+    SerializeDatabase { path: PathBuf, source: PersistError },
+    #[snafu(display("failed to persist temporary file to database file: {}", path.display()))]
+    PersistTempFile { path: PathBuf, source: io::Error },
+    #[snafu(display("database entry not found for package ID: {pkg_id}"))]
     EntryNotFound { pkg_id: PackageId },
-    #[display(
+    #[snafu(display(
         "database entry for package ID {pkg_id} is in unexpected state: expected {expected}, actual {actual}"
-    )]
+    ))]
     UnexpectedState {
         pkg_id: PackageId,
         expected: PackageState,
@@ -73,15 +55,9 @@ fn load(path: &AbsolutePath) -> Result<PersistedPackageDb, PackageDatabaseError>
         return Ok(PersistedPackageDb::default());
     }
 
-    let file = File::open(path).map_err(|source| {
-        let path = path.clone();
-        PackageDatabaseError::OpenDatabase { path, source }
-    })?;
+    let file = File::open(path).context(OpenDatabaseSnafu { path })?;
     let mut reader = BufReader::new(file);
-    let db = persist::from_reader(&mut reader).map_err(|source| {
-        let path = path.clone();
-        PackageDatabaseError::DeserializeDatabase { path, source }
-    })?;
+    let db = persist::from_reader(&mut reader).context(DeserializeDatabaseSnafu { path })?;
 
     Ok(db)
 }
@@ -107,23 +83,23 @@ impl<'a> PackageDatabase<'a> {
     }
 
     pub(crate) fn save(&mut self) -> Result<(), PackageDatabaseError> {
-        let persist_dir = self.persist_path.as_path().parent().unwrap();
-        let mut temp_file = NamedTempFile::new_in(persist_dir).map_err(|source| {
-            let path = AbsolutePath::new(persist_dir).unwrap();
-            PackageDatabaseError::CreateTempFile { path, source }
+        let persist_dir = self.persist_path.parent().unwrap();
+        let mut temp_file = NamedTempFile::new_in(&persist_dir)
+            .context(CreateTempFileSnafu { path: &persist_dir })?;
+        persist::to_writer(&temp_file, &self.persist_db).context(SerializeDatabaseSnafu {
+            path: temp_file.path(),
         })?;
-        persist::to_writer(&temp_file, &self.persist_db).map_err(|source| {
-            let path = AbsolutePath::new(temp_file.path()).unwrap();
-            PackageDatabaseError::SerializeDatabase { path, source }
-        })?;
-        temp_file.as_file_mut().sync_all().map_err(|source| {
-            let path = self.persist_path.clone();
-            PackageDatabaseError::PersistTempFile { path, source }
-        })?;
+        temp_file
+            .as_file_mut()
+            .sync_all()
+            .context(PersistTempFileSnafu {
+                path: &self.persist_path,
+            })?;
         temp_file.persist(&self.persist_path).map_err(|source| {
-            let path = self.persist_path.clone();
-            let source = source.error;
-            PackageDatabaseError::PersistTempFile { path, source }
+            PersistTempFileSnafu {
+                path: &self.persist_path,
+            }
+            .into_error(source.error)
         })?;
         Ok(())
     }
@@ -232,22 +208,15 @@ impl<'a> PackageDatabase<'a> {
             .packages
             .get_mut(pkg_id.qualified_name())
             .and_then(|version_map| version_map.versions.get_mut(pkg_id.version()))
-            .ok_or_else(|| {
-                let pkg_id = pkg_id.clone();
-                PackageDatabaseError::EntryNotFound { pkg_id }
-            })?;
-        if entry.state != PackageState::PendingInstall {
-            return Err({
-                let pkg_id = pkg_id.clone();
-                let expected = PackageState::PendingInstall;
-                let actual = entry.state;
-                PackageDatabaseError::UnexpectedState {
-                    pkg_id,
-                    expected,
-                    actual,
-                }
-            });
-        }
+            .context(EntryNotFoundSnafu { pkg_id })?;
+        snafu::ensure!(
+            entry.state == PackageState::PendingInstall,
+            UnexpectedStateSnafu {
+                pkg_id,
+                expected: PackageState::PendingInstall,
+                actual: entry.state,
+            }
+        );
         entry.state = PackageState::Installed;
         Ok(())
     }
@@ -260,29 +229,19 @@ impl<'a> PackageDatabase<'a> {
             .persist_db
             .packages
             .get_mut(pkg_id.qualified_name())
-            .ok_or_else(|| {
-                let pkg_id = pkg_id.clone();
-                PackageDatabaseError::EntryNotFound { pkg_id }
-            })?;
+            .context(EntryNotFoundSnafu { pkg_id })?;
         let entry = version_map
             .versions
             .get_mut(pkg_id.version())
-            .ok_or_else(|| {
-                let pkg_id = pkg_id.clone();
-                PackageDatabaseError::EntryNotFound { pkg_id }
-            })?;
-        if entry.state != PackageState::PendingInstall {
-            return Err({
-                let pkg_id = pkg_id.clone();
-                let expected = PackageState::PendingInstall;
-                let actual = entry.state;
-                PackageDatabaseError::UnexpectedState {
-                    pkg_id,
-                    expected,
-                    actual,
-                }
-            });
-        }
+            .context(EntryNotFoundSnafu { pkg_id })?;
+        snafu::ensure!(
+            entry.state == PackageState::PendingInstall,
+            UnexpectedStateSnafu {
+                pkg_id,
+                expected: PackageState::PendingInstall,
+                actual: entry.state,
+            }
+        );
         version_map.versions.remove(pkg_id.version());
         if version_map.versions.is_empty() {
             self.persist_db.packages.remove(pkg_id.qualified_name());
@@ -311,29 +270,19 @@ impl<'a> PackageDatabase<'a> {
             .persist_db
             .packages
             .get_mut(pkg_id.qualified_name())
-            .ok_or_else(|| {
-                let pkg_id = pkg_id.clone();
-                PackageDatabaseError::EntryNotFound { pkg_id }
-            })?;
+            .context(EntryNotFoundSnafu { pkg_id })?;
         let entry = version_map
             .versions
             .get_mut(pkg_id.version())
-            .ok_or_else(|| {
-                let pkg_id = pkg_id.clone();
-                PackageDatabaseError::EntryNotFound { pkg_id }
-            })?;
-        if entry.state != PackageState::PendingUninstall {
-            return Err({
-                let pkg_id = pkg_id.clone();
-                let expected = PackageState::PendingUninstall;
-                let actual = entry.state;
-                PackageDatabaseError::UnexpectedState {
-                    pkg_id,
-                    expected,
-                    actual,
-                }
-            });
-        }
+            .context(EntryNotFoundSnafu { pkg_id })?;
+        snafu::ensure!(
+            entry.state == PackageState::PendingUninstall,
+            UnexpectedStateSnafu {
+                pkg_id,
+                expected: PackageState::PendingUninstall,
+                actual: entry.state,
+            }
+        );
         version_map.versions.remove(pkg_id.version());
         if version_map.versions.is_empty() {
             self.persist_db.packages.remove(pkg_id.qualified_name());

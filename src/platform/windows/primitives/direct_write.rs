@@ -1,28 +1,24 @@
 use std::path::PathBuf;
 
+use snafu::{ResultExt as _, Snafu};
 use windows::Win32::Graphics::DirectWrite::{
     self, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_FACE_TYPE, DWRITE_FONT_FILE_TYPE, IDWriteFactory,
     IDWriteFontFile,
 };
 use windows_core::HSTRING;
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum DirectWriteError {
-    #[display("failed to create DirectWrite factory")]
-    CreateFactory {
-        #[error(source)]
-        source: windows_core::Error,
-    },
-    #[display("failed to create reference for font file: {path}", path = path.display())]
+    #[snafu(display("failed to create DirectWrite factory"))]
+    CreateFactory { source: windows_core::Error },
+    #[snafu(display("failed to create reference for font file: {path}", path = path.display()))]
     CreateFontFileReference {
         path: PathBuf,
-        #[error(source)]
         source: windows_core::Error,
     },
-    #[display("failed to analyze font file: {path}", path = path.display())]
+    #[snafu(display("failed to analyze font file: {path}", path = path.display()))]
     AnalyzeFont {
         path: PathBuf,
-        #[error(source)]
         source: windows_core::Error,
     },
 }
@@ -37,7 +33,7 @@ impl DirectWriteFactory {
         // SAFETY: This is an unsafe FFI call. We pass only the constant factory type argument.
         let factory: IDWriteFactory =
             unsafe { DirectWrite::DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED) }
-                .map_err(|source| DirectWriteError::CreateFactory { source })?;
+                .context(CreateFactorySnafu)?;
         Ok(Self { factory })
     }
 
@@ -52,10 +48,7 @@ impl DirectWriteFactory {
             self.factory
                 .CreateFontFileReference(&HSTRING::from(path.as_path()), None)
         }
-        .map_err(|source| {
-            let path = path.clone();
-            DirectWriteError::CreateFontFileReference { path, source }
-        })?;
+        .context(CreateFontFileReferenceSnafu { path: &path })?;
         Ok(DirectWriteFontFile { path, font_file })
     }
 }
@@ -87,10 +80,7 @@ impl DirectWriteFontFile {
                 &raw mut number_of_faces,
             )
         }
-        .map_err(|source| {
-            let path = self.path.clone();
-            DirectWriteError::AnalyzeFont { path, source }
-        })?;
+        .context(AnalyzeFontSnafu { path: &self.path })?;
         Ok(DirectWriteFontFileAnalyzeResult {
             is_supported: is_supported.as_bool(),
         })

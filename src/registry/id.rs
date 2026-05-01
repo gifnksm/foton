@@ -6,6 +6,7 @@ use std::{
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use snafu::Snafu;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct RegistryId(Arc<str>);
@@ -22,11 +23,11 @@ impl RegistryId {
 
 const REGISTRY_ID_REGEX_STR: &str = r"^[a-zA-Z][-_0-9a-zA-Z]*$";
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum RegistryIdError {
-    #[display(
+    #[snafu(display(
         "invalid registry id `{id}`: must start with an ASCII letter and contain only ASCII letters, digits, `-` or `_`"
-    )]
+    ))]
     InvalidFormat { id: String },
 }
 
@@ -39,10 +40,14 @@ impl RegistryId {
             LazyLock::new(|| Regex::new(REGISTRY_ID_REGEX_STR).unwrap());
 
         let id = id.into();
-        if !ID_REGEX.is_match(&id) {
-            return Err(RegistryIdError::InvalidFormat { id });
-        }
+        snafu::ensure!(ID_REGEX.is_match(&id), InvalidFormatSnafu { id });
         Ok(Self(id.into()))
+    }
+}
+
+impl From<&RegistryId> for RegistryId {
+    fn from(reg_id: &RegistryId) -> Self {
+        reg_id.clone()
     }
 }
 

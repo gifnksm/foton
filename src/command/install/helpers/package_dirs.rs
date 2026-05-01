@@ -1,10 +1,14 @@
 use std::ops::Deref;
 
+use snafu::ResultExt as _;
+
 use crate::{
     cli::context::StepContext,
     command::{
         InstallError,
-        install::{InstallErrorReport, InstallStep, InstallWarnReport},
+        install::{
+            CreatePackageDirsSnafu, InstallStep, RemovePackageDirectoryAfterInstallFailureSnafu,
+        },
     },
     package::{self, PackageDirs, PackageId},
     util::reporter::{StepResultErrorExt as _, StepResultWarnExt as _},
@@ -17,10 +21,7 @@ pub(in crate::command::install) fn create_new_package_dirs(
     let reporter = cx.reporter();
     let pkg_dirs = PackageDirs::new(cx.app_dirs(), pkg_id);
     package::create_new_package_dirs(&pkg_dirs)
-        .map_err(|source| {
-            let pkg_id = pkg_id.clone();
-            InstallErrorReport::CreatePackageDirs { pkg_id, source }
-        })
+        .context(CreatePackageDirsSnafu { pkg_id })
         .report_error(reporter)?;
     Ok(PackageDirsGuard {
         armed: true,
@@ -56,10 +57,7 @@ impl Drop for PackageDirsGuard {
             .report_info(format_args!("rolling back package fonts directories..."));
 
         let _ = package::remove_package_dirs(&self.pkg_dirs)
-            .map_err(|source| {
-                let pkg_dirs = self.pkg_dirs.clone();
-                InstallWarnReport::RemovePackageDirectoryAfterInstallFailure { pkg_dirs, source }
-            })
+            .context(RemovePackageDirectoryAfterInstallFailureSnafu)
             .report_warn(self.cx.reporter());
     }
 }

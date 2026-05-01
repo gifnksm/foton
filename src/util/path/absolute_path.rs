@@ -23,6 +23,11 @@ impl AbsolutePath {
         Self(self.0.join(path))
     }
 
+    pub(crate) fn parent(&self) -> Option<Self> {
+        let parent = self.0.parent()?;
+        parent.is_absolute().then(|| Self(parent.to_path_buf()))
+    }
+
     pub(crate) fn display(&self) -> path::Display<'_> {
         self.0.display()
     }
@@ -105,5 +110,23 @@ mod tests {
     #[test]
     fn absolute_path_buf_new_returns_none_for_relative_paths() {
         assert!(AbsolutePath::new("relative/path").is_none());
+    }
+
+    #[test]
+    fn absolute_path_parent_returns_parent_for_nested_path() {
+        let path = AbsolutePath::new(r"C:\absolute\path").unwrap();
+        assert_eq!(path.parent().unwrap(), Path::new(r"C:\absolute"));
+    }
+
+    #[test]
+    fn absolute_path_parent_returns_root_for_single_component_path() {
+        let path = AbsolutePath::new(r"C:\absolute").unwrap();
+        assert_eq!(path.parent().unwrap(), Path::new(r"C:\"));
+    }
+
+    #[test]
+    fn absolute_path_parent_returns_none_for_root_path() {
+        let path = AbsolutePath::new(r"C:\").unwrap();
+        assert!(path.parent().is_none());
     }
 }

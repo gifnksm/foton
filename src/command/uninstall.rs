@@ -1,3 +1,5 @@
+use snafu::Snafu;
+
 use crate::{
     cli::context::RootContext,
     command::common,
@@ -18,9 +20,9 @@ impl Step for UninstallStep {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum UninstallError {
-    #[display("failed to uninstall package")]
+    #[snafu(display("failed to uninstall package"))]
     Failed,
 }
 

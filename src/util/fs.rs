@@ -3,28 +3,18 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use snafu::{IntoError as _, ResultExt as _, Snafu};
+
 use crate::util::error::IgnoreNotFound as _;
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum FsError {
-    #[display("failed to remove directory: {path}", path = path.display())]
-    RemoveDirectory {
-        path: PathBuf,
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("failed to create directory: {path}", path = path.display())]
-    CreateDirectory {
-        path: PathBuf,
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("failed to remove file: {path}", path = path.display())]
-    RemoveFile {
-        path: PathBuf,
-        #[error(source)]
-        source: io::Error,
-    },
+    #[snafu(display("failed to remove directory: {path}", path = path.display()))]
+    RemoveDirectory { path: PathBuf, source: io::Error },
+    #[snafu(display("failed to create directory: {path}", path = path.display()))]
+    CreateDirectory { path: PathBuf, source: io::Error },
+    #[snafu(display("failed to remove file: {path}", path = path.display()))]
+    RemoveFile { path: PathBuf, source: io::Error },
 }
 
 pub(crate) fn remove_dir_all_if_exists<P>(path: P) -> Result<(), FsError>
@@ -34,10 +24,7 @@ where
     let path = path.as_ref();
     fs::remove_dir_all(path)
         .ignore_not_found()
-        .map_err(|source| {
-            let path = path.to_owned();
-            FsError::RemoveDirectory { path, source }
-        })?;
+        .context(RemoveDirectorySnafu { path })?;
     Ok(())
 }
 
@@ -59,10 +46,7 @@ where
         if err.kind() == io::ErrorKind::DirectoryNotEmpty {
             return Ok(RemoveDirIfEmptyResult::NotEmpty);
         }
-        return Err(FsError::RemoveDirectory {
-            path: path.to_owned(),
-            source: err,
-        });
+        return Err(RemoveDirectorySnafu { path }.into_error(err));
     }
     Ok(RemoveDirIfEmptyResult::RemovedOrNotPresent)
 }
@@ -72,10 +56,7 @@ where
     P: AsRef<Path>,
 {
     let path = path.as_ref();
-    fs::create_dir_all(path).map_err(|source| {
-        let path = path.to_owned();
-        FsError::CreateDirectory { path, source }
-    })?;
+    fs::create_dir_all(path).context(CreateDirectorySnafu { path })?;
     Ok(())
 }
 
@@ -84,10 +65,7 @@ where
     P: AsRef<Path>,
 {
     let path = path.as_ref();
-    fs::create_dir(path).map_err(|source| {
-        let path = path.to_owned();
-        FsError::CreateDirectory { path, source }
-    })?;
+    fs::create_dir(path).context(CreateDirectorySnafu { path })?;
     Ok(())
 }
 
@@ -96,9 +74,6 @@ where
     P: AsRef<Path>,
 {
     let path = path.as_ref();
-    fs::remove_file(path).map_err(|source| {
-        let path = path.to_owned();
-        FsError::RemoveFile { path, source }
-    })?;
+    fs::remove_file(path).context(RemoveFileSnafu { path })?;
     Ok(())
 }

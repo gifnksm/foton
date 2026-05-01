@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use snafu::{ResultExt as _, Snafu};
+
 use crate::{
     cli::context::StepContext,
     package::PackageId,
@@ -28,20 +30,14 @@ where
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum UnregistrationWarnReport {
-    #[display("failed to list registered package fonts for the package")]
-    ListInstalledFonts {
-        #[error(source)]
-        source: RegistryError,
-    },
-    #[display(
+    #[snafu(display("failed to list registered package fonts for the package"))]
+    ListInstalledFonts { source: RegistryError },
+    #[snafu(display(
         "failed to broadcast font change after uninstall\napplications may continue to use stale font information until refresh"
-    )]
-    BroadcastFontAfterUninstall {
-        #[error(source)]
-        source: SessionError,
-    },
+    ))]
+    BroadcastFontAfterUninstall { source: SessionError },
 }
 
 impl From<UnregistrationWarnReport> for ReportValue<'static> {
@@ -50,13 +46,10 @@ impl From<UnregistrationWarnReport> for ReportValue<'static> {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum UnregistrationErrorReport {
-    #[display("failed to unregister package fonts from the registry")]
-    UnregisterFontsFromRegistry {
-        #[error(source)]
-        source: RegistryError,
-    },
+    #[snafu(display("failed to unregister package fonts from the registry"))]
+    UnregisterFontsFromRegistry { source: RegistryError },
 }
 
 impl From<UnregistrationErrorReport> for ReportValue<'static> {
@@ -79,7 +72,7 @@ where
     reporter.report_step(format_args!("Unregistering fonts..."));
 
     let entries = registry::list_registered_package_fonts(cx.app_id(), pkg_id)
-        .map_err(|source| UnregistrationWarnReport::ListInstalledFonts { source })
+        .context(ListInstalledFontsSnafu)
         .report_warn(reporter);
 
     if let Some(entries) = entries {
@@ -92,11 +85,11 @@ where
     // warnings emitted by later best-effort steps in this function. Callers should
     // return the error without reporting it again.
     let res = registry::unregister_package_fonts(cx.app_id(), pkg_id)
-        .map_err(|source| UnregistrationErrorReport::UnregisterFontsFromRegistry { source })
+        .context(UnregisterFontsFromRegistrySnafu)
         .report_error(reporter);
 
     let _ = session::broadcast_font_change()
-        .map_err(|source| UnregistrationWarnReport::BroadcastFontAfterUninstall { source })
+        .context(BroadcastFontAfterUninstallSnafu)
         .report_warn(reporter);
 
     res

@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use snafu::{ResultExt as _, Snafu};
+
 use crate::{
     cli::context::StepContext,
     command::{InstallError, install::InstallStep},
@@ -23,23 +25,22 @@ impl Step for ResolveStep {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum ResolveErrorReport {
-    #[display("failed to find package by {pkg_spec}")]
+    #[snafu(display("failed to find package by {pkg_spec}"))]
     FindLatestPackagesBySpec {
         pkg_spec: PackageSpec,
-        #[error(source)]
         source: RegistryIndexError,
     },
-    #[display(
+    #[snafu(display(
         "multiple packages match the specified package `{pkg_spec}`:\n{pkg_ids}\nspecify one of the matching package IDs listed above explicitly to disambiguate",
         pkg_ids = pkg_ids.iter().map(|(registry, id)| format!("- {id} (in {registry})")).collect::<Vec<_>>().join("\n")
-    )]
+    ))]
     MultipleMatchingPackages {
         pkg_spec: PackageSpec,
         pkg_ids: Vec<(RegistryId, PackageId)>,
     },
-    #[display("no package found matching the specified package `{pkg_spec}`")]
+    #[snafu(display("no package found matching the specified package `{pkg_spec}`"))]
     PackageNotFoundForSpec { pkg_spec: PackageSpec },
 }
 
@@ -64,26 +65,22 @@ pub(crate) fn resolve_package(
     for index in indexes {
         let pkgs = index
             .find_latest_packages_by_spec(pkg_spec)
-            .map_err(|source| {
-                let pkg_spec = pkg_spec.clone();
-                ResolveErrorReport::FindLatestPackagesBySpec { pkg_spec, source }
-            })
+            .context(FindLatestPackagesBySpecSnafu { pkg_spec })
             .report_error(reporter)?;
         manifests.extend(pkgs.into_values().map(|manifest| (index.id(), manifest)));
     }
 
     if manifests.len() > 1 {
-        let pkg_spec = pkg_spec.clone();
         let pkg_ids = manifests
             .into_iter()
             .map(|(registry, pkg)| (registry.clone(), pkg.metadata.id()))
-            .collect();
-        return Err(reporter
-            .report_error(ResolveErrorReport::MultipleMatchingPackages { pkg_spec, pkg_ids }));
+            .collect::<Vec<_>>();
+        return Err(
+            reporter.report_error(MultipleMatchingPackagesSnafu { pkg_spec, pkg_ids }.build())
+        );
     }
     let Some((registry, manifest)) = manifests.into_iter().next() else {
-        let pkg_spec = pkg_spec.clone();
-        return Err(reporter.report_error(ResolveErrorReport::PackageNotFoundForSpec { pkg_spec }));
+        return Err(reporter.report_error(PackageNotFoundForSpecSnafu { pkg_spec }.build()));
     };
 
     reporter.report_info(format_args!(

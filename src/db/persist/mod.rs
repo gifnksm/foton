@@ -2,6 +2,7 @@ use std::io;
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use snafu::{ResultExt as _, Snafu};
 
 mod v1;
 
@@ -15,32 +16,24 @@ struct Envelope {
     payload: Box<RawValue>,
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum PersistError {
-    #[display("failed to deserialize database envelope")]
-    DeserializeEnvelope {
-        #[error(source)]
-        source: serde_json::Error,
-    },
-    #[display("unknown database schema version: {}", schema_version)]
+    #[snafu(display("failed to deserialize database envelope"))]
+    DeserializeEnvelope { source: serde_json::Error },
+    #[snafu(display("unknown database schema version: {}", schema_version))]
     UnknownSchemaVersion { schema_version: u32 },
-    #[display("failed to deserialize database payload (schema version {schema_version})")]
+    #[snafu(display("failed to deserialize database payload (schema version {schema_version})"))]
     DeserializePayload {
         schema_version: u32,
-        #[error(source)]
         source: serde_json::Error,
     },
-    #[display("failed to serialize database payload (schema version {schema_version})")]
+    #[snafu(display("failed to serialize database payload (schema version {schema_version})"))]
     SerializePayload {
         schema_version: u32,
-        #[error(source)]
         source: serde_json::Error,
     },
-    #[display("failed to serialize database envelope")]
-    SerializeEnvelope {
-        #[error(source)]
-        source: serde_json::Error,
-    },
+    #[snafu(display("failed to serialize database envelope"))]
+    SerializeEnvelope { source: serde_json::Error },
 }
 
 pub(in crate::db) fn from_reader<R>(reader: R) -> Result<PersistedPackageDb, PersistError>
@@ -50,12 +43,11 @@ where
     let Envelope {
         schema_version,
         payload,
-    }: Envelope = serde_json::from_reader(reader)
-        .map_err(|source| PersistError::DeserializeEnvelope { source })?;
+    }: Envelope = serde_json::from_reader(reader).context(DeserializeEnvelopeSnafu)?;
 
     let payload = match schema_version {
         v1::VERSION => v1::deserialize_payload(payload.get())?,
-        schema_version => return Err(PersistError::UnknownSchemaVersion { schema_version }),
+        schema_version => return Err(UnknownSchemaVersionSnafu { schema_version }.build()),
     };
 
     Ok(payload)
@@ -73,8 +65,7 @@ where
         payload: latest::serialize_payload(payload)?,
     };
 
-    serde_json::to_writer(writer, &envelope)
-        .map_err(|source| PersistError::SerializeEnvelope { source })?;
+    serde_json::to_writer(writer, &envelope).context(SerializeEnvelopeSnafu)?;
 
     Ok(())
 }

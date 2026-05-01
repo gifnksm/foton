@@ -4,6 +4,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use snafu::{ResultExt as _, Snafu};
 
 use crate::package::{
     PackageName, PackageNamespace, ParsePackageNameError, ParsePackageNamespaceError,
@@ -35,21 +36,15 @@ impl Display for PackageQualifiedName {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 #[expect(clippy::enum_variant_names)]
 pub(crate) enum ParsePackageQualifiedNameError {
-    #[display("invalid package qualified name format")]
+    #[snafu(display("invalid package qualified name format"))]
     InvalidFormat,
-    #[display("invalid namespace in package qualified name")]
-    InvalidNamespace {
-        #[error(source)]
-        source: ParsePackageNamespaceError,
-    },
-    #[display("invalid name in package qualified name")]
-    InvalidName {
-        #[error(source)]
-        source: ParsePackageNameError,
-    },
+    #[snafu(display("invalid namespace in package qualified name"))]
+    InvalidNamespace { source: ParsePackageNamespaceError },
+    #[snafu(display("invalid name in package qualified name"))]
+    InvalidName { source: ParsePackageNameError },
 }
 
 impl FromStr for PackageQualifiedName {
@@ -57,18 +52,15 @@ impl FromStr for PackageQualifiedName {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let Some((namespace, name)) = s.split_once('/') else {
-            return Err(ParsePackageQualifiedNameError::InvalidFormat);
+            return Err(InvalidFormatSnafu.build());
         };
-        if name.contains('/') || namespace.is_empty() || name.is_empty() {
-            return Err(ParsePackageQualifiedNameError::InvalidFormat);
-        }
+        snafu::ensure!(
+            !name.contains('/') && !namespace.is_empty() && !name.is_empty(),
+            InvalidFormatSnafu
+        );
 
-        let namespace = namespace
-            .parse()
-            .map_err(|source| ParsePackageQualifiedNameError::InvalidNamespace { source })?;
-        let name = name
-            .parse()
-            .map_err(|source| ParsePackageQualifiedNameError::InvalidName { source })?;
+        let namespace = namespace.parse().context(InvalidNamespaceSnafu)?;
+        let name = name.parse().context(InvalidNameSnafu)?;
 
         Ok(Self { namespace, name })
     }

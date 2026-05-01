@@ -1,5 +1,6 @@
 use std::{ffi::OsString, os::windows::ffi::OsStringExt as _, path::PathBuf};
 
+use snafu::{ResultExt as _, Snafu};
 use windows::Win32::{
     Foundation::PROPERTYKEY,
     Storage::EnhancedStorage,
@@ -7,26 +8,23 @@ use windows::Win32::{
 };
 use windows_core::{BSTR, HSTRING};
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum PropertyStoreError {
-    #[display("failed to get property store for file: {path}", path = path.display())]
+    #[snafu(display("failed to get property store for file: {path}", path = path.display()))]
     GetPropertyStoreForFile {
         path: PathBuf,
-        #[error(source)]
         source: windows_core::Error,
     },
-    #[display("failed to get value for key `{key}` from property store of file: {path}", path = path.display())]
+    #[snafu(display("failed to get value for key `{key}` from property store of file: {path}", path = path.display()))]
     GetPropertyStoreValue {
         path: PathBuf,
         key: PropertyStoreKey,
-        #[error(source)]
         source: windows_core::Error,
     },
-    #[display("failed to convert property store value for key `{key}` to string: {path}", path = path.display())]
+    #[snafu(display("failed to convert property store value for key `{key}` to string: {path}", path = path.display()))]
     ConvertPropertyStoreValueToString {
         path: PathBuf,
         key: PropertyStoreKey,
-        #[error(source)]
         source: windows_core::Error,
     },
 }
@@ -66,10 +64,7 @@ impl PropertyStore {
                 GPS_DEFAULT,
             )
         }
-        .map_err(|source| {
-            let path = path.clone();
-            PropertyStoreError::GetPropertyStoreForFile { path, source }
-        })?;
+        .context(GetPropertyStoreForFileSnafu { path: &path })?;
         Ok(Self { path, store })
     }
 
@@ -78,13 +73,15 @@ impl PropertyStore {
         key: PropertyStoreKey,
     ) -> Result<OsString, PropertyStoreError> {
         // SAFETY: This is an unsafe FFI call. We pass a valid pointer to the constant property key.
-        let value = unsafe { self.store.GetValue(key.as_property_key()) }.map_err(|source| {
-            let path = self.path.clone();
-            PropertyStoreError::GetPropertyStoreValue { path, key, source }
-        })?;
-        let value = BSTR::try_from(&value).map_err(|source| {
-            let path = self.path.clone();
-            PropertyStoreError::ConvertPropertyStoreValueToString { path, key, source }
+        let value = unsafe { self.store.GetValue(key.as_property_key()) }.context(
+            GetPropertyStoreValueSnafu {
+                path: &self.path,
+                key,
+            },
+        )?;
+        let value = BSTR::try_from(&value).context(ConvertPropertyStoreValueToStringSnafu {
+            path: &self.path,
+            key,
         })?;
         Ok(OsString::from_wide(&value))
     }

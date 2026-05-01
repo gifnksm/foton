@@ -5,6 +5,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use snafu::{OptionExt as _, ResultExt as _, Snafu};
 use url::Url;
 
 use crate::util::path::AbsolutePath;
@@ -29,19 +30,18 @@ impl RegistrySource {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum RegistrySourceError {
-    #[display("registry source protocol is missing")]
+    #[snafu(display("registry source protocol is missing"))]
     ProtocolMissing,
-    #[display("unknown registry source protocol `{protocol}`")]
+    #[snafu(display("unknown registry source protocol `{protocol}`"))]
     UnknownProtocol { protocol: String },
-    #[display("invalid git URL: {url}")]
+    #[snafu(display("invalid git URL: {url}"))]
     InvalidGitUrl {
         url: String,
-        #[error(source)]
         source: url::ParseError,
     },
-    #[display("local path must be absolute path: {path}")]
+    #[snafu(display("local path must be absolute path: {path}"))]
     RelativeLocalPath { path: String },
 }
 
@@ -50,28 +50,18 @@ impl FromStr for RegistrySource {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let Some((protocol, path)) = s.split_once('+') else {
-            return Err(RegistrySourceError::ProtocolMissing);
+            return Err(ProtocolMissingSnafu.build());
         };
         match protocol {
             "git" => {
-                let url =
-                    Url::parse(path).map_err(|source| RegistrySourceError::InvalidGitUrl {
-                        url: path.to_owned(),
-                        source,
-                    })?;
+                let url = Url::parse(path).context(InvalidGitUrlSnafu { url: path })?;
                 Ok(Self::Git(url))
             }
             "local" => {
-                let path = AbsolutePath::new(path).ok_or_else(|| {
-                    RegistrySourceError::RelativeLocalPath {
-                        path: path.to_owned(),
-                    }
-                })?;
+                let path = AbsolutePath::new(path).context(RelativeLocalPathSnafu { path })?;
                 Ok(Self::Local(path))
             }
-            _ => Err(RegistrySourceError::UnknownProtocol {
-                protocol: protocol.to_owned(),
-            }),
+            _ => Err(UnknownProtocolSnafu { protocol }.build()),
         }
     }
 }

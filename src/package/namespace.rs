@@ -8,17 +8,18 @@ use std::{
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use snafu::Snafu;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct PackageNamespace(Arc<str>);
 
 const PACKAGE_NAMESPACE_REGEX_STR: &str = r"^[a-zA-Z][-_0-9a-zA-Z]*$";
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum ParsePackageNamespaceError {
-    #[display(
+    #[snafu(display(
         "invalid package namespace `{name}`: must start with an ASCII letter and contain only ASCII letters, digits, `-` or `_`"
-    )]
+    ))]
     InvalidFormat { name: String },
 }
 
@@ -31,9 +32,7 @@ impl PackageNamespace {
             LazyLock::new(|| Regex::new(PACKAGE_NAMESPACE_REGEX_STR).unwrap());
 
         let name = name.into();
-        if !NAMESPACE_REGEX.is_match(&name) {
-            return Err(ParsePackageNamespaceError::InvalidFormat { name });
-        }
+        snafu::ensure!(NAMESPACE_REGEX.is_match(&name), InvalidFormatSnafu { name });
         Ok(Self(name.into()))
     }
 

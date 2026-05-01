@@ -4,6 +4,7 @@ use bytes::Bytes;
 use futures_core::Stream;
 use futures_util::StreamExt as _;
 use reqwest::{Response, Url};
+use snafu::{ResultExt as _, Snafu};
 use tokio::io::{AsyncSeekExt as _, AsyncWriteExt as _};
 
 use crate::{
@@ -33,48 +34,34 @@ where
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum DownloadErrorReport {
-    #[display("failed to download font archive from {url}")]
-    Get {
-        url: Url,
-        #[error(source)]
-        source: reqwest::Error,
-    },
-    #[display(
+    #[snafu(display("failed to download font archive from {url}"))]
+    Get { url: Url, source: reqwest::Error },
+    #[snafu(display(
         "server-reported archive size {reported_size} exceeds maximum allowed size of {max_size}"
-    )]
+    ))]
     ReportedSizeExceedsMax { reported_size: u64, max_size: u64 },
-    #[display(
+    #[snafu(display(
         "actual downloaded archive size {downloaded_size} exceeds maximum allowed size of {max_size}"
-    )]
+    ))]
     DownloadedSizeExceedsMax { downloaded_size: u64, max_size: u64 },
-    #[display("downloaded archive hash mismatch for {pkg_id}: expected {expected}, got {got}")]
+    #[snafu(display(
+        "downloaded archive hash mismatch for {pkg_id}: expected {expected}, got {got}"
+    ))]
     HashMismatch {
         pkg_id: PackageId,
         expected: Box<GenericDigest>,
         got: Box<GenericDigest>,
     },
-    #[display("failed to create temporary file for downloaded archive")]
-    CreateTempFile {
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("failed to write chunk to temporary file for downloaded archive")]
-    WriteTempFile {
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("failed to read response body while downloading archive")]
-    ReadResponseBody {
-        #[error(source)]
-        source: reqwest::Error,
-    },
-    #[display("failed to rewind temporary file for downloaded archive")]
-    Rewind {
-        #[error(source)]
-        source: io::Error,
-    },
+    #[snafu(display("failed to create temporary file for downloaded archive"))]
+    CreateTempFile { source: io::Error },
+    #[snafu(display("failed to write chunk to temporary file for downloaded archive"))]
+    WriteTempFile { source: io::Error },
+    #[snafu(display("failed to read response body while downloading archive"))]
+    ReadResponseBody { source: reqwest::Error },
+    #[snafu(display("failed to rewind temporary file for downloaded archive"))]
+    Rewind { source: io::Error },
 }
 
 impl From<DownloadErrorReport> for ReportValue<'static> {
@@ -100,9 +87,8 @@ where
     let response = reqwest::get(source.url.clone())
         .await
         .and_then(Response::error_for_status)
-        .map_err(|err| {
-            let url = source.url.clone();
-            DownloadErrorReport::Get { url, source: err }
+        .with_context(|_| GetSnafu {
+            url: source.url.clone(),
         })
         .report_error(reporter)?;
 
@@ -110,13 +96,13 @@ where
     if let Some(len) = len
         && len > cx.config().install.max_archive_size_bytes
     {
-        let reported_size = len;
-        return Err(
-            reporter.report_error(DownloadErrorReport::ReportedSizeExceedsMax {
-                reported_size,
+        return Err(reporter.report_error(
+            ReportedSizeExceedsMaxSnafu {
+                reported_size: len,
                 max_size: cx.config().install.max_archive_size_bytes,
-            }),
-        );
+            }
+            .build(),
+        ));
     }
     let hasher = source.hash.hasher();
     let (output, digest) = reporter
@@ -126,14 +112,14 @@ where
         .await
         .report_error(reporter)?;
     if digest != source.hash {
-        let pkg_id = pkg_id.clone();
-        let expected = Box::new(source.hash.clone());
-        let got = Box::new(digest);
-        let err = reporter.report_error(DownloadErrorReport::HashMismatch {
-            pkg_id,
-            expected,
-            got,
-        });
+        let err = reporter.report_error(
+            HashMismatchSnafu {
+                pkg_id,
+                expected: Box::new(source.hash.clone()),
+                got: Box::new(digest),
+            }
+            .build(),
+        );
         return Err(err);
     }
     Ok(output)
@@ -150,32 +136,26 @@ where
 {
     let mut chunks = pin!(chunks);
 
-    let output =
-        tempfile::tempfile().map_err(|source| DownloadErrorReport::CreateTempFile { source })?;
+    let output = tempfile::tempfile().context(CreateTempFileSnafu)?;
     let mut output = tokio::fs::File::from_std(output);
     let mut total_size = 0;
     while let Some(chunk) = chunks.next().await {
-        let chunk = chunk.map_err(|source| DownloadErrorReport::ReadResponseBody { source })?;
+        let chunk = chunk.context(ReadResponseBodySnafu)?;
         let chunk_size = chunk.len() as u64;
         total_size += chunk_size;
-        if total_size > config.install.max_archive_size_bytes {
-            return Err(DownloadErrorReport::DownloadedSizeExceedsMax {
+        snafu::ensure!(
+            total_size <= config.install.max_archive_size_bytes,
+            DownloadedSizeExceedsMaxSnafu {
                 downloaded_size: total_size,
                 max_size: config.install.max_archive_size_bytes,
-            });
-        }
+            }
+        );
         hasher.update(&chunk);
-        output
-            .write_all(&chunk)
-            .await
-            .map_err(|source| DownloadErrorReport::WriteTempFile { source })?;
+        output.write_all(&chunk).await.context(WriteTempFileSnafu)?;
         pb.inc(chunk_size);
     }
     let digest = hasher.finalize();
-    output
-        .rewind()
-        .await
-        .map_err(|source| DownloadErrorReport::Rewind { source })?;
+    output.rewind().await.context(RewindSnafu)?;
     let output = output.into_std().await;
     Ok((output, digest))
 }

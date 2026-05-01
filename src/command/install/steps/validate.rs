@@ -1,4 +1,6 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, path::PathBuf, sync::Arc};
+
+use snafu::{ResultExt as _, Snafu};
 
 use crate::{
     cli::context::StepContext,
@@ -29,17 +31,16 @@ where
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error, derive_more::From)]
+#[derive(Debug, Snafu)]
 enum ValidationWarnReport {
-    #[display("removing unsupported font file: {path}", path = path.display())]
-    RemovingUnsupportedFontFile { path: AbsolutePath },
-    #[display(
+    #[snafu(display("removing unsupported font file: {path}", path = path.display()))]
+    RemovingUnsupportedFontFile { path: PathBuf },
+    #[snafu(display(
         "failed to remove unsupported font file: {path}\nmanual cleanup may be required",
         path = path.display()
-    )]
+    ))]
     RemoveUnsupportedFontFile {
-        path: AbsolutePath,
-        #[error(source)]
+        path: PathBuf,
         source: fs_util::FsError,
     },
 }
@@ -50,20 +51,16 @@ impl From<ValidationWarnReport> for ReportValue<'static> {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum ValidationErrorReport {
-    #[display("failed to create font validator")]
-    CreateValidator {
-        #[error(source)]
-        source: FontValidatorError,
-    },
-    #[display("failed to validate font file: {file_name}", file_name = file_name.display())]
+    #[snafu(display("failed to create font validator"))]
+    CreateValidator { source: FontValidatorError },
+    #[snafu(display("failed to validate font file: {file_name}", file_name = file_name.display()))]
     ValidateFont {
         file_name: FileName,
-        #[error(source)]
         source: FontValidatorError,
     },
-    #[display("duplicate font name found in package: {title}")]
+    #[snafu(display("duplicate font name found in package: {title}"))]
     DuplicateFontName { title: String },
 }
 
@@ -90,31 +87,30 @@ where
     let mut valid_entries = vec![];
     let mut valid_entry_titles = HashSet::new();
     let validator = FontValidator::new()
-        .map_err(|source| ValidationErrorReport::CreateValidator { source })
+        .context(CreateValidatorSnafu)
         .report_error(reporter)?;
 
     for file_name in file_names {
         let Some(entry) = validator
             .validate_font(fonts_dir, file_name)
-            .map_err(|source| {
-                let file_name = file_name.clone();
-                ValidationErrorReport::ValidateFont { file_name, source }
-            })
+            .context(ValidateFontSnafu { file_name })
             .report_error(reporter)?
         else {
             let path = fonts_dir.join(file_name);
-            reporter.report_warn(ValidationWarnReport::RemovingUnsupportedFontFile {
-                path: path.clone(),
-            });
+            reporter.report_warn(RemovingUnsupportedFontFileSnafu { path: &path }.build());
             fs_util::remove_file(&path)
-                .map_err(|source| ValidationWarnReport::RemoveUnsupportedFontFile { path, source })
+                .context(RemoveUnsupportedFontFileSnafu { path: &path })
                 .report_warn(reporter);
             continue;
         };
 
         if !valid_entry_titles.insert(entry.title().to_lowercase()) {
-            let title = entry.title().to_owned();
-            return Err(reporter.report_error(ValidationErrorReport::DuplicateFontName { title }));
+            return Err(reporter.report_error(
+                DuplicateFontNameSnafu {
+                    title: entry.title(),
+                }
+                .build(),
+            ));
         }
 
         valid_entries.push(entry);

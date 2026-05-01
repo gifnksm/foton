@@ -6,6 +6,8 @@ use std::{
     str::FromStr,
 };
 
+use snafu::{IntoError, OptionExt as _, ResultExt as _, Snafu};
+
 use crate::{
     package::{
         PackageId, PackageManifest, PackageName, PackageNamespace, PackageQualifiedName,
@@ -14,62 +16,58 @@ use crate::{
     registry::RegistryId,
 };
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum RegistryIndexError {
-    #[display("manifest file not found for package {pkg_id}: {path}", path = path.display())]
-    MissingManifest { pkg_id: PackageId, path: PathBuf },
-    #[display("failed to read manifest file for package {pkg_id}: {path}", path = path.display())]
+    #[snafu(display("manifest file not found for package {pkg_id}: {manifest_path}", manifest_path = manifest_path.display()))]
+    MissingManifest {
+        pkg_id: PackageId,
+        manifest_path: PathBuf,
+    },
+    #[snafu(display(
+        "failed to read manifest file for package {pkg_id}: {manifest_path}", manifest_path = manifest_path.display()
+    ))]
     ReadManifest {
         pkg_id: PackageId,
-        path: PathBuf,
-        #[error(source)]
+        manifest_path: PathBuf,
         source: io::Error,
     },
-    #[display("failed to deserialize manifest for package {pkg_id}: {path}", path = path.display())]
+    #[snafu(display(
+        "failed to deserialize manifest for package {pkg_id}: {manifest_path}", manifest_path = manifest_path.display()
+    ))]
     DeserializeManifest {
         pkg_id: PackageId,
-        path: PathBuf,
-        #[error(source)]
+        manifest_path: PathBuf,
+        #[snafu(source(from(toml::de::Error, Box::new)))]
         source: Box<toml::de::Error>,
     },
-    #[display("package ID mismatch in manifest for package: expected {expected}, got {got}: {path}", path = path.display())]
+    #[snafu(display(
+        "package ID mismatch in manifest for package: expected {expected}, got {got}: {manifest_path}", manifest_path = manifest_path.display()
+    ))]
     PackageIdMismatch {
         expected: PackageId,
         got: PackageId,
-        path: PathBuf,
+        manifest_path: PathBuf,
     },
-    #[display("path is not a directory: {path}", path = path.display())]
+    #[snafu(display("path is not a directory: {path}", path = path.display()))]
     NotADirectory { path: PathBuf },
-    #[display("failed to read directory: {path}", path = path.display())]
-    ReadDir {
-        path: PathBuf,
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("failed to read directory entry: {path}", path = path.display())]
-    ReadDirEntry {
-        path: PathBuf,
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("directory entry name `{name}` is not valid UTF-8: {path}", name = name.display(), path = path.display())]
+    #[snafu(display("failed to read directory: {path}", path = path.display()))]
+    ReadDir { path: PathBuf, source: io::Error },
+    #[snafu(display("failed to read directory entry: {path}", path = path.display()))]
+    ReadDirEntry { path: PathBuf, source: io::Error },
+    #[snafu(display(
+        "directory entry name `{name}` is not valid UTF-8: {path}", name = name.display(), path = path.display(),
+    ))]
     NonUtf8DirectoryEntryName { name: OsString, path: PathBuf },
-    #[display("failed to read metadata: {path}", path = path.display())]
-    ReadMetadata {
-        path: PathBuf,
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("invalid namespace in directory entry: {path}", path = path.display())]
+    #[snafu(display("failed to read metadata: {path}", path = path.display()))]
+    ReadMetadata { path: PathBuf, source: io::Error },
+    #[snafu(display("invalid namespace in directory entry: {path}", path = path.display()))]
     InvalidNamespaceInDirectoryEntry {
         path: PathBuf,
-        #[error(source)]
         source: ParsePackageNamespaceError,
     },
-    #[display("invalid version in directory entry: {path}", path = path.display())]
+    #[snafu(display("invalid version in directory entry: {path}", path = path.display()))]
     InvalidVersionInDirectoryEntry {
         path: PathBuf,
-        #[error(source)]
         source: semver::Error,
     },
 }
@@ -83,13 +81,10 @@ pub(crate) struct RegistryIndex {
 impl RegistryIndex {
     pub(crate) fn open(id: RegistryId, path: PathBuf) -> Result<Self, RegistryIndexError> {
         path.metadata()
-            .map_err(|source| RegistryIndexError::ReadMetadata {
-                path: path.clone(),
-                source,
-            })?
+            .context(ReadMetadataSnafu { path: &path })?
             .is_dir()
             .then_some(())
-            .ok_or_else(|| RegistryIndexError::NotADirectory { path: path.clone() })?;
+            .context(NotADirectorySnafu { path: &path })?;
         Ok(Self { id, path })
     }
 
@@ -135,44 +130,35 @@ impl RegistryIndex {
             return Ok(None);
         }
         let manifest_path = package_dir.join("manifest.toml");
-        let manifest_str = match fs::read_to_string(&manifest_path) {
-            Ok(s) => s,
-            Err(source) if source.kind() == io::ErrorKind::NotFound => {
-                let pkg_id = pkg_id.clone();
-                let path = manifest_path.clone();
-                return Err(RegistryIndexError::MissingManifest { pkg_id, path });
-            }
-            Err(source) => {
-                let pkg_id = pkg_id.clone();
-                let path = manifest_path.clone();
-                return Err(RegistryIndexError::ReadManifest {
+        let manifest_str = fs::read_to_string(&manifest_path).map_err(|source| {
+            if source.kind() == io::ErrorKind::NotFound {
+                MissingManifestSnafu {
                     pkg_id,
-                    path,
-                    source,
-                });
-            }
-        };
-        let manifest: PackageManifest = toml::from_str(&manifest_str).map_err(|source| {
-            let pkg_id = pkg_id.clone();
-            let path = manifest_path.clone();
-            let source = source.into();
-            RegistryIndexError::DeserializeManifest {
-                pkg_id,
-                path,
-                source,
+                    manifest_path: &manifest_path,
+                }
+                .build()
+            } else {
+                ReadManifestSnafu {
+                    pkg_id,
+                    manifest_path: &manifest_path,
+                }
+                .into_error(source)
             }
         })?;
+        let manifest: PackageManifest =
+            toml::from_str(&manifest_str).context(DeserializeManifestSnafu {
+                pkg_id,
+                manifest_path: &manifest_path,
+            })?;
         let manifest_id = manifest.metadata.id();
-        if manifest_id != *pkg_id {
-            let expected = pkg_id.clone();
-            let got = manifest_id;
-            let path = manifest_path.clone();
-            return Err(RegistryIndexError::PackageIdMismatch {
-                expected,
-                got,
-                path,
-            });
-        }
+        snafu::ensure!(
+            manifest_id == *pkg_id,
+            PackageIdMismatchSnafu {
+                expected: pkg_id,
+                got: manifest_id,
+                manifest_path,
+            }
+        );
         Ok(Some(manifest))
     }
 
@@ -184,10 +170,9 @@ impl RegistryIndex {
             .path
             .join(qualified_name.namespace())
             .join(qualified_name.name());
-        let Some(versions) =
-            read_child_directories::<PackageVersion, _>(&base_path, |path, source| {
-                RegistryIndexError::InvalidVersionInDirectoryEntry { path, source }
-            })?
+        let Some(versions) = read_child_directories::<PackageVersion, _, _>(&base_path, |path| {
+            InvalidVersionInDirectoryEntrySnafu { path }
+        })?
         else {
             return Ok(None);
         };
@@ -203,8 +188,8 @@ impl RegistryIndex {
         name: &PackageName,
     ) -> Result<BTreeMap<PackageQualifiedName, PackageManifest>, RegistryIndexError> {
         let Some(namespaces) =
-            read_child_directories::<PackageNamespace, _>(&self.path, |path, source| {
-                RegistryIndexError::InvalidNamespaceInDirectoryEntry { path, source }
+            read_child_directories::<PackageNamespace, _, _>(&self.path, |path| {
+                InvalidNamespaceInDirectoryEntrySnafu { path }
             })?
         else {
             return Ok(BTreeMap::new());
@@ -227,49 +212,40 @@ impl RegistryIndex {
     }
 }
 
-fn read_child_directories<T, F>(
+fn read_child_directories<T, F, C>(
     path: &Path,
     mut f: F,
 ) -> Result<Option<impl Iterator<Item = Result<T, RegistryIndexError>>>, RegistryIndexError>
 where
     T: FromStr,
-    F: FnMut(PathBuf, T::Err) -> RegistryIndexError,
+    F: FnMut(PathBuf) -> C,
+    C: IntoError<RegistryIndexError, Source = T::Err>,
 {
     let entries = match fs::read_dir(path) {
         Ok(entries) => entries,
         Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(source) => {
-            let path = path.to_path_buf();
-            return Err(RegistryIndexError::ReadDir { path, source });
-        }
+        Err(source) => return Err(ReadDirSnafu { path }.into_error(source)),
     };
 
     Ok(Some(entries.into_iter().filter_map(move |entry| {
         (|| {
-            let entry = entry.map_err(|source| {
-                let path = path.to_path_buf();
-                RegistryIndexError::ReadDirEntry { path, source }
-            })?;
+            let entry = entry.context(ReadDirEntrySnafu { path })?;
             let name = entry.file_name();
-            let name = name.to_str().ok_or_else(|| {
-                let name = name.clone();
-                let path = entry.path();
-                RegistryIndexError::NonUtf8DirectoryEntryName { name, path }
+            let path = entry.path();
+            let name = name.to_str().context(NonUtf8DirectoryEntryNameSnafu {
+                name: &name,
+                path: &path,
             })?;
             if name.starts_with('.') {
                 return Ok(None);
             }
-            let meta = entry.metadata().map_err(|source| {
-                let path = entry.path();
-                RegistryIndexError::ReadMetadata { path, source }
-            })?;
+            let meta = entry
+                .metadata()
+                .context(ReadMetadataSnafu { path: &path })?;
             if !meta.is_dir() {
                 return Ok(None);
             }
-            let value = T::from_str(name).map_err(|source| {
-                let path = entry.path();
-                f(path, source)
-            })?;
+            let value = T::from_str(name).with_context(|_| f(path.clone()))?;
             Ok(Some(value))
         })()
         .transpose()

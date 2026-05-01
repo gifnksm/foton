@@ -1,6 +1,7 @@
-use std::{fs::File, io};
+use std::{fs::File, io, path::PathBuf};
 
 use fd_lock::{RwLock, RwLockWriteGuard};
+use snafu::{IntoError as _, ResultExt as _, Snafu};
 
 use crate::util::{app_dirs::AppDirs, path::AbsolutePath};
 
@@ -15,26 +16,14 @@ pub(crate) struct DbLockFileGuard<'a> {
     _guard: RwLockWriteGuard<'a, File>,
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error, derive_more::IsVariant)]
+#[derive(Debug, Snafu, derive_more::IsVariant)]
 pub(crate) enum DbLockFileError {
-    #[display("failed to open database lock file: {path}", path = path.display())]
-    Open {
-        path: AbsolutePath,
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("failed to acquire database lock: {path}", path = path.display())]
-    Acquire {
-        path: AbsolutePath,
-        #[error(source)]
-        source: io::Error,
-    },
-    #[display("database is already locked: {path}", path = path.display())]
-    AlreadyLocked {
-        path: AbsolutePath,
-        #[error(source)]
-        source: io::Error,
-    },
+    #[snafu(display("failed to open database lock file: {path}", path = path.display()))]
+    Open { path: PathBuf, source: io::Error },
+    #[snafu(display("failed to acquire database lock: {path}", path = path.display()))]
+    Acquire { path: PathBuf, source: io::Error },
+    #[snafu(display("database is already locked: {path}", path = path.display()))]
+    AlreadyLocked { path: PathBuf, source: io::Error },
 }
 
 impl DbLockFile {
@@ -46,10 +35,7 @@ impl DbLockFile {
             .write(true)
             .truncate(false)
             .open(&path)
-            .map_err(|source| {
-                let path = path.clone();
-                DbLockFileError::Open { path, source }
-            })?;
+            .context(OpenSnafu { path: &path })?;
 
         Ok(Self {
             path,
@@ -61,11 +47,10 @@ impl DbLockFile {
         match self.lock.try_write() {
             Ok(guard) => Ok(DbLockFileGuard { _guard: guard }),
             Err(source) => {
-                let path = self.path.clone();
                 if source.kind() == io::ErrorKind::WouldBlock {
-                    Err(DbLockFileError::AlreadyLocked { path, source })
+                    Err(AlreadyLockedSnafu { path: &self.path }.into_error(source))
                 } else {
-                    Err(DbLockFileError::Acquire { path, source })
+                    Err(AcquireSnafu { path: &self.path }.into_error(source))
                 }
             }
         }

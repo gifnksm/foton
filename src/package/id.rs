@@ -4,6 +4,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use snafu::{IntoError as _, ResultExt as _, Snafu};
 
 use crate::package::{
     PackageName, PackageNamespace, PackageQualifiedName, PackageVersion, ParsePackageNameError,
@@ -53,26 +54,23 @@ impl Display for PackageId {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+impl From<&PackageId> for PackageId {
+    fn from(pkg_id: &PackageId) -> Self {
+        pkg_id.clone()
+    }
+}
+
+#[derive(Debug, Snafu)]
 #[expect(clippy::enum_variant_names)]
 pub(crate) enum ParsePackageIdError {
-    #[display("invalid package ID format")]
+    #[snafu(display("invalid package ID format"))]
     InvalidFormat,
-    #[display("invalid namespace in package ID")]
-    InvalidNamespace {
-        #[error(source)]
-        source: ParsePackageNamespaceError,
-    },
-    #[display("invalid name in package ID")]
-    InvalidName {
-        #[error(source)]
-        source: ParsePackageNameError,
-    },
-    #[display("invalid version in package ID")]
-    InvalidVersion {
-        #[error(source)]
-        source: semver::Error,
-    },
+    #[snafu(display("invalid namespace in package ID"))]
+    InvalidNamespace { source: ParsePackageNamespaceError },
+    #[snafu(display("invalid name in package ID"))]
+    InvalidName { source: ParsePackageNameError },
+    #[snafu(display("invalid version in package ID"))]
+    InvalidVersion { source: semver::Error },
 }
 
 impl FromStr for PackageId {
@@ -80,24 +78,23 @@ impl FromStr for PackageId {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let Some((qualified_name, version)) = s.split_once('@') else {
-            return Err(ParsePackageIdError::InvalidFormat);
+            return Err(InvalidFormatSnafu.build());
         };
-        if version.contains('@') || qualified_name.is_empty() || version.is_empty() {
-            return Err(ParsePackageIdError::InvalidFormat);
-        }
+        snafu::ensure!(
+            !version.contains('@') && !qualified_name.is_empty() && !version.is_empty(),
+            InvalidFormatSnafu
+        );
 
         let qualified_name = qualified_name.parse().map_err(|source| match source {
-            ParsePackageQualifiedNameError::InvalidFormat => ParsePackageIdError::InvalidFormat,
+            ParsePackageQualifiedNameError::InvalidFormat => InvalidFormatSnafu.build(),
             ParsePackageQualifiedNameError::InvalidNamespace { source } => {
-                ParsePackageIdError::InvalidNamespace { source }
+                InvalidNamespaceSnafu.into_error(source)
             }
             ParsePackageQualifiedNameError::InvalidName { source } => {
-                ParsePackageIdError::InvalidName { source }
+                InvalidNameSnafu.into_error(source)
             }
         })?;
-        let version = version
-            .parse()
-            .map_err(|source| ParsePackageIdError::InvalidVersion { source })?;
+        let version = version.parse().context(InvalidVersionSnafu)?;
 
         Ok(Self {
             qualified_name,
