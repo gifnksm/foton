@@ -3,25 +3,40 @@ use std::sync::Arc;
 use snafu::{ResultExt as _, Snafu};
 
 use crate::{
-    cli::context::StepContext,
-    command::{InstallError, install::InstallStep},
+    cli::{
+        context::ReportContext,
+        reporter::{
+            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
+        },
+    },
     package::{PackageId, PackageManifest, PackageSpec},
     registry::{RegistryId, RegistryIndex, RegistryIndexError},
-    util::reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
 };
 
 #[derive(Debug)]
-struct ResolveStep {
-    step: Arc<InstallStep>,
+struct ResolveScope<S> {
+    base_scope: Arc<S>,
 }
 
-impl Step for ResolveStep {
+impl<S> ReportScope for ResolveScope<S>
+where
+    S: ReportScope,
+{
     type WarnReportValue = NeverReport;
     type ErrorReportValue = ResolveErrorReport;
-    type Error = InstallError;
+    type Error = S::Error;
 
     fn make_failed(&self) -> Self::Error {
-        self.step.make_failed()
+        self.base_scope.make_failed()
+    }
+}
+
+impl<S> SubReportScope<S> for ResolveScope<S>
+where
+    S: ReportScope,
+{
+    fn new(base_scope: Arc<S>) -> Self {
+        Self { base_scope }
     }
 }
 
@@ -50,16 +65,16 @@ impl From<ResolveErrorReport> for ReportValue<'static> {
     }
 }
 
-pub(crate) fn resolve_package(
-    cx: &StepContext<InstallStep>,
+pub(crate) fn resolve_package<S>(
+    cx: &ReportContext<S>,
     indexes: &[RegistryIndex],
     pkg_spec: &PackageSpec,
-) -> Result<PackageManifest, InstallError> {
-    let cx = cx.with_step(ResolveStep {
-        step: Arc::clone(cx.step()),
-    });
+) -> Result<PackageManifest, S::Error>
+where
+    S: ReportScope,
+{
+    let cx = ResolveScope::start_with_report(cx, format_args!("Resolving {pkg_spec}..."));
     let reporter = cx.reporter();
-    reporter.report_step(format_args!("Resolving {pkg_spec}..."));
 
     let mut manifests = vec![];
     for index in indexes {
@@ -98,8 +113,8 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::{
-        command::install::{InstallError, InstallStep},
-        util::testing::{self, TempdirContext},
+        cli::reporter::RootReportScope as _,
+        util::testing::{self, TempdirContext, TestError, TestScope},
     };
 
     use super::*;
@@ -117,9 +132,9 @@ mod tests {
     fn resolve_for_test(
         registry_path: &Path,
         pkg_spec: &PackageSpec,
-    ) -> Result<PackageManifest, InstallError> {
+    ) -> Result<PackageManifest, TestError> {
         let cx = TempdirContext::new();
-        let cx = cx.with_step(InstallStep {});
+        let cx = TestScope::start(&cx);
         let index = RegistryIndex::open(
             "test-registry".parse().unwrap(),
             registry_path.to_path_buf(),
@@ -131,9 +146,9 @@ mod tests {
     fn resolve_for_test_with_indexes(
         indexes: &[RegistryIndex],
         pkg_spec: &PackageSpec,
-    ) -> Result<PackageManifest, InstallError> {
+    ) -> Result<PackageManifest, TestError> {
         let cx = TempdirContext::new();
-        let cx = cx.with_step(InstallStep {});
+        let cx = TestScope::start(&cx);
         resolve_package(&cx, indexes, pkg_spec)
     }
 
@@ -161,7 +176,7 @@ mod tests {
         let spec: PackageSpec = "example-font".parse().unwrap();
         let err = resolve_for_test(tempdir.path(), &spec).unwrap_err();
 
-        assert!(matches!(err, InstallError::Failed));
+        assert!(matches!(err, TestError::Failed));
     }
 
     #[test]
@@ -171,7 +186,7 @@ mod tests {
         let spec: PackageSpec = "example-namespace/example-font".parse().unwrap();
         let err = resolve_for_test(tempdir.path(), &spec).unwrap_err();
 
-        assert!(matches!(err, InstallError::Failed));
+        assert!(matches!(err, TestError::Failed));
     }
 
     #[test]
@@ -196,6 +211,6 @@ mod tests {
         let spec: PackageSpec = "example-font".parse().unwrap();
         let err = resolve_for_test_with_indexes(&indexes, &spec).unwrap_err();
 
-        assert!(matches!(err, InstallError::Failed));
+        assert!(matches!(err, TestError::Failed));
     }
 }

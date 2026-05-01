@@ -11,28 +11,40 @@ use snafu::{IntoError as _, OptionExt as _, ResultExt as _, Snafu};
 use zip::{ZipArchive, result::ZipError};
 
 use crate::{
-    cli::{config::FotonConfig, context::StepContext},
-    util::{
-        path::{AbsolutePath, FileName},
-        reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
+    cli::{
+        config::FotonConfig,
+        context::ReportContext,
+        reporter::{
+            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
+        },
     },
+    util::path::{AbsolutePath, FileName},
 };
 
 #[derive(Debug)]
-struct ExtractStep<S> {
-    step: Arc<S>,
+struct ExtractScope<S> {
+    base_scope: Arc<S>,
 }
 
-impl<S> Step for ExtractStep<S>
+impl<S> ReportScope for ExtractScope<S>
 where
-    S: Step,
+    S: ReportScope,
 {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = ExtractErrorReport;
     type Error = S::Error;
 
     fn make_failed(&self) -> Self::Error {
-        self.step.make_failed()
+        self.base_scope.make_failed()
+    }
+}
+
+impl<S> SubReportScope<S> for ExtractScope<S>
+where
+    S: ReportScope,
+{
+    fn new(base_scope: Arc<S>) -> Self {
+        Self { base_scope }
     }
 }
 
@@ -77,23 +89,19 @@ impl From<ExtractErrorReport> for ReportValue<'static> {
 }
 
 pub(in crate::command::install) fn extract_archive<S>(
-    cx: &StepContext<S>,
+    cx: &ReportContext<S>,
     file: File,
     include: &[glob::Pattern],
     fonts_dir: &AbsolutePath,
 ) -> Result<Vec<FileName>, S::Error>
 where
-    S: Step,
+    S: ReportScope,
 {
-    let cx = cx.with_step(ExtractStep {
-        step: Arc::clone(cx.step()),
-    });
-    let reporter = cx.reporter();
-    reporter.report_step(format_args!(
-        "Extracting archive to {}...",
-        fonts_dir.display()
-    ));
-    extract_archive_impl(file, include, fonts_dir, cx.config()).report_error(reporter)
+    let cx = ExtractScope::start_with_report(
+        cx,
+        format_args!("Extracting archive to {}...", fonts_dir.display()),
+    );
+    extract_archive_impl(file, include, fonts_dir, cx.config()).report_error(cx.reporter())
 }
 
 fn extract_archive_impl(

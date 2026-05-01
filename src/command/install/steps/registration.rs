@@ -1,16 +1,15 @@
 use crate::{
-    cli::context::StepContext,
+    cli::{context::ReportContext, reporter::ReportScope},
     package::{Package, PackageId},
     platform::windows::steps::{registration, unregistration},
-    util::reporter::Step,
 };
 
 pub(in crate::command::install) fn register_package_fonts<S>(
-    cx: &StepContext<S>,
+    cx: &ReportContext<S>,
     package: &Package,
 ) -> Result<RegistrationGuard<S>, S::Error>
 where
-    S: Step,
+    S: ReportScope,
 {
     let guard = RegistrationGuard {
         armed: true,
@@ -25,16 +24,16 @@ where
 #[derive(Debug)]
 pub(in crate::command::install) struct RegistrationGuard<S>
 where
-    S: Step,
+    S: ReportScope,
 {
     armed: bool,
-    cx: StepContext<S>,
+    cx: ReportContext<S>,
     pkg_id: PackageId,
 }
 
 impl<S> Drop for RegistrationGuard<S>
 where
-    S: Step,
+    S: ReportScope,
 {
     fn drop(&mut self) {
         if !self.armed {
@@ -49,7 +48,7 @@ where
 
 impl<S> RegistrationGuard<S>
 where
-    S: Step,
+    S: ReportScope,
 {
     pub(crate) fn disarm(mut self) {
         self.armed = false;

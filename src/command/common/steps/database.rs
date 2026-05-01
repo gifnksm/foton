@@ -3,26 +3,39 @@ use std::sync::Arc;
 use snafu::{IntoError as _, ResultExt as _, Snafu};
 
 use crate::{
-    cli::context::StepContext,
+    cli::{
+        context::ReportContext,
+        reporter::{
+            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
+        },
+    },
     db::{DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError},
-    util::reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
 };
 
 #[derive(Debug)]
-struct DatabaseLoadStep<S> {
-    step: Arc<S>,
+struct DatabaseLoadScope<S> {
+    base_scope: Arc<S>,
 }
 
-impl<S> Step for DatabaseLoadStep<S>
+impl<S> ReportScope for DatabaseLoadScope<S>
 where
-    S: Step,
+    S: ReportScope,
 {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = DatabaseLoadErrorReport;
     type Error = S::Error;
 
     fn make_failed(&self) -> Self::Error {
-        self.step.make_failed()
+        self.base_scope.make_failed()
+    }
+}
+
+impl<S> SubReportScope<S> for DatabaseLoadScope<S>
+where
+    S: ReportScope,
+{
+    fn new(base_scope: Arc<S>) -> Self {
+        Self { base_scope }
     }
 }
 
@@ -44,13 +57,13 @@ impl From<DatabaseLoadErrorReport> for ReportValue<'static> {
     }
 }
 
-pub(in crate::command) fn open_db_lock_file<S>(cx: &StepContext<S>) -> Result<DbLockFile, S::Error>
+pub(in crate::command) fn open_db_lock_file<S>(
+    cx: &ReportContext<S>,
+) -> Result<DbLockFile, S::Error>
 where
-    S: Step,
+    S: ReportScope,
 {
-    let cx = cx.with_step(DatabaseLoadStep {
-        step: Arc::clone(cx.step()),
-    });
+    let cx = DatabaseLoadScope::start(cx);
 
     DbLockFile::open(cx.app_dirs())
         .context(OpenDbLockFileSnafu)
@@ -58,15 +71,13 @@ where
 }
 
 pub(in crate::command) fn load_database<'a, S>(
-    cx: &StepContext<S>,
+    cx: &ReportContext<S>,
     lock_file: &'a mut DbLockFile,
 ) -> Result<PackageDatabase<'a>, S::Error>
 where
-    S: Step,
+    S: ReportScope,
 {
-    let cx = cx.with_step(DatabaseLoadStep {
-        step: Arc::clone(cx.step()),
-    });
+    let cx = DatabaseLoadScope::start(cx);
 
     let lock_file_guard = lock_file
         .try_acquire()

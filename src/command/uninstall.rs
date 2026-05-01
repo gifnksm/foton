@@ -1,22 +1,30 @@
 use snafu::Snafu;
 
 use crate::{
-    cli::context::RootContext,
+    cli::{
+        context::RootContext,
+        reporter::{NeverReport, ReportScope, RootReportScope},
+    },
     command::common,
     package::PackageSpec,
-    util::reporter::{NeverReport, Step},
 };
 
 #[derive(Debug)]
-struct UninstallStep {}
+struct UninstallScope {}
 
-impl Step for UninstallStep {
+impl ReportScope for UninstallScope {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = NeverReport;
     type Error = UninstallError;
 
     fn make_failed(&self) -> Self::Error {
         UninstallError::Failed
+    }
+}
+
+impl RootReportScope for UninstallScope {
+    fn new() -> Self {
+        Self {}
     }
 }
 
@@ -30,9 +38,8 @@ pub(crate) fn uninstall_package(
     cx: &RootContext,
     pkg_spec: &PackageSpec,
 ) -> Result<(), UninstallError> {
-    let cx = cx.with_step(UninstallStep {});
+    let cx = UninstallScope::start_with_report(cx, format_args!("Uninstalling {pkg_spec}..."));
     let reporter = cx.reporter();
-    reporter.report_step(format_args!("Uninstalling {pkg_spec}..."));
 
     let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
     let mut db = common::steps::load_database(&cx, &mut db_lock_file)?;

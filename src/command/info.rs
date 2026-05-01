@@ -3,22 +3,32 @@ use std::io;
 use snafu::{ResultExt as _, Snafu};
 
 use crate::{
-    cli::context::RootContext,
+    cli::{
+        context::RootContext,
+        reporter::{
+            NeverReport, ReportScope, ReportValue, RootReportScope, ScopeResultErrorExt as _,
+        },
+    },
     command::common,
     package::{PackageManifest, PackageMetadata, PackageSource, PackageSpec, PackageState},
-    util::reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
 };
 
 #[derive(Debug)]
-struct InfoStep {}
+struct InfoScope {}
 
-impl Step for InfoStep {
+impl ReportScope for InfoScope {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = InfoErrorReport;
     type Error = InfoError;
 
     fn make_failed(&self) -> Self::Error {
         InfoError::Failed
+    }
+}
+
+impl RootReportScope for InfoScope {
+    fn new() -> Self {
+        Self {}
     }
 }
 
@@ -43,7 +53,7 @@ pub(crate) enum InfoError {
 }
 
 pub(crate) fn info_package(cx: &RootContext, pkg_spec: &PackageSpec) -> Result<(), InfoError> {
-    let cx = cx.with_step(InfoStep {});
+    let cx = InfoScope::start(cx);
     let reporter = cx.reporter();
 
     let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;

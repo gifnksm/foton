@@ -3,31 +3,45 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc};
 use snafu::{ResultExt as _, Snafu};
 
 use crate::{
-    cli::context::StepContext,
+    cli::{
+        context::ReportContext,
+        reporter::{
+            ReportScope, ReportValue, ScopeResultErrorExt as _, ScopeResultWarnExt as _,
+            SubReportScope,
+        },
+    },
     package::FontEntry,
     platform::windows::services::font::{FontValidator, FontValidatorError},
     util::{
         fs as fs_util,
         path::{AbsolutePath, FileName},
-        reporter::{ReportValue, Step, StepResultErrorExt as _, StepResultWarnExt as _},
     },
 };
 
 #[derive(Debug)]
-struct ValidationStep<S> {
-    step: Arc<S>,
+struct ValidationScope<S> {
+    base_scope: Arc<S>,
 }
 
-impl<S> Step for ValidationStep<S>
+impl<S> ReportScope for ValidationScope<S>
 where
-    S: Step,
+    S: ReportScope,
 {
     type WarnReportValue = ValidationWarnReport;
     type ErrorReportValue = ValidationErrorReport;
     type Error = S::Error;
 
     fn make_failed(&self) -> Self::Error {
-        self.step.make_failed()
+        self.base_scope.make_failed()
+    }
+}
+
+impl<S> SubReportScope<S> for ValidationScope<S>
+where
+    S: ReportScope,
+{
+    fn new(base_scope: Arc<S>) -> Self {
+        Self { base_scope }
     }
 }
 
@@ -71,18 +85,15 @@ impl From<ValidationErrorReport> for ReportValue<'static> {
 }
 
 pub(in crate::command::install) fn validate_and_prune_fonts<S>(
-    cx: &StepContext<S>,
+    cx: &ReportContext<S>,
     fonts_dir: &AbsolutePath,
     file_names: &[FileName],
 ) -> Result<Vec<FontEntry>, S::Error>
 where
-    S: Step,
+    S: ReportScope,
 {
-    let cx = cx.with_step(ValidationStep {
-        step: Arc::clone(cx.step()),
-    });
+    let cx = ValidationScope::start_with_report(cx, "Validating fonts...");
     let reporter = cx.reporter();
-    reporter.report_step(format_args!("Validating fonts..."));
 
     let mut valid_entries = vec![];
     let mut valid_entry_titles = HashSet::new();

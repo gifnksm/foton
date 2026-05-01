@@ -5,26 +5,25 @@ use snafu::{OptionExt as _, ResultExt as _, Snafu};
 use crate::{
     cli::{
         args::InstallArgs,
-        context::{RootContext, StepContext},
+        context::{ReportContext, RootContext},
+        reporter::{
+            NeverReport, ReportScope, ReportValue, RootReportScope, ScopeResultErrorExt as _,
+        },
     },
     command::{
         common,
         install::helpers::{BeginInstallTxResult, DbGuard},
     },
-    db::{PackageDatabase, PackageDatabaseError},
+    db::PackageDatabase,
     package::{Package, PackageDirs, PackageId, PackageManifest},
     registry::{self, FetchRegistryError, RegistryId, RegistrySource},
-    util::{
-        fs::FsError,
-        reporter::{ReportValue, Step, StepResultErrorExt as _},
-    },
 };
 
 #[derive(Debug)]
-struct InstallStep {}
+struct InstallScope {}
 
-impl Step for InstallStep {
-    type WarnReportValue = InstallWarnReport;
+impl ReportScope for InstallScope {
+    type WarnReportValue = NeverReport;
     type ErrorReportValue = InstallErrorReport;
     type Error = InstallError;
 
@@ -33,17 +32,9 @@ impl Step for InstallStep {
     }
 }
 
-#[derive(Debug, Snafu)]
-enum InstallWarnReport {
-    #[snafu(display(
-        "failed to remove package directory after install failure\nmanual cleanup may be required"
-    ))]
-    RemovePackageDirectoryAfterInstallFailure { source: FsError },
-}
-
-impl From<InstallWarnReport> for ReportValue<'static> {
-    fn from(report: InstallWarnReport) -> Self {
-        ReportValue::BoxedError(report.into())
+impl RootReportScope for InstallScope {
+    fn new() -> Self {
+        Self {}
     }
 }
 
@@ -65,10 +56,6 @@ enum InstallErrorReport {
         #[snafu(source(from(FetchRegistryError, Box::new)))]
         source: Box<FetchRegistryError>,
     },
-    #[snafu(display("failed to save package database"))]
-    SaveDatabase { source: PackageDatabaseError },
-    #[snafu(display("failed to create package directories for package {pkg_id}"))]
-    CreatePackageDirs { pkg_id: PackageId, source: FsError },
     #[snafu(display("no valid font files found in package {pkg_id}"))]
     NoValidFonts { pkg_id: PackageId },
 }
@@ -96,9 +83,7 @@ pub(crate) async fn install_package(
 ) -> Result<(), InstallError> {
     let InstallArgs { registry, pkg_spec } = args;
 
-    let cx = cx.with_step(InstallStep {});
-    cx.reporter()
-        .report_step(format_args!("Installing {pkg_spec}..."));
+    let cx = InstallScope::start_with_report(cx, format_args!("Installing {pkg_spec}..."));
 
     let registries = resolve_registries(&cx, registry.as_ref())?;
     if registries.is_empty() {
@@ -137,7 +122,7 @@ pub(crate) async fn install_package(
 }
 
 fn resolve_registries<'a>(
-    cx: &'a StepContext<InstallStep>,
+    cx: &'a ReportContext<InstallScope>,
     registries: Option<&Vec<RegistryId>>,
 ) -> Result<Vec<(RegistryId, &'a RegistrySource)>, InstallError> {
     let config_registries = &cx.config().registries;
@@ -168,10 +153,10 @@ fn resolve_registries<'a>(
 }
 
 fn begin_install<'db>(
-    cx: &StepContext<InstallStep>,
+    cx: &ReportContext<InstallScope>,
     mut db: PackageDatabase<'db>,
     manifest: &PackageManifest,
-) -> Result<Option<DbGuard<'db>>, InstallError> {
+) -> Result<Option<DbGuard<'db, InstallScope>>, InstallError> {
     let reporter = cx.reporter();
     let qualified_name = &manifest.metadata.qualified_name;
     loop {
@@ -221,7 +206,7 @@ fn begin_install<'db>(
 }
 
 async fn stage_package(
-    cx: &StepContext<InstallStep>,
+    cx: &ReportContext<InstallScope>,
     pkg_dirs: &PackageDirs,
     manifest: &PackageManifest,
 ) -> Result<Package, InstallError> {

@@ -3,30 +3,44 @@ use std::sync::Arc;
 use snafu::{ResultExt as _, Snafu};
 
 use crate::{
-    cli::context::StepContext,
+    cli::{
+        context::ReportContext,
+        reporter::{
+            ReportScope, ReportValue, ScopeResultErrorExt as _, ScopeResultWarnExt as _,
+            SubReportScope,
+        },
+    },
     package::PackageId,
     platform::windows::primitives::{
         registry::{self, RegistryError},
         session::{self, SessionError},
     },
-    util::reporter::{ReportValue, Step, StepResultErrorExt as _, StepResultWarnExt as _},
 };
 
 #[derive(Debug)]
-struct UnregistrationStep<S> {
-    step: Arc<S>,
+struct UnregistrationScope<S> {
+    base_scope: Arc<S>,
 }
 
-impl<S> Step for UnregistrationStep<S>
+impl<S> ReportScope for UnregistrationScope<S>
 where
-    S: Step,
+    S: ReportScope,
 {
     type WarnReportValue = UnregistrationWarnReport;
     type ErrorReportValue = UnregistrationErrorReport;
     type Error = S::Error;
 
     fn make_failed(&self) -> Self::Error {
-        self.step.make_failed()
+        self.base_scope.make_failed()
+    }
+}
+
+impl<S> SubReportScope<S> for UnregistrationScope<S>
+where
+    S: ReportScope,
+{
+    fn new(base_scope: Arc<S>) -> Self {
+        Self { base_scope }
     }
 }
 
@@ -59,17 +73,14 @@ impl From<UnregistrationErrorReport> for ReportValue<'static> {
 }
 
 pub(crate) fn unregister_package_fonts<S>(
-    cx: &StepContext<S>,
+    cx: &ReportContext<S>,
     pkg_id: &PackageId,
 ) -> Result<(), S::Error>
 where
-    S: Step,
+    S: ReportScope,
 {
-    let cx = cx.with_step(UnregistrationStep {
-        step: Arc::clone(cx.step()),
-    });
+    let cx = UnregistrationScope::start_with_report(cx, "Unregistering fonts...");
     let reporter = cx.reporter();
-    reporter.report_step(format_args!("Unregistering fonts..."));
 
     let entries = registry::list_registered_package_fonts(cx.app_id(), pkg_id)
         .context(ListInstalledFontsSnafu)
