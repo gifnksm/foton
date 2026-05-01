@@ -47,7 +47,7 @@ impl From<ListErrorReport> for ReportValue<'static> {
 
 #[derive(Debug, Snafu)]
 pub(crate) enum ListError {
-    #[snafu(display("failed to list installed packages"))]
+    #[snafu(display("failed to list installed packages; see previous messages for details"))]
     Failed,
 }
 
