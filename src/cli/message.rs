@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Display};
 
 macro_rules! _message_scope {
     ($($arg:tt)*) => {
@@ -53,4 +53,23 @@ pub(crate) fn eprintln_error(message: fmt::Arguments<'_>) {
 
 pub(crate) fn eprintln_warn(message: fmt::Arguments<'_>) {
     eprintln!("{}: {message}", WARNING_PREFIX_STYLE.apply_to("warning"));
+}
+
+#[derive(Debug)]
+pub(crate) struct BulletList<'a, I>(pub(crate) &'a I);
+
+impl<'a, I> Display for BulletList<'a, I>
+where
+    &'a I: IntoIterator,
+    <&'a I as IntoIterator>::Item: Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, item) in self.0.into_iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?;
+            }
+            write!(f, "  - {item}")?;
+        }
+        Ok(())
+    }
 }
