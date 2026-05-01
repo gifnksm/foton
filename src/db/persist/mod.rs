@@ -6,9 +6,9 @@ use snafu::{ResultExt as _, Snafu};
 
 mod v1;
 
-pub(in crate::db) use self::latest::types::*;
-
 use v1 as latest;
+
+pub(in crate::db) use self::latest::types::*;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Envelope {

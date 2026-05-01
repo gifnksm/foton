@@ -128,9 +128,8 @@ impl EntryRender for InstalledEntryRender {
 
 #[cfg(test)]
 mod tests {
-    use crate::util::testing;
-
     use super::*;
+    use crate::util::testing;
 
     fn make_entries() -> Vec<(PackageState, PackageManifest)> {
         vec![

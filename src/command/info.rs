@@ -122,9 +122,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::util::testing;
-
     use super::*;
+    use crate::util::testing;
 
     #[test]
     fn render_package_info_prints_all_present_fields() {

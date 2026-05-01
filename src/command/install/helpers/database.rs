@@ -3,9 +3,11 @@ use std::{collections::BTreeSet, sync::Arc};
 use snafu::{ResultExt as _, Snafu};
 
 use crate::{
-    cli::context::ReportContext,
-    cli::reporter::{
-        NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
+    cli::{
+        context::ReportContext,
+        reporter::{
+            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
+        },
     },
     db::{BeginInstallResult, PackageDatabase, PackageDatabaseError},
     package::{PackageId, PackageManifest, PackageVersion},
@@ -181,14 +183,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{
         cli::reporter::RootReportScope as _,
         command::common,
         package::PackageState,
         util::testing::{self, TempdirContext, TestScope},
     };
-
-    use super::*;
 
     fn get_entry_state(db: &PackageDatabase<'_>, pkg_id: &PackageId) -> Option<PackageState> {
         db.entry_by_id(pkg_id).map(|(state, _manifest)| state)
