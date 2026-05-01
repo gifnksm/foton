@@ -1,32 +1,77 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Arc};
 
-use snafu::ResultExt as _;
+use snafu::{ResultExt as _, Snafu};
 
 use crate::{
-    cli::context::StepContext,
-    command::{
-        InstallError,
-        install::{InstallStep, SaveDatabaseSnafu},
+    cli::context::ReportContext,
+    cli::reporter::{
+        NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
     },
-    db::{BeginInstallResult, PackageDatabase},
+    db::{BeginInstallResult, PackageDatabase, PackageDatabaseError},
     package::{PackageId, PackageManifest, PackageVersion},
-    util::reporter::StepResultErrorExt as _,
 };
 
 #[derive(Debug)]
-pub(in crate::command::install) enum BeginInstallTxResult<'db> {
-    CanInstall(DbGuard<'db>),
+struct BeginInstallScope<S> {
+    base_scope: Arc<S>,
+}
+
+impl<S> ReportScope for BeginInstallScope<S>
+where
+    S: ReportScope,
+{
+    type WarnReportValue = NeverReport;
+    type ErrorReportValue = BeginInstallErrorReport;
+    type Error = S::Error;
+
+    fn make_failed(&self) -> Self::Error {
+        self.base_scope.make_failed()
+    }
+}
+
+impl<S> SubReportScope<S> for BeginInstallScope<S>
+where
+    S: ReportScope,
+{
+    fn new(base_scope: Arc<S>) -> Self {
+        Self { base_scope }
+    }
+}
+
+#[derive(Debug, Snafu)]
+enum BeginInstallErrorReport {
+    #[snafu(display("failed to save package database"))]
+    SaveDatabase { source: PackageDatabaseError },
+}
+
+impl From<BeginInstallErrorReport> for ReportValue<'static> {
+    fn from(report: BeginInstallErrorReport) -> Self {
+        ReportValue::BoxedError(report.into())
+    }
+}
+
+#[derive(Debug)]
+pub(in crate::command::install) enum BeginInstallTxResult<'db, S>
+where
+    S: ReportScope,
+{
+    CanInstall(DbGuard<'db, S>),
     AlreadyInstalled(PackageDatabase<'db>),
     OtherVersionInstalled(PackageDatabase<'db>, PackageVersion),
     PendingInstallFound(PackageDatabase<'db>, BTreeSet<PackageVersion>),
     PendingUninstallFound(PackageDatabase<'db>, BTreeSet<PackageVersion>),
 }
 
-pub(in crate::command::install) fn begin_install<'db>(
-    cx: &StepContext<InstallStep>,
+pub(in crate::command::install) fn begin_install<'db, S>(
+    cx: &ReportContext<S>,
     mut db: PackageDatabase<'db>,
     manifest: &PackageManifest,
-) -> Result<BeginInstallTxResult<'db>, InstallError> {
+) -> Result<BeginInstallTxResult<'db, S>, S::Error>
+where
+    S: ReportScope,
+{
+    let cx = BeginInstallScope::start(cx);
+
     match db.begin_install(manifest) {
         BeginInstallResult::CanInstall => {}
         BeginInstallResult::AlreadyInstalled => {
@@ -43,7 +88,7 @@ pub(in crate::command::install) fn begin_install<'db>(
         }
     }
 
-    save(cx, &mut db)?;
+    save(&cx, &mut db)?;
 
     Ok(BeginInstallTxResult::CanInstall(DbGuard {
         installation_persisted: false,
@@ -54,7 +99,13 @@ pub(in crate::command::install) fn begin_install<'db>(
     }))
 }
 
-fn save(cx: &StepContext<InstallStep>, db: &mut PackageDatabase<'_>) -> Result<(), InstallError> {
+fn save<S>(
+    cx: &ReportContext<BeginInstallScope<S>>,
+    db: &mut PackageDatabase<'_>,
+) -> Result<(), S::Error>
+where
+    S: ReportScope,
+{
     db.save()
         .context(SaveDatabaseSnafu)
         .report_error(cx.reporter())?;
@@ -62,16 +113,22 @@ fn save(cx: &StepContext<InstallStep>, db: &mut PackageDatabase<'_>) -> Result<(
 }
 
 #[derive(Debug)]
-pub(in crate::command::install) struct DbGuard<'db> {
+pub(in crate::command::install) struct DbGuard<'db, S>
+where
+    S: ReportScope,
+{
     installation_persisted: bool,
     installation_completed_in_memory: bool,
-    cx: StepContext<InstallStep>,
+    cx: ReportContext<BeginInstallScope<S>>,
     db: PackageDatabase<'db>,
     pkg_id: PackageId,
 }
 
-impl DbGuard<'_> {
-    pub(in crate::command::install) fn complete_install(mut self) -> Result<(), InstallError> {
+impl<S> DbGuard<'_, S>
+where
+    S: ReportScope,
+{
+    pub(in crate::command::install) fn complete_install(mut self) -> Result<(), S::Error> {
         // This guard only reaches completion after `begin_install` has persisted a pending-install
         // entry for `self.pkg_id`. Failure here indicates an internal DB invariant violation.
         // That is a bug in our state management rather than a recoverable runtime error, so we
@@ -83,12 +140,15 @@ impl DbGuard<'_> {
         Ok(())
     }
 
-    fn save(&mut self) -> Result<(), InstallError> {
+    fn save(&mut self) -> Result<(), S::Error> {
         save(&self.cx, &mut self.db)
     }
 }
 
-impl Drop for DbGuard<'_> {
+impl<S> Drop for DbGuard<'_, S>
+where
+    S: ReportScope,
+{
     fn drop(&mut self) {
         if self.installation_persisted {
             return;
@@ -122,9 +182,10 @@ impl Drop for DbGuard<'_> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        command::{common, install::InstallStep},
+        cli::reporter::RootReportScope as _,
+        command::common,
         package::PackageState,
-        util::testing::{self, TempdirContext},
+        util::testing::{self, TempdirContext, TestScope},
     };
 
     use super::*;
@@ -136,7 +197,7 @@ mod tests {
     #[test]
     fn begin_install_persists_pending_install_before_completion() {
         let cx = TempdirContext::new();
-        let cx = cx.with_step(InstallStep {});
+        let cx = TestScope::start(&cx);
         let mut db_lock_file = common::steps::open_db_lock_file(&cx).unwrap();
         let db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
@@ -162,7 +223,7 @@ mod tests {
     #[test]
     fn dropping_install_guard_rolls_back_persisted_pending_install() {
         let cx = TempdirContext::new();
-        let cx = cx.with_step(InstallStep {});
+        let cx = TestScope::start(&cx);
         let mut db_lock_file = common::steps::open_db_lock_file(&cx).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
@@ -186,7 +247,7 @@ mod tests {
     #[test]
     fn complete_install_persists_installed_state() {
         let cx = TempdirContext::new();
-        let cx = cx.with_step(InstallStep {});
+        let cx = TestScope::start(&cx);
         let mut db_lock_file = common::steps::open_db_lock_file(&cx).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();

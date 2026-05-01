@@ -3,30 +3,44 @@ use std::{path::PathBuf, sync::Arc};
 use snafu::{ResultExt as _, Snafu};
 
 use crate::{
-    cli::context::StepContext,
+    cli::{
+        context::ReportContext,
+        reporter::{
+            ReportScope, ReportValue, ScopeResultErrorExt as _, ScopeResultWarnExt as _,
+            SubReportScope,
+        },
+    },
     package::Package,
     platform::windows::primitives::{
         registry::{self, RegisteredFont, RegistryError},
         session::{self, SessionError},
     },
-    util::reporter::{ReportValue, Step, StepResultErrorExt as _, StepResultWarnExt as _},
 };
 
 #[derive(Debug)]
-struct RegistrationStep<S> {
-    step: Arc<S>,
+struct RegistrationScope<S> {
+    base_scope: Arc<S>,
 }
 
-impl<S> Step for RegistrationStep<S>
+impl<S> ReportScope for RegistrationScope<S>
 where
-    S: Step,
+    S: ReportScope,
 {
     type WarnReportValue = RegistrationWarnReport;
     type ErrorReportValue = RegistrationErrorReport;
     type Error = S::Error;
 
     fn make_failed(&self) -> Self::Error {
-        self.step.make_failed()
+        self.base_scope.make_failed()
+    }
+}
+
+impl<S> SubReportScope<S> for RegistrationScope<S>
+where
+    S: ReportScope,
+{
+    fn new(base_scope: Arc<S>) -> Self {
+        Self { base_scope }
     }
 }
 
@@ -62,17 +76,14 @@ impl From<RegistrationErrorReport> for ReportValue<'static> {
 }
 
 pub(crate) fn register_package_fonts<S>(
-    cx: &StepContext<S>,
+    cx: &ReportContext<S>,
     package: &Package,
 ) -> Result<(), S::Error>
 where
-    S: Step,
+    S: ReportScope,
 {
-    let cx = cx.with_step(RegistrationStep {
-        step: Arc::clone(cx.step()),
-    });
+    let cx = RegistrationScope::start_with_report(cx, "Registering fonts...");
     let reporter = cx.reporter();
-    reporter.report_step(format_args!("Registering fonts..."));
 
     let fonts_dir = package.dirs().fonts_dir();
     let registered_fonts = package

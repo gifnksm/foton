@@ -3,11 +3,11 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    cli::config::FotonConfig,
-    util::{
-        app_dirs::AppDirs,
-        reporter::{RootReporter, Step, StepReporter},
+    cli::{
+        config::FotonConfig,
+        reporter::{ReportScope, RootReporter, ScopedReporter},
     },
+    util::app_dirs::AppDirs,
 };
 
 #[derive(Debug, Clone)]
@@ -20,7 +20,7 @@ pub(crate) struct Context<R> {
 }
 
 pub(crate) type RootContext = Context<RootReporter>;
-pub(crate) type StepContext<S> = Context<StepReporter<S>>;
+pub(crate) type ReportContext<S> = Context<ScopedReporter<S>>;
 
 impl<R> Context<R> {
     pub(crate) fn new(
@@ -61,38 +61,38 @@ impl<R> Context<R> {
 }
 
 impl Context<RootReporter> {
-    pub(crate) fn with_step<S>(&self, step: S) -> StepContext<S>
+    pub(crate) fn with_scope<S>(&self, scope: S) -> ReportContext<S>
     where
-        S: Step,
+        S: ReportScope,
     {
-        StepContext {
+        ReportContext {
             app_id: Arc::clone(&self.app_id),
             app_dirs: Arc::clone(&self.app_dirs),
             config: Arc::clone(&self.config),
-            reporter: self.reporter.with_step(step),
+            reporter: self.reporter.with_scope(scope),
             cancel_token: self.cancel_token.clone(),
         }
     }
 }
 
-impl<S> StepContext<S>
+impl<S> ReportContext<S>
 where
-    S: Step,
+    S: ReportScope,
 {
-    pub(crate) fn with_step<T>(&self, step: T) -> StepContext<T>
+    pub(crate) fn with_scope<T>(&self, scope: T) -> ReportContext<T>
     where
-        T: Step<Error = S::Error>,
+        T: ReportScope<Error = S::Error>,
     {
-        StepContext {
+        ReportContext {
             app_id: Arc::clone(&self.app_id),
             app_dirs: Arc::clone(&self.app_dirs),
             config: Arc::clone(&self.config),
-            reporter: self.reporter.with_step(step),
+            reporter: self.reporter.with_scope(scope),
             cancel_token: self.cancel_token.clone(),
         }
     }
 
-    pub(crate) fn step(&self) -> &Arc<S> {
-        self.reporter.step()
+    pub(crate) fn scope(&self) -> &Arc<S> {
+        self.reporter.scope()
     }
 }

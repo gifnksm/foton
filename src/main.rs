@@ -13,9 +13,10 @@ use crate::{
         args::{Args, Command},
         config::FotonConfig,
         context::RootContext,
+        reporter::RootReporter,
     },
     platform::windows::{self, com::ComGuard},
-    util::{app_dirs::AppDirs, error::FormatErrorChain as _, reporter::RootReporter},
+    util::{app_dirs::AppDirs, error::FormatErrorChain as _},
 };
 
 mod cli;

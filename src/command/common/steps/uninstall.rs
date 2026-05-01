@@ -3,31 +3,42 @@ use std::sync::Arc;
 use snafu::{ResultExt as _, Snafu};
 
 use crate::{
-    cli::context::StepContext,
+    cli::{
+        context::ReportContext,
+        reporter::{
+            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
+        },
+    },
     db::{BeginUninstallResult, PackageDatabase, PackageDatabaseError},
     package::{self, PackageDirs, PackageId},
     platform::windows::steps::unregistration,
-    util::{
-        fs::FsError,
-        reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
-    },
+    util::fs::FsError,
 };
 
 #[derive(Debug)]
-struct UninstallTxStep<S> {
-    step: Arc<S>,
+struct UninstallTxScope<S> {
+    base_scope: Arc<S>,
 }
 
-impl<S> Step for UninstallTxStep<S>
+impl<S> ReportScope for UninstallTxScope<S>
 where
-    S: Step,
+    S: ReportScope,
 {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = UninstallTxErrorReport;
     type Error = S::Error;
 
     fn make_failed(&self) -> Self::Error {
-        self.step.make_failed()
+        self.base_scope.make_failed()
+    }
+}
+
+impl<S> SubReportScope<S> for UninstallTxScope<S>
+where
+    S: ReportScope,
+{
+    fn new(base_scope: Arc<S>) -> Self {
+        Self { base_scope }
     }
 }
 
@@ -50,20 +61,18 @@ impl From<UninstallTxErrorReport> for ReportValue<'static> {
 }
 
 pub(in crate::command) fn uninstall_transaction<S>(
-    cx: &StepContext<S>,
+    cx: &ReportContext<S>,
     db: &mut PackageDatabase<'_>,
     pkg_id: &PackageId,
 ) -> Result<(), S::Error>
 where
-    S: Step,
+    S: ReportScope,
 {
-    let cx = cx.with_step(UninstallTxStep {
-        step: Arc::clone(cx.step()),
-    });
+    let cx = UninstallTxScope::start_with_report(
+        cx,
+        format_args!("Beginning transaction to uninstall {pkg_id}..."),
+    );
     let reporter = cx.reporter();
-    reporter.report_step(format_args!(
-        "Beginning transaction to uninstall {pkg_id}..."
-    ));
 
     match db.begin_uninstall(pkg_id) {
         BeginUninstallResult::CanUninstall => {}
@@ -90,11 +99,11 @@ where
 }
 
 fn save<S>(
-    cx: &StepContext<UninstallTxStep<S>>,
+    cx: &ReportContext<UninstallTxScope<S>>,
     db: &mut PackageDatabase<'_>,
 ) -> Result<(), S::Error>
 where
-    S: Step,
+    S: ReportScope,
 {
     db.save()
         .context(SaveDatabaseSnafu)
@@ -113,10 +122,11 @@ mod tests {
     };
 
     use crate::{
+        cli::reporter::RootReportScope as _,
         command::common,
         db::{BeginInstallResult, PackageDatabase},
         package::{PackageId, PackageState},
-        util::testing::{self, TempdirContext, TestStep},
+        util::testing::{self, TempdirContext, TestScope},
     };
 
     use super::*;
@@ -144,7 +154,7 @@ mod tests {
     )]
     fn uninstall_transaction_removes_db_record_and_package_files_on_success() {
         let cx = TempdirContext::with_app_id(test_app_id());
-        let cx = cx.with_step(TestStep {});
+        let cx = TestScope::start(&cx);
         let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
         fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
         fs::write(pkg_dirs.fonts_dir().join("example.ttf"), b"font").unwrap();

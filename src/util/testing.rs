@@ -3,29 +3,36 @@ use std::{fmt::Debug, ops::Deref, sync::Arc};
 use tempfile::TempDir;
 
 use crate::{
-    cli::{config::FotonConfig, context::RootContext},
+    cli::{
+        config::FotonConfig,
+        context::RootContext,
+        reporter::{NeverReport, ReportScope, RootReportScope, RootReporter},
+    },
     package::{
         PackageDirs, PackageId, PackageManifest, PackageName, PackageNamespace, PackageVersion,
     },
     registry::{RegistryId, RegistryIndex},
-    util::{
-        app_dirs::AppDirs,
-        reporter::{NeverReport, RootReporter, Step},
-    },
+    util::app_dirs::AppDirs,
 };
 
 const APP_ID: &str = "io.github.gifnksm.foton-test";
 
 #[derive(Debug)]
-pub(crate) struct TestStep {}
+pub(crate) struct TestScope {}
 
-impl Step for TestStep {
+impl ReportScope for TestScope {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = NeverReport;
     type Error = TestError;
 
     fn make_failed(&self) -> Self::Error {
         TestError::Failed
+    }
+}
+
+impl RootReportScope for TestScope {
+    fn new() -> Self {
+        Self {}
     }
 }
 

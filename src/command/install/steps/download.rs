@@ -8,29 +8,38 @@ use snafu::{ResultExt as _, Snafu};
 use tokio::io::{AsyncSeekExt as _, AsyncWriteExt as _};
 
 use crate::{
-    cli::{config::FotonConfig, context::StepContext},
-    package::{PackageId, PackageSource},
-    util::{
-        hash::{GenericDigest, GenericHasher},
-        reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
+    cli::reporter::{
+        NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
     },
+    cli::{config::FotonConfig, context::ReportContext},
+    package::{PackageId, PackageSource},
+    util::hash::{GenericDigest, GenericHasher},
 };
 
 #[derive(Debug)]
-struct DownloadStep<S> {
-    step: Arc<S>,
+struct DownloadScope<S> {
+    base_scope: Arc<S>,
 }
 
-impl<S> Step for DownloadStep<S>
+impl<S> ReportScope for DownloadScope<S>
 where
-    S: Step,
+    S: ReportScope,
 {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = DownloadErrorReport;
     type Error = S::Error;
 
     fn make_failed(&self) -> Self::Error {
-        self.step.make_failed()
+        self.base_scope.make_failed()
+    }
+}
+
+impl<S> SubReportScope<S> for DownloadScope<S>
+where
+    S: ReportScope,
+{
+    fn new(base_scope: Arc<S>) -> Self {
+        Self { base_scope }
     }
 }
 
@@ -71,18 +80,15 @@ impl From<DownloadErrorReport> for ReportValue<'static> {
 }
 
 pub(in crate::command::install) async fn download_archive<S>(
-    cx: &StepContext<S>,
+    cx: &ReportContext<S>,
     pkg_id: &PackageId,
     source: &PackageSource,
 ) -> Result<File, S::Error>
 where
-    S: Step,
+    S: ReportScope,
 {
-    let cx = cx.with_step(DownloadStep {
-        step: Arc::clone(cx.step()),
-    });
+    let cx = DownloadScope::start_with_report(cx, format_args!("Downloading {}...", source.url));
     let reporter = cx.reporter();
-    reporter.report_step(format_args!("Downloading {}...", source.url));
 
     let response = reqwest::get(source.url.clone())
         .await

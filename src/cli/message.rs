@@ -1,8 +1,8 @@
 use std::fmt;
 
-macro_rules! _message_step {
+macro_rules! _message_scope {
     ($($arg:tt)*) => {
-        $crate::cli::message::eprintln_step(::std::format_args!($($arg)*))
+        $crate::cli::message::eprintln_scope(::std::format_args!($($arg)*))
     };
 }
 
@@ -27,19 +27,19 @@ macro_rules! _message_warn {
 use console::Style;
 
 pub(crate) use {
-    _message_error as error, _message_info as info, _message_step as step, _message_warn as warn,
+    _message_error as error, _message_info as info, _message_scope as scope, _message_warn as warn,
 };
 
-const STEP_PREFIX_STYLE: Style = Style::new().blue().bold();
-const STEP_BODY_STYLE: Style = Style::new().bold();
+const SCOPE_PREFIX_STYLE: Style = Style::new().blue().bold();
+const SCOPE_BODY_STYLE: Style = Style::new().bold();
 const ERROR_PREFIX_STYLE: Style = Style::new().red().bold();
 const WARNING_PREFIX_STYLE: Style = Style::new().yellow().bold();
 
-pub(crate) fn eprintln_step(message: fmt::Arguments<'_>) {
+pub(crate) fn eprintln_scope(message: fmt::Arguments<'_>) {
     eprintln!(
         "{} {}",
-        STEP_PREFIX_STYLE.apply_to("::"),
-        STEP_BODY_STYLE.apply_to(message)
+        SCOPE_PREFIX_STYLE.apply_to("::"),
+        SCOPE_BODY_STYLE.apply_to(message)
     );
 }
 

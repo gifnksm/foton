@@ -6,7 +6,10 @@ use std::{
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
 
 use crate::{
-    cli::message::{error, info, step, warn},
+    cli::{
+        context::{ReportContext, RootContext},
+        message,
+    },
     util::error::FormatErrorChain as _,
 };
 
@@ -14,7 +17,7 @@ type SharedCallback = Arc<dyn for<'r> Fn(Report<'r>) + Send + Sync + 'static>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum ReportSeverity {
-    Step,
+    Scope,
     Info,
     Error,
     Warn,
@@ -57,11 +60,11 @@ impl<'a> Report<'a> {
         Self::new(ReportSeverity::Info, value)
     }
 
-    pub(crate) fn step<V>(value: V) -> Self
+    pub(crate) fn scope<V>(value: V) -> Self
     where
         V: Into<ReportValue<'a>>,
     {
-        Self::new(ReportSeverity::Step, value)
+        Self::new(ReportSeverity::Scope, value)
     }
 
     pub(crate) fn error<V>(value: V) -> Self
@@ -119,20 +122,20 @@ impl RootReporter {
 
     pub(crate) fn message_reporter() -> Self {
         Self::new(|report| match report.severity() {
-            ReportSeverity::Step => step!("{}", report.value()),
-            ReportSeverity::Info => info!("{}", report.value()),
-            ReportSeverity::Error => error!("{}", report.value()),
-            ReportSeverity::Warn => warn!("{}", report.value()),
+            ReportSeverity::Scope => message::scope!("{}", report.value()),
+            ReportSeverity::Info => message::info!("{}", report.value()),
+            ReportSeverity::Error => message::error!("{}", report.value()),
+            ReportSeverity::Warn => message::warn!("{}", report.value()),
         })
     }
 
-    pub(crate) fn with_step<S>(&self, step: S) -> StepReporter<S>
+    pub(crate) fn with_scope<S>(&self, scope: S) -> ScopedReporter<S>
     where
-        S: Step,
+        S: ReportScope,
     {
-        StepReporter {
+        ScopedReporter {
             root_reporter: self.clone(),
-            step: Arc::new(step),
+            scope: Arc::new(scope),
         }
     }
 
@@ -141,11 +144,11 @@ impl RootReporter {
         mpb.suspend(|| (self.callback)(report));
     }
 
-    pub(crate) fn report_step<'a, V>(&self, value: V)
+    pub(crate) fn report_scope<'a, V>(&self, value: V)
     where
         V: Into<ReportValue<'a>>,
     {
-        self.report(Report::step(value));
+        self.report(Report::scope(value));
     }
 
     pub(crate) fn report_info<'a, V>(&self, value: V)
@@ -179,7 +182,7 @@ impl From<NeverReport> for ReportValue<'_> {
     }
 }
 
-pub(crate) trait Step: Debug {
+pub(crate) trait ReportScope: Debug {
     type WarnReportValue: Into<ReportValue<'static>>;
     type ErrorReportValue: Into<ReportValue<'static>>;
     type Error;
@@ -187,44 +190,89 @@ pub(crate) trait Step: Debug {
     fn make_failed(&self) -> Self::Error;
 }
 
-#[derive(Debug)]
-pub(crate) struct StepReporter<S> {
-    root_reporter: RootReporter,
-    step: Arc<S>,
+pub(crate) trait RootReportScope: ReportScope {
+    fn new() -> Self;
+
+    fn start(base_cx: &RootContext) -> ReportContext<Self>
+    where
+        Self: Sized,
+    {
+        base_cx.with_scope(Self::new())
+    }
+
+    fn start_with_report<M>(base_cx: &RootContext, message: M) -> ReportContext<Self>
+    where
+        Self: Sized,
+        M: Display,
+    {
+        let cx = Self::start(base_cx);
+        cx.reporter().report_scope(format_args!("{message}"));
+        cx
+    }
 }
 
-impl<S> Clone for StepReporter<S> {
+pub(crate) trait SubReportScope<S>: ReportScope {
+    fn new(base_scope: Arc<S>) -> Self;
+
+    fn start(base_cx: &ReportContext<S>) -> ReportContext<Self>
+    where
+        Self: Sized,
+        S: ReportScope<Error = Self::Error>,
+    {
+        let base_scope = Arc::clone(base_cx.scope());
+        base_cx.with_scope(Self::new(base_scope))
+    }
+
+    fn start_with_report<M>(base_cx: &ReportContext<S>, message: M) -> ReportContext<Self>
+    where
+        Self: Sized,
+        S: ReportScope<Error = Self::Error>,
+        M: Display,
+    {
+        let cx = Self::start(base_cx);
+        cx.reporter().report_scope(format_args!("{message}"));
+        cx
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ScopedReporter<S> {
+    root_reporter: RootReporter,
+    scope: Arc<S>,
+}
+
+impl<S> Clone for ScopedReporter<S> {
     fn clone(&self) -> Self {
         Self {
             root_reporter: self.root_reporter.clone(),
-            step: Arc::clone(&self.step),
+            scope: Arc::clone(&self.scope),
         }
     }
 }
 
-impl<S> StepReporter<S>
+impl<S> ScopedReporter<S>
 where
-    S: Step,
+    S: ReportScope,
 {
-    pub(crate) fn step(&self) -> &Arc<S> {
-        &self.step
+    pub(crate) fn scope(&self) -> &Arc<S> {
+        &self.scope
     }
 
-    pub(crate) fn with_step<T>(&self, step: T) -> StepReporter<T>
+    pub(crate) fn with_scope<T>(&self, scope: T) -> ScopedReporter<T>
     where
-        T: Step<Error = S::Error>,
+        T: ReportScope<Error = S::Error>,
     {
-        StepReporter {
+        ScopedReporter {
             root_reporter: self.root_reporter.clone(),
-            step: Arc::new(step),
+            scope: Arc::new(scope),
         }
     }
 
-    pub(crate) fn report_step<'a, V>(&self, report: V)
+    pub(crate) fn report_scope<'a, V>(&self, report: V)
     where
         V: Into<ReportValue<'a>>,
     {
-        self.root_reporter.report_step(report);
+        self.root_reporter.report_scope(report);
     }
 
     pub(crate) fn report_info<'a, V>(&self, report: V)
@@ -240,7 +288,7 @@ where
 
     pub(crate) fn report_error(&self, report: S::ErrorReportValue) -> S::Error {
         self.root_reporter.report_error(report);
-        self.step.make_failed()
+        self.scope.make_failed()
     }
 
     pub(crate) fn download_progress_bar(&self, len: Option<u64>) -> ProgressBar {
@@ -289,42 +337,42 @@ where
     }
 }
 
-pub(crate) trait StepResultWarnExt<S>
+pub(crate) trait ScopeResultWarnExt<S>
 where
-    S: Step,
+    S: ReportScope,
 {
     type Item;
 
-    fn report_warn(self, reporter: &StepReporter<S>) -> Option<Self::Item>;
+    fn report_warn(self, reporter: &ScopedReporter<S>) -> Option<Self::Item>;
 }
 
-impl<S, T, E> StepResultWarnExt<S> for Result<T, E>
+impl<S, T, E> ScopeResultWarnExt<S> for Result<T, E>
 where
-    S: Step<WarnReportValue = E>,
+    S: ReportScope<WarnReportValue = E>,
 {
     type Item = T;
 
-    fn report_warn(self, reporter: &StepReporter<S>) -> Option<Self::Item> {
+    fn report_warn(self, reporter: &ScopedReporter<S>) -> Option<Self::Item> {
         self.map_err(|err| reporter.report_warn(err)).ok()
     }
 }
 
-pub(crate) trait StepResultErrorExt<S>
+pub(crate) trait ScopeResultErrorExt<S>
 where
-    S: Step,
+    S: ReportScope,
 {
     type Item;
 
-    fn report_error(self, reporter: &StepReporter<S>) -> Result<Self::Item, S::Error>;
+    fn report_error(self, reporter: &ScopedReporter<S>) -> Result<Self::Item, S::Error>;
 }
 
-impl<S, T, E> StepResultErrorExt<S> for Result<T, E>
+impl<S, T, E> ScopeResultErrorExt<S> for Result<T, E>
 where
-    S: Step<ErrorReportValue = E>,
+    S: ReportScope<ErrorReportValue = E>,
 {
     type Item = T;
 
-    fn report_error(self, reporter: &StepReporter<S>) -> Result<Self::Item, S::Error> {
+    fn report_error(self, reporter: &ScopedReporter<S>) -> Result<Self::Item, S::Error> {
         self.map_err(|err| reporter.report_error(err))
     }
 }

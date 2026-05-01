@@ -3,27 +3,38 @@ use std::sync::Arc;
 use snafu::Snafu;
 
 use crate::{
-    cli::context::StepContext,
+    cli::{
+        context::ReportContext,
+        reporter::{NeverReport, ReportScope, ReportValue, SubReportScope},
+    },
     db::PackageDatabase,
     package::{PackageId, PackageManifest, PackageSpec, PackageState},
-    util::reporter::{NeverReport, ReportValue, Step},
 };
 
 #[derive(Debug)]
-struct DbResolveStep<S> {
-    step: Arc<S>,
+struct DbResolveScope<S> {
+    base_scope: Arc<S>,
 }
 
-impl<S> Step for DbResolveStep<S>
+impl<S> ReportScope for DbResolveScope<S>
 where
-    S: Step,
+    S: ReportScope,
 {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = DbResolveErrorReport;
     type Error = S::Error;
 
     fn make_failed(&self) -> Self::Error {
-        self.step.make_failed()
+        self.base_scope.make_failed()
+    }
+}
+
+impl<S> SubReportScope<S> for DbResolveScope<S>
+where
+    S: ReportScope,
+{
+    fn new(base_scope: Arc<S>) -> Self {
+        Self { base_scope }
     }
 }
 
@@ -46,16 +57,15 @@ impl From<DbResolveErrorReport> for ReportValue<'static> {
 }
 
 pub(in crate::command) fn resolve_spec_in_db<'a, S>(
-    cx: &StepContext<S>,
+    cx: &ReportContext<S>,
     db: &'a PackageDatabase<'_>,
     pkg_spec: &PackageSpec,
 ) -> Result<Option<(PackageState, &'a PackageManifest)>, S::Error>
 where
-    S: Step,
+    S: ReportScope,
 {
-    let cx = cx.with_step(DbResolveStep {
-        step: Arc::clone(cx.step()),
-    });
+    let cx = DbResolveScope::start(cx);
+
     let candidates = match pkg_spec {
         PackageSpec::Id(id) => {
             return Ok(db.entry_by_id(id));
@@ -83,9 +93,10 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
+        cli::reporter::RootReportScope as _,
         command::common,
         db::BeginInstallResult,
-        util::testing::{self, TempdirContext, TestError, TestStep},
+        util::testing::{self, TempdirContext, TestError, TestScope},
     };
 
     use super::*;
@@ -93,7 +104,7 @@ mod tests {
     #[test]
     fn resolve_spec_in_db_returns_none_for_missing_specs() {
         let cx = TempdirContext::new();
-        let cx = cx.with_step(TestStep {});
+        let cx = TestScope::start(&cx);
         let mut lock_file = common::steps::open_db_lock_file(&cx).unwrap();
         let db = common::steps::load_database(&cx, &mut lock_file).unwrap();
 
@@ -117,7 +128,7 @@ mod tests {
     #[test]
     fn resolve_spec_in_db_resolves_installed_entry_from_id_and_qualified_name() {
         let cx = TempdirContext::new();
-        let cx = cx.with_step(TestStep {});
+        let cx = TestScope::start(&cx);
         let mut lock_file = common::steps::open_db_lock_file(&cx).unwrap();
         let mut db = common::steps::load_database(&cx, &mut lock_file).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
@@ -146,7 +157,7 @@ mod tests {
     #[test]
     fn resolve_spec_in_db_reports_multiple_matches_for_name() {
         let cx = TempdirContext::new();
-        let cx = cx.with_step(TestStep {});
+        let cx = TestScope::start(&cx);
         let mut lock_file = common::steps::open_db_lock_file(&cx).unwrap();
         let mut db = common::steps::load_database(&cx, &mut lock_file).unwrap();
 
@@ -175,7 +186,7 @@ mod tests {
     #[test]
     fn resolve_spec_resolves_pending_entries() {
         let cx = TempdirContext::new();
-        let cx = cx.with_step(TestStep {});
+        let cx = TestScope::start(&cx);
         let mut lock_file = common::steps::open_db_lock_file(&cx).unwrap();
         let mut db = common::steps::load_database(&cx, &mut lock_file).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
@@ -207,7 +218,7 @@ mod tests {
     #[test]
     fn resolve_spec_in_db_reports_multiple_matches_for_name_across_pending_states() {
         let cx = TempdirContext::new();
-        let cx = cx.with_step(TestStep {});
+        let cx = TestScope::start(&cx);
         let mut lock_file = common::steps::open_db_lock_file(&cx).unwrap();
         let mut db = common::steps::load_database(&cx, &mut lock_file).unwrap();
 

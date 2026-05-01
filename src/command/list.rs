@@ -3,22 +3,33 @@ use std::io;
 use snafu::{ResultExt as _, Snafu};
 
 use crate::{
-    cli::{args::ListArgs, context::RootContext},
+    cli::{
+        args::ListArgs,
+        context::RootContext,
+        reporter::{
+            NeverReport, ReportScope, ReportValue, RootReportScope, ScopeResultErrorExt as _,
+        },
+    },
     command::common,
     package::{PackageId, PackageManifest, PackageState},
-    util::reporter::{NeverReport, ReportValue, Step, StepResultErrorExt as _},
 };
 
 #[derive(Debug)]
-struct ListStep {}
+struct ListScope {}
 
-impl Step for ListStep {
+impl ReportScope for ListScope {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = ListErrorReport;
     type Error = ListError;
 
     fn make_failed(&self) -> Self::Error {
         ListError::Failed
+    }
+}
+
+impl RootReportScope for ListScope {
+    fn new() -> Self {
+        Self {}
     }
 }
 
@@ -43,7 +54,7 @@ pub(crate) enum ListError {
 pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), ListError> {
     let ListArgs { show_pending } = args;
 
-    let cx = cx.with_step(ListStep {});
+    let cx = ListScope::start(cx);
     let reporter = cx.reporter();
 
     let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
