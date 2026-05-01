@@ -5,6 +5,7 @@ use snafu::{ResultExt as _, Snafu};
 use crate::{
     cli::{
         context::ReportContext,
+        message::BulletList,
         reporter::{
             NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
         },
@@ -49,7 +50,7 @@ enum ResolveErrorReport {
     },
     #[snafu(display(
         "multiple packages match the specified package `{pkg_spec}`:\n{pkg_ids}\nspecify one of the matching package IDs listed above explicitly to disambiguate",
-        pkg_ids = pkg_ids.iter().map(|(registry, id)| format!("- {id} (in {registry})")).collect::<Vec<_>>().join("\n")
+        pkg_ids = BulletList(&pkg_ids.iter().map(|(registry, id)| format!("{id} (in {registry})")).collect::<Vec<_>>())
     ))]
     MultipleMatchingPackages {
         pkg_spec: PackageSpec,

@@ -5,6 +5,7 @@ use snafu::Snafu;
 use crate::{
     cli::{
         context::ReportContext,
+        message::BulletList,
         reporter::{NeverReport, ReportScope, ReportValue, SubReportScope},
     },
     db::PackageDatabase,
@@ -42,7 +43,7 @@ where
 enum DbResolveErrorReport {
     #[snafu(display(
         "multiple packages match the specified package `{pkg_spec}`:\n{pkg_ids}",
-        pkg_ids = pkg_ids.iter().map(|id| format!("- {id}")).collect::<Vec<_>>().join("\n")
+        pkg_ids = BulletList(pkg_ids)
     ))]
     MultipleMatchingPackages {
         pkg_spec: PackageSpec,

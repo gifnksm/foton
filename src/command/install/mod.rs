@@ -6,6 +6,7 @@ use crate::{
     cli::{
         args::InstallArgs,
         context::{ReportContext, RootContext},
+        message::BulletList,
         reporter::{
             NeverReport, ReportScope, ReportValue, RootReportScope, ScopeResultErrorExt as _,
         },
@@ -42,7 +43,7 @@ impl RootReportScope for InstallScope {
 enum InstallErrorReport {
     #[snafu(display(
         "specified registry `{reg_id}` not found in configuration\navailable registries:\n{registry_ids}",
-            registry_ids = registry_ids.iter().map(|id| format!("- {id}")).collect::<Vec<_>>().join("\n")
+        registry_ids = BulletList(registry_ids)
     ))]
     RegistryNotFound {
         reg_id: RegistryId,
@@ -173,25 +174,27 @@ fn begin_install<'db>(
                 return Ok(None);
             }
             BeginInstallTxResult::PendingInstallFound(returned_db, versions) => {
-                reporter.report_info(format_args!(
-                "pending installation detected, uninstalling following packages before continuing:\n{}",
-                versions
-                    .iter()
-                    .map(|version| format!("- {qualified_name}@{version}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ));
+                let bl = BulletList(
+                    &versions
+                        .iter()
+                        .map(|version| format!("{qualified_name}@{version}"))
+                        .collect::<Vec<_>>(),
+                );
+                reporter.report_info(
+                    format_args!("pending installation detected, uninstalling following packages before continuing:\n{bl}")
+                );
                 db = returned_db;
                 versions
             }
             BeginInstallTxResult::PendingUninstallFound(returned_db, versions) => {
-                reporter.report_info(format_args!(
-                    "pending uninstallation detected, uninstalling following packages before continuing:\n{}",
-                    versions
+                let bl = BulletList(
+                    &versions
                         .iter()
-                        .map(|version| format!("- {qualified_name}@{version}"))
-                        .collect::<Vec<_>>()
-                        .join("\n")
+                        .map(|version| format!("{qualified_name}@{version}"))
+                        .collect::<Vec<_>>(),
+                );
+                reporter.report_info(format_args!(
+                    "pending uninstallation detected, uninstalling following packages before continuing:\n{bl}"
                 ));
                 db = returned_db;
                 versions
