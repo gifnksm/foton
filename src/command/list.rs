@@ -1,5 +1,7 @@
 use std::io;
 
+use snafu::{ResultExt as _, Snafu};
+
 use crate::{
     cli::{args::ListArgs, context::RootContext},
     command::common,
@@ -20,13 +22,10 @@ impl Step for ListStep {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum ListErrorReport {
-    #[display("failed to write entry to stdout")]
-    WriteEntry {
-        #[error(source)]
-        source: io::Error,
-    },
+    #[snafu(display("failed to write entry to stdout"))]
+    WriteEntry { source: io::Error },
 }
 
 impl From<ListErrorReport> for ReportValue<'static> {
@@ -35,9 +34,9 @@ impl From<ListErrorReport> for ReportValue<'static> {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum ListError {
-    #[display("failed to list installed packages")]
+    #[snafu(display("failed to list installed packages"))]
     Failed,
 }
 
@@ -57,7 +56,7 @@ pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), List
     };
 
     render_entries(&mut io::stdout().lock(), db.entries(), renderer)
-        .map_err(|source| ListErrorReport::WriteEntry { source })
+        .context(WriteEntrySnafu)
         .report_error(reporter)?;
 
     Ok(())

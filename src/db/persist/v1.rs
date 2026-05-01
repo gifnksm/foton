@@ -1,4 +1,7 @@
 use serde_json::value::RawValue;
+use snafu::ResultExt as _;
+
+use crate::db::persist::{DeserializePayloadSnafu, SerializePayloadSnafu};
 
 use super::PersistError;
 
@@ -7,18 +10,16 @@ pub(in crate::db::persist) const VERSION: u32 = 1;
 pub(in crate::db::persist) fn deserialize_payload(
     s: &str,
 ) -> Result<types::PersistedPackageDb, PersistError> {
-    serde_json::from_str(s).map_err(|source| PersistError::DeserializePayload {
+    serde_json::from_str(s).context(DeserializePayloadSnafu {
         schema_version: VERSION,
-        source,
     })
 }
 
 pub(in crate::db::persist) fn serialize_payload(
     payload: &types::PersistedPackageDb,
 ) -> Result<Box<RawValue>, PersistError> {
-    serde_json::value::to_raw_value(payload).map_err(|source| PersistError::SerializePayload {
+    serde_json::value::to_raw_value(payload).context(SerializePayloadSnafu {
         schema_version: VERSION,
-        source,
     })
 }
 

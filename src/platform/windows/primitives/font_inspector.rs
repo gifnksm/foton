@@ -3,28 +3,25 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use snafu::{ResultExt as _, Snafu};
+
 use crate::platform::windows::primitives::{
     direct_write::{DirectWriteError, DirectWriteFactory},
     property_store::{PropertyStore, PropertyStoreError, PropertyStoreKey},
 };
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum FontInspectorError {
-    #[display("failed to create DirectWrite factory for inspecting font")]
-    CreateDirectWriteFactory {
-        #[error(source)]
-        source: DirectWriteError,
-    },
-    #[display("failed to check if the font file is supported: {path}", path = path.display())]
+    #[snafu(display("failed to create DirectWrite factory for inspecting font"))]
+    CreateDirectWriteFactory { source: DirectWriteError },
+    #[snafu(display("failed to check if the font file is supported: {path}", path = path.display()))]
     CheckFontSupported {
         path: PathBuf,
-        #[error(source)]
         source: DirectWriteError,
     },
-    #[display("failed to get font title from property store: {path}", path = path.display())]
+    #[snafu(display("failed to get font title from property store: {path}", path = path.display()))]
     GetFontTitleFromPropertyStore {
         path: PathBuf,
-        #[error(source)]
         source: PropertyStoreError,
     },
 }
@@ -36,8 +33,7 @@ pub(crate) struct FontInspector {
 
 impl FontInspector {
     pub(crate) fn new() -> Result<Self, FontInspectorError> {
-        let factory = DirectWriteFactory::new()
-            .map_err(|source| FontInspectorError::CreateDirectWriteFactory { source })?;
+        let factory = DirectWriteFactory::new().context(CreateDirectWriteFactorySnafu)?;
         Ok(Self { factory })
     }
 
@@ -46,10 +42,7 @@ impl FontInspector {
             let font_file = self.factory.font_file(path)?;
             font_file.analyze()
         })()
-        .map_err(|source| {
-            let path = path.to_owned();
-            FontInspectorError::CheckFontSupported { path, source }
-        })?;
+        .context(CheckFontSupportedSnafu { path })?;
 
         Ok(analyze_result.is_supported)
     }
@@ -63,10 +56,7 @@ impl FontInspector {
             let store = PropertyStore::new(path)?;
             store.get_property_as_os_string(PropertyStoreKey::Title)
         })()
-        .map_err(|source| {
-            let path = path.to_owned();
-            FontInspectorError::GetFontTitleFromPropertyStore { path, source }
-        })?;
+        .context(GetFontTitleFromPropertyStoreSnafu { path })?;
 
         if title.is_empty() {
             return Ok(None);

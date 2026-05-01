@@ -1,35 +1,39 @@
+use std::path::PathBuf;
+
+use snafu::Snafu;
+
 use crate::{
     registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySource},
-    util::{app_dirs::AppDirs, path::AbsolutePath},
+    util::app_dirs::AppDirs,
 };
 
 mod git;
 mod local;
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum FetchRegistryError {
-    #[display("failed to open registry index of registry `{id}`: {path}", path = path.display())]
+    #[snafu(display("failed to open registry index of registry `{id}`: {path}", path = path.display()))]
     OpenIndex {
         id: RegistryId,
-        path: AbsolutePath,
-        #[error(source)]
+        path: PathBuf,
+        #[snafu(source(from(RegistryIndexError, Box::new)))]
         source: Box<RegistryIndexError>,
     },
-    #[display("failed to perform git operation `{operation}` for registry `{id}`: {path}", path = path.display())]
+    #[snafu(display("failed to perform git operation `{operation}` for registry `{id}`: {path}", path = path.display()))]
     GitOperation {
         id: RegistryId,
-        path: AbsolutePath,
+        path: PathBuf,
         operation: &'static str,
-        #[error(source)]
+        #[snafu(source(from(git2::Error, Box::new)))]
         source: Box<git2::Error>,
     },
-    #[display("registry `{id}` has uncommitted changes: {path}", path = path.display())]
-    GitUncommittedChanges { id: RegistryId, path: AbsolutePath },
-    #[display(
+    #[snafu(display("registry `{id}` has uncommitted changes: {path}", path = path.display()))]
+    GitUncommittedChanges { id: RegistryId, path: PathBuf },
+    #[snafu(display(
         "registry `{id}` has a different remote URL configured than the cached repository: {path}\nremove the cached registry directory and retry",
         path = path.display()
-    )]
-    GitRemoteUrlMismatch { id: RegistryId, path: AbsolutePath },
+    ))]
+    GitRemoteUrlMismatch { id: RegistryId, path: PathBuf },
 }
 
 pub(crate) fn fetch_registry(

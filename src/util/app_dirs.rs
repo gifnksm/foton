@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use directories::ProjectDirs;
+use snafu::{OptionExt as _, ResultExt as _, Snafu};
 
 use crate::{
     registry::RegistryId,
@@ -14,17 +15,16 @@ const APP_QUALIFIER: &str = "";
 const APP_ORGANIZATION: &str = "io.github.gifnksm";
 const APP_APPLICATION: &str = "foton";
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum AppDirsError {
-    #[display("failed to get project directories")]
+    #[snafu(display("failed to get project directories"))]
     GetProjectDirectories,
-    #[display("{kind} directory is not absolute: {path}", path = path.display())]
+    #[snafu(display("{kind} directory is not absolute: {path}", path = path.display()))]
     NotAbsolute { kind: DirKind, path: PathBuf },
-    #[display("failed to create {kind} directory: {path}", path = path.display())]
+    #[snafu(display("failed to create {kind} directory: {path}", path = path.display()))]
     CreateDir {
         kind: DirKind,
-        path: AbsolutePath,
-        #[error(source)]
+        path: PathBuf,
         source: FsError,
     },
 }
@@ -46,24 +46,17 @@ pub(crate) struct AppDirs {
 }
 
 fn to_absolute(path: &Path, kind: DirKind) -> Result<AbsolutePath, AppDirsError> {
-    AbsolutePath::new(path).ok_or(AppDirsError::NotAbsolute {
-        kind,
-        path: path.to_owned(),
-    })
+    AbsolutePath::new(path).context(NotAbsoluteSnafu { kind, path })
 }
 
 fn create_dir(path: &AbsolutePath, kind: DirKind) -> Result<(), AppDirsError> {
-    fs_util::create_dir_all(path).map_err(|source| AppDirsError::CreateDir {
-        kind,
-        path: path.clone(),
-        source,
-    })
+    fs_util::create_dir_all(path).context(CreateDirSnafu { kind, path })
 }
 
 impl AppDirs {
     pub(crate) fn from_directories() -> Result<Self, AppDirsError> {
         let dirs = ProjectDirs::from(APP_QUALIFIER, APP_ORGANIZATION, APP_APPLICATION)
-            .ok_or(AppDirsError::GetProjectDirectories)?;
+            .context(GetProjectDirectoriesSnafu)?;
         let data_local_dir = dirs.data_local_dir();
         let cache_dir = dirs.cache_dir();
 

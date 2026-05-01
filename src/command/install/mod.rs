@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use snafu::{OptionExt as _, ResultExt as _, Snafu};
+
 use crate::{
     cli::{
         args::InstallArgs,
@@ -31,17 +33,12 @@ impl Step for InstallStep {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum InstallWarnReport {
-    #[display(
-        "failed to remove package directory after install failure: {path}\nmanual cleanup may be required",
-        path = pkg_dirs.version_dir().display()
-    )]
-    RemovePackageDirectoryAfterInstallFailure {
-        pkg_dirs: PackageDirs,
-        #[error(source)]
-        source: FsError,
-    },
+    #[snafu(display(
+        "failed to remove package directory after install failure\nmanual cleanup may be required"
+    ))]
+    RemovePackageDirectoryAfterInstallFailure { source: FsError },
 }
 
 impl From<InstallWarnReport> for ReportValue<'static> {
@@ -50,36 +47,29 @@ impl From<InstallWarnReport> for ReportValue<'static> {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum InstallErrorReport {
-    #[display(
-        "specified registry `{id}` not found in configuration\navailable registries:\n{registry_ids}",
+    #[snafu(display(
+        "specified registry `{reg_id}` not found in configuration\navailable registries:\n{registry_ids}",
             registry_ids = registry_ids.iter().map(|id| format!("- {id}")).collect::<Vec<_>>().join("\n")
-    )]
+    ))]
     RegistryNotFound {
-        id: RegistryId,
+        reg_id: RegistryId,
         registry_ids: BTreeSet<RegistryId>,
     },
-    #[display("no enabled registries found in configuration")]
+    #[snafu(display("no enabled registries found in configuration"))]
     NoEnabledRegistries,
-    #[display("failed to fetch registry `{id}`")]
+    #[snafu(display("failed to fetch registry `{id}`"))]
     FetchRegistry {
         id: RegistryId,
-        #[error(source)]
+        #[snafu(source(from(FetchRegistryError, Box::new)))]
         source: Box<FetchRegistryError>,
     },
-    #[display("failed to save package database")]
-    SaveDatabase {
-        #[error(source)]
-        source: PackageDatabaseError,
-    },
-    #[display("failed to create package directories for package {pkg_id}")]
-    CreatePackageDirs {
-        pkg_id: PackageId,
-        #[error(source)]
-        source: FsError,
-    },
-    #[display("no valid font files found in package {pkg_id}")]
+    #[snafu(display("failed to save package database"))]
+    SaveDatabase { source: PackageDatabaseError },
+    #[snafu(display("failed to create package directories for package {pkg_id}"))]
+    CreatePackageDirs { pkg_id: PackageId, source: FsError },
+    #[snafu(display("no valid font files found in package {pkg_id}"))]
     NoValidFonts { pkg_id: PackageId },
 }
 
@@ -89,11 +79,11 @@ impl From<InstallErrorReport> for ReportValue<'static> {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum InstallError {
-    #[display("failed to install package")]
+    #[snafu(display("failed to install package"))]
     Failed,
-    #[display("install cancelled")]
+    #[snafu(display("install cancelled"))]
     Cancelled,
 }
 
@@ -112,18 +102,13 @@ pub(crate) async fn install_package(
 
     let registries = resolve_registries(&cx, registry.as_ref())?;
     if registries.is_empty() {
-        return Err(cx
-            .reporter()
-            .report_error(InstallErrorReport::NoEnabledRegistries));
+        return Err(cx.reporter().report_error(NoEnabledRegistriesSnafu.build()));
     }
 
     let indexes = registries
         .into_iter()
         .map(|(id, source)| {
-            registry::fetch_registry(cx.app_dirs(), &id, source).map_err(|source| {
-                let source = Box::new(source);
-                InstallErrorReport::FetchRegistry { id, source }
-            })
+            registry::fetch_registry(cx.app_dirs(), &id, source).context(FetchRegistrySnafu { id })
         })
         .collect::<Result<Vec<_>, _>>()
         .report_error(cx.reporter())?;
@@ -168,14 +153,13 @@ fn resolve_registries<'a>(
     };
     let registries: Vec<_> = registry_ids
         .iter()
-        .map(|id| {
+        .map(|reg_id| {
             config_registries
-                .get(id)
-                .map(|registry| (id.clone(), &registry.source))
-                .ok_or_else(|| {
-                    let id = id.clone();
-                    let registry_ids = config_registries.keys().cloned().collect();
-                    InstallErrorReport::RegistryNotFound { id, registry_ids }
+                .get(reg_id)
+                .map(|registry| (reg_id.clone(), &registry.source))
+                .with_context(|| RegistryNotFoundSnafu {
+                    reg_id,
+                    registry_ids: config_registries.keys().cloned().collect::<BTreeSet<_>>(),
                 })
         })
         .collect::<Result<_, _>>()
@@ -268,8 +252,7 @@ async fn stage_package(
     }
 
     if valid_entries.is_empty() {
-        let pkg_id = pkg_id.clone();
-        return Err(reporter.report_error(InstallErrorReport::NoValidFonts { pkg_id }));
+        return Err(reporter.report_error(NoValidFontsSnafu { pkg_id }.build()));
     }
 
     reporter.report_info(format_args!(

@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 
+use snafu::{IntoError as _, OptionExt as _, ResultExt as _, Snafu};
 use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
 use windows_core::HSTRING;
 use windows_registry::{CURRENT_USER, Value};
@@ -66,58 +67,52 @@ fn err_is_not_found(err: &windows_result::Error) -> bool {
     err.code() == ERROR_FILE_NOT_FOUND.to_hresult()
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum RegistryError {
-    #[display("failed to open registry key: {path}")]
+    #[snafu(display("failed to open registry key: {path}"))]
     OpenRegistryKey {
         path: String,
-        #[error(source)]
         source: windows_core::Error,
     },
-    #[display("failed to create registry key: {path}")]
+    #[snafu(display("failed to create registry key: {path}"))]
     CreateRegistryKey {
         path: String,
-        #[error(source)]
         source: windows_core::Error,
     },
-    #[display("failed to remove registry key: {path}")]
+    #[snafu(display("failed to remove registry key: {path}"))]
     RemoveRegistryKey {
         path: String,
-        #[error(source)]
         source: windows_core::Error,
     },
-    #[display("failed to enumerate subkeys of registry key: {path}")]
+    #[snafu(display("failed to enumerate subkeys of registry key: {path}"))]
     EnumerateSubkeys {
         path: String,
-        #[error(source)]
         source: windows_core::Error,
     },
-    #[display("failed to enumerate values of registry key: {path}")]
+    #[snafu(display("failed to enumerate values of registry key: {path}"))]
     EnumerateValues {
         path: String,
-        #[error(source)]
         source: windows_core::Error,
     },
-    #[display("failed to set registry value for font `{title}`: {path}")]
+    #[snafu(display("failed to set registry value for font `{title}`: {path}"))]
     SetFontValue {
         path: String,
         title: String,
-        #[error(source)]
         source: windows_core::Error,
     },
-    #[display("registry key for package version already exists: {path}")]
+    #[snafu(display("registry key for package version already exists: {path}"))]
     PackageKeyAlreadyExists { path: String },
-    #[display("invalid font entry found in registry key: {path}")]
+    #[snafu(display("invalid font entry found in registry key: {path}"))]
     InvalidEntryFound {
         path: String,
-        #[error(source)]
+        #[snafu(source(from(RegisteredFontError, Box::new)))]
         source: Box<RegisteredFontError>,
     },
-    #[display("failed to prune empty registry key: {path}")]
+    #[snafu(display("failed to prune empty registry key: {path}"))]
     PruneEmptyKey {
         path: String,
-        #[error(source)]
-        source: Box<Self>,
+        #[snafu(source(from(RegistryError, Box::new)))]
+        source: Box<RegistryError>,
     },
 }
 
@@ -134,22 +129,14 @@ pub(crate) fn list_registered_package_fonts(
             return Ok(vec![]);
         }
         Err(source) => {
-            let path = path.clone();
-            return Err(RegistryError::OpenRegistryKey { path, source });
+            return Err(OpenRegistryKeySnafu { path }.into_error(source));
         }
     };
 
     key.values()
-        .map_err(|source| {
-            let path = path.clone();
-            RegistryError::EnumerateValues { path, source }
-        })?
+        .context(EnumerateValuesSnafu { path: &path })?
         .map(|(name, value)| {
-            RegisteredFont::from_reg(name, value).map_err(|source| {
-                let path = path.clone();
-                let source = Box::new(source);
-                RegistryError::InvalidEntryFound { path, source }
-            })
+            RegisteredFont::from_reg(name, value).context(InvalidEntryFoundSnafu { path: &path })
         })
         .collect()
 }
@@ -167,27 +154,21 @@ where
     let path = key::package_version(app_id, pkg_id);
 
     match CURRENT_USER.open(&path) {
-        Ok(_) => return Err(RegistryError::PackageKeyAlreadyExists { path }),
+        Ok(_) => return Err(PackageKeyAlreadyExistsSnafu { path }.build()),
         Err(err) if err_is_not_found(&err) => {}
-        Err(source) => return Err(RegistryError::OpenRegistryKey { path, source }),
+        Err(source) => return Err(OpenRegistryKeySnafu { path }.into_error(source)),
     }
 
-    let key = CURRENT_USER.create(&path).map_err(|source| {
-        let path = path.clone();
-        RegistryError::CreateRegistryKey { path, source }
-    })?;
+    let key = CURRENT_USER
+        .create(&path)
+        .context(CreateRegistryKeySnafu { path: &path })?;
 
     for font in fonts {
         let font = font.as_ref();
         key.set_value(font.reg_name(), &font.reg_value())
-            .map_err(|source| {
-                let path = path.clone();
-                let title = font.title().to_string();
-                RegistryError::SetFontValue {
-                    path,
-                    title,
-                    source,
-                }
+            .context(SetFontValueSnafu {
+                path: &path,
+                title: font.title(),
             })?;
     }
 
@@ -201,11 +182,11 @@ pub(crate) fn unregister_package_fonts(
     assert_sandbox_test_only();
     let path = key::package_version(app_id, pkg_id);
 
-    if let Err(err) = CURRENT_USER.remove_tree(&path) {
-        if err_is_not_found(&err) {
+    if let Err(source) = CURRENT_USER.remove_tree(&path) {
+        if err_is_not_found(&source) {
             return Ok(());
         }
-        return Err(RegistryError::RemoveRegistryKey { path, source: err });
+        return Err(RemoveRegistryKeySnafu { path }.into_error(source));
     }
 
     for parent_path in [
@@ -213,11 +194,7 @@ pub(crate) fn unregister_package_fonts(
         key::package_namespace(app_id, pkg_id),
         key::app(app_id),
     ] {
-        remove_key_if_empty(&parent_path).map_err(|source| {
-            let path = parent_path.clone();
-            let source = Box::new(source);
-            RegistryError::PruneEmptyKey { path, source }
-        })?;
+        remove_key_if_empty(&parent_path).context(PruneEmptyKeySnafu { path: &parent_path })?;
     }
 
     Ok(())
@@ -226,21 +203,13 @@ pub(crate) fn unregister_package_fonts(
 fn remove_key_if_empty(path: &str) -> Result<(), RegistryError> {
     let key = match CURRENT_USER.open(path) {
         Ok(key) => key,
-        Err(err) if err_is_not_found(&err) => {
-            return Ok(());
-        }
-        Err(source) => {
-            let path = path.to_owned();
-            return Err(RegistryError::OpenRegistryKey { path, source });
-        }
+        Err(err) if err_is_not_found(&err) => return Ok(()),
+        Err(source) => return Err(OpenRegistryKeySnafu { path }.into_error(source)),
     };
 
     let has_subkeys = key
         .keys()
-        .map_err(|source| {
-            let path = path.to_owned();
-            RegistryError::EnumerateSubkeys { path, source }
-        })?
+        .context(EnumerateSubkeysSnafu { path })?
         .next()
         .is_some();
     if has_subkeys {
@@ -249,36 +218,31 @@ fn remove_key_if_empty(path: &str) -> Result<(), RegistryError> {
 
     let has_values = key
         .values()
-        .map_err(|source| {
-            let path = path.to_owned();
-            RegistryError::EnumerateValues { path, source }
-        })?
+        .context(EnumerateValuesSnafu { path })?
         .next()
         .is_some();
     if has_values {
         return Ok(());
     }
 
-    if let Err(err) = CURRENT_USER.remove_tree(path) {
-        if err_is_not_found(&err) {
+    if let Err(source) = CURRENT_USER.remove_tree(path) {
+        if err_is_not_found(&source) {
             return Ok(());
         }
-        let path = path.to_owned();
-        return Err(RegistryError::RemoveRegistryKey { path, source: err });
+        return Err(RemoveRegistryKeySnafu { path }.into_error(source));
     }
 
     Ok(())
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum RegisteredFontError {
-    #[display("registered font path for `{name}` has invalid value type")]
+    #[snafu(display("registered font path for `{name}` has invalid value type"))]
     InvalidFontPathValueType {
         name: String,
-        #[error(source)]
         source: windows_core::Error,
     },
-    #[display("registered font path for `{name}` is not an absolute path: {path}", path = path.display())]
+    #[snafu(display("registered font path for `{name}` is not an absolute path: {path}", path = path.display()))]
     FontPathIsNotAbsolute { name: String, path: OsString },
 }
 
@@ -315,14 +279,11 @@ impl RegisteredFont {
 
     fn from_reg(reg_name: String, reg_value: Value) -> Result<Self, RegisteredFontError> {
         let path = HSTRING::try_from(reg_value)
-            .map_err(|source| {
-                let name = reg_name.clone();
-                RegisteredFontError::InvalidFontPathValueType { name, source }
-            })?
+            .context(InvalidFontPathValueTypeSnafu { name: &reg_name })?
             .to_os_string();
-        let path = AbsolutePath::new(&path).ok_or_else(|| {
-            let name = reg_name.clone();
-            RegisteredFontError::FontPathIsNotAbsolute { name, path }
+        let path = AbsolutePath::new(&path).context(FontPathIsNotAbsoluteSnafu {
+            name: &reg_name,
+            path: &path,
         })?;
         Ok(Self::new(reg_name, path))
     }

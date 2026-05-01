@@ -1,4 +1,6 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
+
+use snafu::{ResultExt as _, Snafu};
 
 use crate::{
     cli::context::StepContext,
@@ -7,10 +9,7 @@ use crate::{
         registry::{self, RegisteredFont, RegistryError},
         session::{self, SessionError},
     },
-    util::{
-        path::AbsolutePath,
-        reporter::{ReportValue, Step, StepResultErrorExt as _, StepResultWarnExt as _},
-    },
+    util::reporter::{ReportValue, Step, StepResultErrorExt as _, StepResultWarnExt as _},
 };
 
 #[derive(Debug)]
@@ -31,24 +30,17 @@ where
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum RegistrationWarnReport {
-    #[display(
+    #[snafu(display(
         "failed to load font into current session: {path}\nthe font was registered persistently but may not be available until next logon",
         path = path.display()
-    )]
-    LoadFont {
-        path: AbsolutePath,
-        #[error(source)]
-        source: SessionError,
-    },
-    #[display(
+    ))]
+    LoadFont { path: PathBuf, source: SessionError },
+    #[snafu(display(
         "failed to broadcast font change after install\napplications may not see the new font immediately"
-    )]
-    BroadcastFontAfterInstall {
-        #[error(source)]
-        source: SessionError,
-    },
+    ))]
+    BroadcastFontAfterInstall { source: SessionError },
 }
 
 impl From<RegistrationWarnReport> for ReportValue<'static> {
@@ -57,13 +49,10 @@ impl From<RegistrationWarnReport> for ReportValue<'static> {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum RegistrationErrorReport {
-    #[display("failed to register package fonts in the registry")]
-    RegisterFontsInRegistry {
-        #[error(source)]
-        source: RegistryError,
-    },
+    #[snafu(display("failed to register package fonts in the registry"))]
+    RegisterFontsInRegistry { source: RegistryError },
 }
 
 impl From<RegistrationErrorReport> for ReportValue<'static> {
@@ -96,20 +85,17 @@ where
     // warnings emitted by later best-effort steps in this function. Callers should
     // return the error without reporting it again.
     registry::register_package_fonts(cx.app_id(), package.id(), &registered_fonts)
-        .map_err(|source| RegistrationErrorReport::RegisterFontsInRegistry { source })
+        .context(RegisterFontsInRegistrySnafu)
         .report_error(reporter)?;
 
     for entry in &registered_fonts {
         session::load_font(entry.path())
-            .map_err(|source| {
-                let path = entry.path().clone();
-                RegistrationWarnReport::LoadFont { path, source }
-            })
+            .context(LoadFontSnafu { path: entry.path() })
             .report_warn(reporter);
     }
 
     session::broadcast_font_change()
-        .map_err(|source| RegistrationWarnReport::BroadcastFontAfterInstall { source })
+        .context(BroadcastFontAfterInstallSnafu)
         .report_warn(reporter);
 
     Ok(())

@@ -1,5 +1,7 @@
 use std::{fmt::Display, str::FromStr};
 
+use snafu::{ResultExt as _, Snafu};
+
 use crate::package::{
     PackageId, PackageName, PackageQualifiedName, ParsePackageIdError, ParsePackageNameError,
     ParsePackageQualifiedNameError,
@@ -12,24 +14,17 @@ pub(crate) enum PackageSpec {
     Id(PackageId),
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 #[expect(clippy::enum_variant_names)]
 pub(crate) enum ParsePackageSpecError {
-    #[display("invalid qualified name in package specifier")]
+    #[snafu(display("invalid qualified name in package specifier"))]
     InvalidQualifiedName {
-        #[error(source)]
         source: ParsePackageQualifiedNameError,
     },
-    #[display("invalid name in package specifier")]
-    InvalidName {
-        #[error(source)]
-        source: ParsePackageNameError,
-    },
-    #[display("invalid ID in package specifier")]
-    InvalidId {
-        #[error(source)]
-        source: ParsePackageIdError,
-    },
+    #[snafu(display("invalid name in package specifier"))]
+    InvalidName { source: ParsePackageNameError },
+    #[snafu(display("invalid ID in package specifier"))]
+    InvalidId { source: ParsePackageIdError },
 }
 
 impl FromStr for PackageSpec {
@@ -37,20 +32,14 @@ impl FromStr for PackageSpec {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.contains('@') {
-            let id = s
-                .parse()
-                .map_err(|source| ParsePackageSpecError::InvalidId { source })?;
+            let id = s.parse().context(InvalidIdSnafu)?;
             return Ok(Self::Id(id));
         }
         if s.contains('/') {
-            let qualified_name = s
-                .parse()
-                .map_err(|source| ParsePackageSpecError::InvalidQualifiedName { source })?;
+            let qualified_name = s.parse().context(InvalidQualifiedNameSnafu)?;
             return Ok(Self::QualifiedName(qualified_name));
         }
-        let name = s
-            .parse()
-            .map_err(|source| ParsePackageSpecError::InvalidName { source })?;
+        let name = s.parse().context(InvalidNameSnafu)?;
         Ok(Self::Name(name))
     }
 }
@@ -62,5 +51,11 @@ impl Display for PackageSpec {
             Self::QualifiedName(qualified_name) => qualified_name.fmt(f),
             Self::Id(id) => id.fmt(f),
         }
+    }
+}
+
+impl From<&PackageSpec> for PackageSpec {
+    fn from(spec: &PackageSpec) -> Self {
+        spec.clone()
     }
 }

@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
 
+use snafu::ResultExt as _;
+
 use crate::{
     cli::context::StepContext,
     command::{
         InstallError,
-        install::{InstallErrorReport, InstallStep},
+        install::{InstallStep, SaveDatabaseSnafu},
     },
     db::{BeginInstallResult, PackageDatabase},
     package::{PackageId, PackageManifest, PackageVersion},
@@ -54,7 +56,7 @@ pub(in crate::command::install) fn begin_install<'db>(
 
 fn save(cx: &StepContext<InstallStep>, db: &mut PackageDatabase<'_>) -> Result<(), InstallError> {
     db.save()
-        .map_err(|source| InstallErrorReport::SaveDatabase { source })
+        .context(SaveDatabaseSnafu)
         .report_error(cx.reporter())?;
     Ok(())
 }

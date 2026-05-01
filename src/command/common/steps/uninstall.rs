@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use snafu::{ResultExt as _, Snafu};
+
 use crate::{
     cli::context::StepContext,
     db::{BeginUninstallResult, PackageDatabase, PackageDatabaseError},
@@ -29,23 +31,16 @@ where
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum UninstallTxErrorReport {
-    #[display("resolved package not found in database: {pkg_id}")]
+    #[snafu(display("resolved package not found in database: {pkg_id}"))]
     ResolvedPackageNotFound { pkg_id: PackageId },
-    #[display("failed to save package database")]
-    SaveDatabase {
-        #[error(source)]
-        source: PackageDatabaseError,
-    },
-    #[display(
+    #[snafu(display("failed to save package database"))]
+    SaveDatabase { source: PackageDatabaseError },
+    #[snafu(display(
         "failed to remove package files for package {pkg_id}\nmanual cleanup may be required"
-    )]
-    RemovePackageFiles {
-        pkg_id: PackageId,
-        #[error(source)]
-        source: FsError,
-    },
+    ))]
+    RemovePackageFiles { pkg_id: PackageId, source: FsError },
 }
 
 impl From<UninstallTxErrorReport> for ReportValue<'static> {
@@ -73,10 +68,7 @@ where
     match db.begin_uninstall(pkg_id) {
         BeginUninstallResult::CanUninstall => {}
         BeginUninstallResult::NotFound => {
-            return Err(reporter.report_error({
-                let pkg_id = pkg_id.clone();
-                UninstallTxErrorReport::ResolvedPackageNotFound { pkg_id }
-            }));
+            return Err(reporter.report_error(ResolvedPackageNotFoundSnafu { pkg_id }.build()));
         }
     }
     save(&cx, db)?;
@@ -85,10 +77,7 @@ where
 
     let pkg_dirs = PackageDirs::new(cx.app_dirs(), pkg_id);
     package::remove_package_dirs(&pkg_dirs)
-        .map_err(|source| {
-            let pkg_id = pkg_id.clone();
-            UninstallTxErrorReport::RemovePackageFiles { pkg_id, source }
-        })
+        .context(RemovePackageFilesSnafu { pkg_id })
         .report_error(reporter)?;
 
     // `begin_uninstall` succeeded and the uninstall side effects completed just above, so
@@ -108,7 +97,7 @@ where
     S: Step,
 {
     db.save()
-        .map_err(|source| UninstallTxErrorReport::SaveDatabase { source })
+        .context(SaveDatabaseSnafu)
         .report_error(cx.reporter())?;
     Ok(())
 }

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use snafu::{ResultExt as _, Snafu};
 use windows::Win32::{
     Foundation::{LPARAM, WPARAM},
     Graphics::Gdi,
@@ -7,15 +8,12 @@ use windows::Win32::{
 };
 use windows_core::HSTRING;
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum SessionError {
-    #[display("failed to load font into current session: {path}", path = path.display())]
+    #[snafu(display("failed to load font into current session: {path}", path = path.display()))]
     LoadFont { path: PathBuf },
-    #[display("failed to broadcast font change")]
-    BroadcastFontChange {
-        #[error(source)]
-        source: windows_core::Error,
-    },
+    #[snafu(display("failed to broadcast font change"))]
+    BroadcastFontChange { source: windows_core::Error },
 }
 
 pub(crate) fn load_font<P>(font_path: P) -> Result<(), SessionError>
@@ -26,10 +24,7 @@ where
     // SAFETY: This is an unsafe FFI call. We pass a valid path pointer derived from a temporary
     // UTF-16 string that is kept alive for the duration of the call.
     let added = unsafe { Gdi::AddFontResourceW(&HSTRING::from(font_path)) };
-    if added == 0 {
-        let path = font_path.to_owned();
-        return Err(SessionError::LoadFont { path });
-    }
+    snafu::ensure!(added > 0, LoadFontSnafu { path: font_path });
     Ok(())
 }
 
@@ -55,5 +50,5 @@ pub(crate) fn broadcast_font_change() -> Result<(), SessionError> {
     unsafe {
         WindowsAndMessaging::SendNotifyMessageW(HWND_BROADCAST, WM_FONTCHANGE, WPARAM(0), LPARAM(0))
     }
-    .map_err(|source| SessionError::BroadcastFontChange { source })
+    .context(BroadcastFontChangeSnafu)
 }

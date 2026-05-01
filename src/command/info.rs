@@ -1,5 +1,7 @@
 use std::io;
 
+use snafu::{ResultExt as _, Snafu};
+
 use crate::{
     cli::context::RootContext,
     command::common,
@@ -20,15 +22,12 @@ impl Step for InfoStep {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum InfoErrorReport {
-    #[display("no package matches the specified package `{pkg_spec}`")]
+    #[snafu(display("no package matches the specified package `{pkg_spec}`"))]
     NoMatchingPackage { pkg_spec: PackageSpec },
-    #[display("failed to write package info to stdout")]
-    WriteInfo {
-        #[error(source)]
-        source: io::Error,
-    },
+    #[snafu(display("failed to write package info to stdout"))]
+    WriteInfo { source: io::Error },
 }
 
 impl From<InfoErrorReport> for ReportValue<'static> {
@@ -37,9 +36,9 @@ impl From<InfoErrorReport> for ReportValue<'static> {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum InfoError {
-    #[display("failed to print package information")]
+    #[snafu(display("failed to print package information"))]
     Failed,
 }
 
@@ -51,13 +50,11 @@ pub(crate) fn info_package(cx: &RootContext, pkg_spec: &PackageSpec) -> Result<(
     let db = common::steps::load_database(&cx, &mut db_lock_file)?;
 
     let Some((state, manifest)) = common::steps::resolve_spec_in_db(&cx, &db, pkg_spec)? else {
-        return Err(reporter.report_error(InfoErrorReport::NoMatchingPackage {
-            pkg_spec: pkg_spec.clone(),
-        }));
+        return Err(reporter.report_error(NoMatchingPackageSnafu { pkg_spec }.build()));
     };
 
     render_package_info(io::stdout().lock(), state, manifest)
-        .map_err(|source| InfoErrorReport::WriteInfo { source })
+        .context(WriteInfoSnafu)
         .report_error(reporter)?;
 
     Ok(())

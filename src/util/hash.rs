@@ -2,6 +2,7 @@ use std::{fmt::Display, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
+use snafu::{ResultExt as _, Snafu};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum GenericDigest {
@@ -24,16 +25,13 @@ impl Display for GenericDigest {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum GenericDigestParseError {
-    #[display("invalid sha256 digest")]
-    Sha256 {
-        #[error(source)]
-        source: Sha256DigestParseError,
-    },
-    #[display("unsupported digest algorithm: `{algorithm}`")]
+    #[snafu(display("invalid sha256 digest"))]
+    Sha256 { source: Sha256DigestParseError },
+    #[snafu(display("unsupported digest algorithm: `{algorithm}`"))]
     NotSupported { algorithm: String },
-    #[display("missing algorithm prefix in digest string")]
+    #[snafu(display("missing algorithm prefix in digest string"))]
     NoAlgorithmPrefix,
 }
 
@@ -42,17 +40,14 @@ impl FromStr for GenericDigest {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let Some((algorithm, body)) = s.split_once(':') else {
-            return Err(Self::Err::NoAlgorithmPrefix);
+            return Err(NoAlgorithmPrefixSnafu.build());
         };
         match algorithm {
             "sha256" => {
-                let digest = Sha256Digest::from_str(body)
-                    .map_err(|source| GenericDigestParseError::Sha256 { source })?;
+                let digest = Sha256Digest::from_str(body).context(Sha256Snafu)?;
                 Ok(Self::Sha256(digest))
             }
-            _ => Err(GenericDigestParseError::NotSupported {
-                algorithm: algorithm.to_string(),
-            }),
+            _ => Err(NotSupportedSnafu { algorithm }.build()),
         }
     }
 }
@@ -116,11 +111,11 @@ impl Sha256Digest {
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 pub(crate) enum Sha256DigestParseError {
-    #[display("invalid length for sha256 digest: {length}")]
+    #[snafu(display("invalid length for sha256 digest: {length}"))]
     InvalidLength { length: usize },
-    #[display("invalid character in sha256 digest: `{ch:?}`")]
+    #[snafu(display("invalid character in sha256 digest: `{ch:?}`"))]
     InvalidCharacter { ch: char },
 }
 
@@ -129,20 +124,20 @@ impl FromStr for Sha256Digest {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.len() != 64 {
-            return Err(Self::Err::InvalidLength { length: s.len() });
+            return Err(InvalidLengthSnafu { length: s.len() }.build());
         }
 
         let mut chars = s.chars();
         let mut bytes = [0; 32];
         for byte in &mut bytes {
             let (Some(c1), Some(c2)) = (chars.next(), chars.next()) else {
-                return Err(Self::Err::InvalidLength { length: s.len() });
+                return Err(InvalidLengthSnafu { length: s.len() }.build());
             };
             let Some(h1) = c1.to_digit(16) else {
-                return Err(Self::Err::InvalidCharacter { ch: c1 });
+                return Err(InvalidCharacterSnafu { ch: c1 }.build());
             };
             let Some(h2) = c2.to_digit(16) else {
-                return Err(Self::Err::InvalidCharacter { ch: c2 });
+                return Err(InvalidCharacterSnafu { ch: c2 }.build());
             };
             *byte = u8::try_from(h1 << 4 | h2).unwrap();
         }

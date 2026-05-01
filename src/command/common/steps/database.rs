@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use snafu::{IntoError as _, ResultExt as _, Snafu};
+
 use crate::{
     cli::context::StepContext,
     db::{DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError},
@@ -24,28 +26,16 @@ where
     }
 }
 
-#[derive(Debug, derive_more::Display, derive_more::Error)]
+#[derive(Debug, Snafu)]
 enum DatabaseLoadErrorReport {
-    #[display("failed to open database lock file")]
-    OpenDbLockFile {
-        #[error(source)]
-        source: DbLockFileError,
-    },
-    #[display("another operation is already in progress")]
-    DbAlreadyLocked {
-        #[error(source)]
-        source: DbLockFileError,
-    },
-    #[display("failed to acquire database lock")]
-    AcquireDbLock {
-        #[error(source)]
-        source: DbLockFileError,
-    },
-    #[display("failed to load package database")]
-    LoadDatabase {
-        #[error(source)]
-        source: PackageDatabaseError,
-    },
+    #[snafu(display("failed to open database lock file"))]
+    OpenDbLockFile { source: DbLockFileError },
+    #[snafu(display("another operation is already in progress"))]
+    DbAlreadyLocked { source: DbLockFileError },
+    #[snafu(display("failed to acquire database lock"))]
+    AcquireDbLock { source: DbLockFileError },
+    #[snafu(display("failed to load package database"))]
+    LoadDatabase { source: PackageDatabaseError },
 }
 
 impl From<DatabaseLoadErrorReport> for ReportValue<'static> {
@@ -63,7 +53,7 @@ where
     });
 
     DbLockFile::open(cx.app_dirs())
-        .map_err(|source| DatabaseLoadErrorReport::OpenDbLockFile { source })
+        .context(OpenDbLockFileSnafu)
         .report_error(cx.reporter())
 }
 
@@ -81,14 +71,12 @@ where
     let lock_file_guard = lock_file
         .try_acquire()
         .map_err(|source| match source {
-            DbLockFileError::AlreadyLocked { .. } => {
-                DatabaseLoadErrorReport::DbAlreadyLocked { source }
-            }
-            _ => DatabaseLoadErrorReport::AcquireDbLock { source },
+            DbLockFileError::AlreadyLocked { .. } => DbAlreadyLockedSnafu.into_error(source),
+            _ => AcquireDbLockSnafu.into_error(source),
         })
         .report_error(cx.reporter())?;
     let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard)
-        .map_err(|source| DatabaseLoadErrorReport::LoadDatabase { source })
+        .context(LoadDatabaseSnafu)
         .report_error(cx.reporter())?;
     Ok(db)
 }
