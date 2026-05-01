@@ -59,9 +59,8 @@ impl DbLockFile {
 
 #[cfg(test)]
 mod tests {
-    use crate::util::testing;
-
     use super::*;
+    use crate::util::testing;
 
     #[test]
     fn try_acquire_returns_already_locked_when_lock_is_already_held() {

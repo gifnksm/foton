@@ -78,9 +78,8 @@ pub(crate) fn remove_package_dirs(pkg_dirs: &PackageDirs) -> Result<(), FsError>
 mod tests {
     use std::{fs, sync::LazyLock};
 
-    use crate::util::testing;
-
     use super::*;
+    use crate::util::testing;
 
     static PKG_ID: LazyLock<PackageId> =
         LazyLock::new(|| "example-namespace/example-font@0.1.0".parse().unwrap());

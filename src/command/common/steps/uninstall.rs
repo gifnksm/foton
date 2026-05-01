@@ -121,6 +121,7 @@ mod tests {
         },
     };
 
+    use super::*;
     use crate::{
         cli::reporter::RootReportScope as _,
         command::common,
@@ -128,8 +129,6 @@ mod tests {
         package::{PackageId, PackageState},
         util::testing::{self, TempdirContext, TestScope},
     };
-
-    use super::*;
 
     fn test_app_id() -> String {
         static TEST_ID: AtomicUsize = AtomicUsize::new(0);

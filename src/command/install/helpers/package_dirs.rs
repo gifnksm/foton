@@ -141,13 +141,12 @@ where
 mod tests {
     use std::{fs, sync::LazyLock};
 
+    use super::*;
     use crate::{
         cli::reporter::RootReportScope as _,
         package::PackageId,
         util::testing::{TempdirContext, TestScope},
     };
-
-    use super::*;
 
     static PKG_ID: LazyLock<PackageId> =
         LazyLock::new(|| "example-namespace/example-font@0.1.0".parse().unwrap());

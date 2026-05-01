@@ -5,6 +5,7 @@ use git2::{
 use snafu::ResultExt as _;
 use url::Url;
 
+use super::FetchRegistryError;
 use crate::{
     registry::{
         RegistryId, RegistryIndex,
@@ -15,8 +16,6 @@ use crate::{
     },
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
-
-use super::FetchRegistryError;
 
 pub(in crate::registry) fn fetch_registry(
     app_dirs: &AppDirs,

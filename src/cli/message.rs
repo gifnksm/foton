@@ -24,11 +24,11 @@ macro_rules! _message_warn {
     };
 }
 
+pub(crate) use _message_error as error;
+pub(crate) use _message_info as info;
+pub(crate) use _message_scope as scope;
+pub(crate) use _message_warn as warn;
 use console::Style;
-
-pub(crate) use {
-    _message_error as error, _message_info as info, _message_scope as scope, _message_warn as warn,
-};
 
 const SCOPE_PREFIX_STYLE: Style = Style::new().blue().bold();
 const SCOPE_BODY_STYLE: Style = Style::new().bold();

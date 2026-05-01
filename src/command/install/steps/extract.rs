@@ -185,12 +185,11 @@ fn extract_archive_impl(
 mod tests {
     use std::io::Seek as _;
 
-    use crate::cli::config::InstallConfig;
-
-    use super::*;
-
     use tempfile::TempDir;
     use zip::{ZipWriter, write::SimpleFileOptions};
+
+    use super::*;
+    use crate::cli::config::InstallConfig;
 
     fn build_zip(entries: &[(&str, &[u8])]) -> File {
         let mut file = tempfile::tempfile().unwrap();

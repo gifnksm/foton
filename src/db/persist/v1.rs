@@ -1,9 +1,8 @@
 use serde_json::value::RawValue;
 use snafu::ResultExt as _;
 
-use crate::db::persist::{DeserializePayloadSnafu, SerializePayloadSnafu};
-
 use super::PersistError;
+use crate::db::persist::{DeserializePayloadSnafu, SerializePayloadSnafu};
 
 pub(in crate::db::persist) const VERSION: u32 = 1;
 

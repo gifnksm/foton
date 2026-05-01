@@ -81,9 +81,8 @@ pub(crate) fn load_config(app_dirs: &AppDirs) -> Result<FotonConfig, ConfigError
 mod tests {
     use std::fs;
 
-    use crate::util::testing;
-
     use super::*;
+    use crate::util::testing;
 
     #[test]
     fn load_config_returns_default_when_file_does_not_exist() {

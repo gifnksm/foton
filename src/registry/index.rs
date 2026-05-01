@@ -280,9 +280,8 @@ fn check_dir_presence(path: &Path) -> Result<DirPresence, RegistryIndexError> {
 mod tests {
     use std::fs;
 
-    use crate::util::testing;
-
     use super::*;
+    use crate::util::testing;
 
     fn write_manifest(root: &Path, namespace: &str, name: &str, version: &str) {
         write_manifest_str(

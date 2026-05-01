@@ -8,10 +8,13 @@ use snafu::{ResultExt as _, Snafu};
 use tokio::io::{AsyncSeekExt as _, AsyncWriteExt as _};
 
 use crate::{
-    cli::reporter::{
-        NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
+    cli::{
+        config::FotonConfig,
+        context::ReportContext,
+        reporter::{
+            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
+        },
     },
-    cli::{config::FotonConfig, context::ReportContext},
     package::{PackageId, PackageSource},
     util::hash::{GenericDigest, GenericHasher},
 };
@@ -172,9 +175,8 @@ mod tests {
     use indicatif::ProgressBar;
     use sha2::{Digest as _, Sha256};
 
-    use crate::cli::config::InstallConfig;
-
     use super::*;
+    use crate::cli::config::InstallConfig;
 
     #[tokio::test]
     async fn stream_archive_to_tempfile_rejects_download_size_exceeding_limit() {

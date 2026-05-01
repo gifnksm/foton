@@ -92,14 +92,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{
         cli::reporter::RootReportScope as _,
         command::common,
         db::BeginInstallResult,
         util::testing::{self, TempdirContext, TestError, TestScope},
     };
-
-    use super::*;
 
     #[test]
     fn resolve_spec_in_db_returns_none_for_missing_specs() {

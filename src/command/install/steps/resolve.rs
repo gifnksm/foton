@@ -112,12 +112,11 @@ mod tests {
 
     use tempfile::TempDir;
 
+    use super::*;
     use crate::{
         cli::reporter::RootReportScope as _,
         util::testing::{self, TempdirContext, TestError, TestScope},
     };
-
-    use super::*;
 
     fn write_manifest(root: &Path, namespace: &str, name: &str, version: &str) {
         let dir = root.join(namespace).join(name).join(version);
