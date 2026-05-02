@@ -42,8 +42,12 @@ where
 #[derive(Debug, Snafu)]
 enum DbResolveErrorReport {
     #[snafu(display(
-        "multiple packages match the specified package `{pkg_spec}`:\n{pkg_ids}",
-        pkg_ids = BulletList(pkg_ids)
+        concat!(
+            "multiple packages match the specified package `{pkg_spec}`:\n",
+            "{pkg_ids}",
+        ),
+        pkg_spec = pkg_spec,
+        pkg_ids = BulletList(pkg_ids),
     ))]
     MultipleMatchingPackages {
         pkg_spec: PackageSpec,

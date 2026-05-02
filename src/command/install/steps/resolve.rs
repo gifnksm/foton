@@ -49,8 +49,13 @@ enum ResolveErrorReport {
         source: RegistryIndexError,
     },
     #[snafu(display(
-        "multiple packages match the specified package `{pkg_spec}`:\n{pkg_ids}\nspecify one of the matching package IDs listed above explicitly to disambiguate",
-        pkg_ids = BulletList(&pkg_ids.iter().map(|(registry, id)| format!("{id} (in {registry})")).collect::<Vec<_>>())
+        concat!(
+            "multiple packages match the specified package `{pkg_spec}`:\n",
+            "{pkg_ids}\n",
+            "specify one of the matching package IDs listed above explicitly to disambiguate",
+        ),
+        pkg_spec = pkg_spec,
+        pkg_ids = BulletList(&pkg_ids.iter().map(|(registry, id)| format!("{id} (in {registry})")).collect::<Vec<_>>()),
     ))]
     MultipleMatchingPackages {
         pkg_spec: PackageSpec,

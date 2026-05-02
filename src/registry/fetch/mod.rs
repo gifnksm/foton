@@ -30,8 +30,12 @@ pub(crate) enum FetchRegistryError {
     #[snafu(display("registry `{id}` has uncommitted changes: {path}", path = path.display()))]
     GitUncommittedChanges { id: RegistryId, path: PathBuf },
     #[snafu(display(
-        "registry `{id}` has a different remote URL configured than the cached repository: {path}\nremove the cached registry directory and retry",
-        path = path.display()
+        concat!(
+            "registry `{id}` has a different remote URL configured than the cached repository: {path}\n",
+            "remove the cached registry directory and retry",
+        ),
+        id = id,
+        path = path.display(),
     ))]
     GitRemoteUrlMismatch { id: RegistryId, path: PathBuf },
 }

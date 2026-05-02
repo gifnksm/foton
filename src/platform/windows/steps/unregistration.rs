@@ -49,7 +49,10 @@ enum UnregistrationWarnReport {
     #[snafu(display("failed to list registered package fonts for the package"))]
     ListInstalledFonts { source: RegistryError },
     #[snafu(display(
-        "failed to broadcast font change after uninstall\napplications may continue to use stale font information until refresh"
+        concat!(
+            "failed to broadcast font change after uninstall\n",
+            "applications may continue to use stale font information until refresh",
+        )
     ))]
     BroadcastFontAfterUninstall { source: SessionError },
 }
