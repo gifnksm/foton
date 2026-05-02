@@ -1,4 +1,7 @@
-use std::collections::BTreeSet;
+use std::{
+    collections::BTreeSet,
+    sync::{Arc, Mutex},
+};
 
 use snafu::{OptionExt as _, ResultExt as _, Snafu};
 
@@ -104,8 +107,9 @@ pub(crate) async fn install_package(
 
     let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
     let db = common::steps::load_database(&cx, &mut db_lock_file)?;
+    let db = Arc::new(Mutex::new(db));
 
-    let Some(db) = begin_install(&cx, db, &manifest)? else {
+    let Some(db) = begin_install(&cx, &db, &manifest)? else {
         return Ok(());
     };
 
@@ -155,25 +159,25 @@ fn resolve_registries<'a>(
 
 fn begin_install<'db>(
     cx: &ReportContext<InstallScope>,
-    mut db: PackageDatabase<'db>,
+    db: &Arc<Mutex<PackageDatabase<'db>>>,
     manifest: &PackageManifest,
 ) -> Result<Option<DbGuard<'db, InstallScope>>, InstallError> {
     let reporter = cx.reporter();
     let qualified_name = &manifest.metadata.qualified_name;
     loop {
-        let cleanup_versions = match helpers::begin_install(cx, db, manifest)? {
+        let cleanup_versions = match helpers::begin_install(cx, Arc::clone(db), manifest)? {
             BeginInstallTxResult::CanInstall(db) => return Ok(Some(db)),
-            BeginInstallTxResult::AlreadyInstalled(_db) => {
+            BeginInstallTxResult::AlreadyInstalled => {
                 reporter.report_info(format_args!("package is already installed, skipping"));
                 return Ok(None);
             }
-            BeginInstallTxResult::OtherVersionInstalled(_db, version) => {
+            BeginInstallTxResult::OtherVersionInstalled(version) => {
                 reporter.report_info(format_args!(
                     "another version of the package is already installed (version {version}), skipping"
                 ));
                 return Ok(None);
             }
-            BeginInstallTxResult::PendingInstallFound(returned_db, versions) => {
+            BeginInstallTxResult::PendingInstallFound(versions) => {
                 let bl = BulletList(
                     &versions
                         .iter()
@@ -183,10 +187,9 @@ fn begin_install<'db>(
                 reporter.report_info(
                     format_args!("pending installation detected, uninstalling following packages before continuing:\n{bl}")
                 );
-                db = returned_db;
                 versions
             }
-            BeginInstallTxResult::PendingUninstallFound(returned_db, versions) => {
+            BeginInstallTxResult::PendingUninstallFound(versions) => {
                 let bl = BulletList(
                     &versions
                         .iter()
@@ -196,14 +199,13 @@ fn begin_install<'db>(
                 reporter.report_info(format_args!(
                     "pending uninstallation detected, uninstalling following packages before continuing:\n{bl}"
                 ));
-                db = returned_db;
                 versions
             }
         };
 
         for version in cleanup_versions {
             let uninstall_pkg_id = PackageId::new(qualified_name.clone(), version);
-            common::steps::uninstall_transaction(cx, &mut db, &uninstall_pkg_id)?;
+            common::steps::uninstall_transaction(cx, db, &uninstall_pkg_id)?;
         }
     }
 }
