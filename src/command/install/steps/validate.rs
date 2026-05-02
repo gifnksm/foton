@@ -50,8 +50,11 @@ enum ValidationWarnReport {
     #[snafu(display("removing unsupported font file: {path}", path = path.display()))]
     RemovingUnsupportedFontFile { path: PathBuf },
     #[snafu(display(
-        "failed to remove unsupported font file: {path}\nmanual cleanup may be required",
-        path = path.display()
+        concat!(
+            "failed to remove unsupported font file: {path}\n",
+            "manual cleanup may be required",
+        ),
+        path = path.display(),
     ))]
     RemoveUnsupportedFontFile {
         path: PathBuf,

@@ -44,7 +44,10 @@ where
 #[derive(Debug, Snafu)]
 enum PackageDirWarnReport {
     #[snafu(display(
-        "failed to remove package directory after install failure\nmanual cleanup may be required"
+        concat!(
+            "failed to remove package directory after install failure\n",
+            "manual cleanup may be required",
+        )
     ))]
     RemovePackageDirectoryAfterInstallFailure { source: FsError },
 }

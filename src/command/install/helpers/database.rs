@@ -57,10 +57,11 @@ enum BeginInstallErrorReport {
         source: PackageDatabaseError,
     },
     #[snafu(display(
-        "\
-        failed to roll back install transaction for package {pkg_id}\n\
-        manual database cleanup may be required\
-        "
+        concat!(
+            "failed to roll back install transaction for package {pkg_id}\n",
+            "manual database cleanup may be required"
+        ),
+        pkg_id = pkg_id,
     ))]
     CancelInstall {
         pkg_id: PackageId,

@@ -45,8 +45,13 @@ impl RootReportScope for InstallScope {
 #[derive(Debug, Snafu)]
 enum InstallErrorReport {
     #[snafu(display(
-        "specified registry `{reg_id}` not found in configuration\navailable registries:\n{registry_ids}",
-        registry_ids = BulletList(registry_ids)
+        concat!(
+            "specified registry `{reg_id}` not found in configuration\n",
+            "available registries:\n",
+            "{registry_ids}",
+        ),
+        reg_id = reg_id,
+        registry_ids = BulletList(registry_ids),
     ))]
     RegistryNotFound {
         reg_id: RegistryId,
@@ -184,9 +189,13 @@ fn begin_install<'db>(
                         .map(|version| format!("{qualified_name}@{version}"))
                         .collect::<Vec<_>>(),
                 );
-                reporter.report_info(
-                    format_args!("pending installation detected, uninstalling following packages before continuing:\n{bl}")
-                );
+                reporter.report_info(format_args!(
+                    concat!(
+                        "pending installation detected, uninstalling following packages before continuing:\n",
+                        "{bl}",
+                    ),
+                    bl = bl,
+                ));
                 versions
             }
             BeginInstallTxResult::PendingUninstallFound(versions) => {
@@ -197,7 +206,11 @@ fn begin_install<'db>(
                         .collect::<Vec<_>>(),
                 );
                 reporter.report_info(format_args!(
-                    "pending uninstallation detected, uninstalling following packages before continuing:\n{bl}"
+                    concat!(
+                        "pending uninstallation detected, uninstalling following packages before continuing:\n",
+                        "{bl}",
+                    ),
+                    bl = bl,
                 ));
                 versions
             }

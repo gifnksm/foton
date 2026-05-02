@@ -47,7 +47,11 @@ enum UninstallTxErrorReport {
     #[snafu(display("resolved package not found in database: {pkg_id}"))]
     ResolvedPackageNotFound { pkg_id: PackageId },
     #[snafu(display(
-        "failed to remove package files for package {pkg_id}\nmanual cleanup may be required"
+        concat!(
+            "failed to remove package files for package {pkg_id}\n",
+            "manual cleanup may be required",
+        ),
+        pkg_id = pkg_id,
     ))]
     RemovePackageFiles { pkg_id: PackageId, source: FsError },
     #[snafu(display("failed to begin uninstall transaction for package {pkg_id}"))]
@@ -56,11 +60,12 @@ enum UninstallTxErrorReport {
         source: PackageDatabaseError,
     },
     #[snafu(display(
-        "\
-        failed to finalize uninstall transaction for package {pkg_id}\n\
-        font unregistration and package file removal may already have been applied\n\
-        rerunning the uninstall command or manual database cleanup may be required\
-        "
+        concat!(
+            "failed to finalize uninstall transaction for package {pkg_id}\n",
+            "font unregistration and package file removal may already have been applied\n",
+            "rerunning the uninstall command or manual database cleanup may be required"
+        ),
+        pkg_id = pkg_id,
     ))]
     CompleteUninstall {
         pkg_id: PackageId,

@@ -47,12 +47,18 @@ where
 #[derive(Debug, Snafu)]
 enum RegistrationWarnReport {
     #[snafu(display(
-        "failed to load font into current session: {path}\nthe font was registered persistently but may not be available until next logon",
-        path = path.display()
+        concat!(
+            "failed to load font into current session: {path}\n",
+            "the font was registered persistently but may not be available until next logon",
+        ),
+        path = path.display(),
     ))]
     LoadFont { path: PathBuf, source: SessionError },
     #[snafu(display(
-        "failed to broadcast font change after install\napplications may not see the new font immediately"
+        concat!(
+            "failed to broadcast font change after install\n",
+            "applications may not see the new font immediately"
+        ),
     ))]
     BroadcastFontAfterInstall { source: SessionError },
 }
