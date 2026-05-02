@@ -2,11 +2,11 @@ use snafu::Snafu;
 
 use crate::{
     cli::{
+        args::UninstallArgs,
         context::RootContext,
         reporter::{NeverReport, ReportScope, RootReportScope},
     },
     command::common,
-    package::PackageSpec,
 };
 
 #[derive(Debug)]
@@ -36,23 +36,31 @@ pub(crate) enum UninstallError {
 
 pub(crate) fn uninstall_package(
     cx: &RootContext,
-    pkg_spec: &PackageSpec,
+    args: &UninstallArgs,
 ) -> Result<(), UninstallError> {
-    let cx = UninstallScope::start_with_report(cx, format_args!("Uninstalling {pkg_spec}..."));
+    let UninstallArgs { pkg_specs } = args;
+
+    let cx = UninstallScope::start_with_report(
+        cx,
+        format_args!("Uninstalling {} package(s)...", pkg_specs.len()),
+    );
     let reporter = cx.reporter();
 
     let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
     let mut db = common::steps::load_database(&cx, &mut db_lock_file)?;
 
-    let Some((_state, manifest)) = common::steps::resolve_spec_in_db(&cx, &db, pkg_spec)? else {
-        reporter.report_info(format_args!(
-            "no package matches the specified package `{pkg_spec}`; nothing to do"
-        ));
-        return Ok(());
-    };
+    for pkg_spec in pkg_specs {
+        let Some((_state, manifest)) = common::steps::resolve_spec_in_db(&cx, &db, pkg_spec)?
+        else {
+            reporter.report_info(format_args!(
+                "no package matches the specified package `{pkg_spec}`; nothing to do"
+            ));
+            continue;
+        };
 
-    let pkg_id = manifest.metadata.id();
-    common::steps::uninstall_transaction(&cx, &mut db, &pkg_id)?;
+        let pkg_id = manifest.metadata.id();
+        common::steps::uninstall_transaction(&cx, &mut db, &pkg_id)?;
+    }
 
     Ok(())
 }

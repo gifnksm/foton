@@ -14,7 +14,8 @@ use crate::{
         persist::{self, PersistError, PersistedPackageDb, PersistedPackageEntry},
     },
     package::{
-        PackageId, PackageManifest, PackageName, PackageQualifiedName, PackageState, PackageVersion,
+        PackageId, PackageManifest, PackageName, PackageQualifiedName, PackageSpec, PackageState,
+        PackageVersion,
     },
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
@@ -112,10 +113,23 @@ impl<'a> PackageDatabase<'a> {
             .map(|entry| (entry.state, &entry.manifest))
     }
 
+    pub(crate) fn entries_by_spec(
+        &'a self,
+        pkg_spec: &PackageSpec,
+    ) -> Box<dyn Iterator<Item = (PackageState, &'a PackageManifest)> + 'a> {
+        match pkg_spec {
+            PackageSpec::Id(id) => Box::new(self.entry_by_id(id).into_iter()),
+            PackageSpec::QualifiedName(qualified_name) => {
+                Box::new(self.entries_by_qualified_name(qualified_name))
+            }
+            PackageSpec::Name(name) => Box::new(self.entries_by_name(name)),
+        }
+    }
+
     pub(crate) fn entry_by_id(
-        &self,
+        &'a self,
         pkg_id: &PackageId,
-    ) -> Option<(PackageState, &PackageManifest)> {
+    ) -> Option<(PackageState, &'a PackageManifest)> {
         self.persist_db
             .packages
             .get(pkg_id.qualified_name())
@@ -124,9 +138,9 @@ impl<'a> PackageDatabase<'a> {
     }
 
     pub(crate) fn entries_by_qualified_name(
-        &self,
+        &'a self,
         pkg_name: &PackageQualifiedName,
-    ) -> impl Iterator<Item = (PackageState, &PackageManifest)> {
+    ) -> impl Iterator<Item = (PackageState, &'a PackageManifest)> + 'a {
         self.persist_db
             .packages
             .get(pkg_name)
@@ -140,9 +154,10 @@ impl<'a> PackageDatabase<'a> {
     }
 
     pub(crate) fn entries_by_name(
-        &self,
+        &'a self,
         pkg_name: &PackageName,
-    ) -> impl Iterator<Item = (PackageState, &PackageManifest)> {
+    ) -> impl Iterator<Item = (PackageState, &'a PackageManifest)> + 'a {
+        let pkg_name = pkg_name.clone();
         self.persist_db
             .packages
             .iter()

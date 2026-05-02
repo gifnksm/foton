@@ -33,9 +33,9 @@ pub(crate) struct InstallArgs {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct UninstallArgs {
-    /// Package specifier: name, qualified name, or package ID.
-    #[clap(value_name = "PKG_SPEC")]
-    pub(crate) pkg_spec: PackageSpec,
+    /// Package specifiers: name, qualified name, or package ID.
+    #[clap(value_name = "PKG_SPEC", required = true)]
+    pub(crate) pkg_specs: Vec<PackageSpec>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -47,7 +47,7 @@ pub(crate) struct ListArgs {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct InfoArgs {
-    /// Package specifier: name, qualified name, or package ID.
-    #[clap(value_name = "PKG_SPEC")]
-    pub(crate) pkg_spec: PackageSpec,
+    /// Package specifiers: name, qualified name, or package ID.
+    #[clap(value_name = "PKG_SPEC", required = true)]
+    pub(crate) pkg_specs: Vec<PackageSpec>,
 }

@@ -67,15 +67,7 @@ where
 {
     let cx = DbResolveScope::start(cx);
 
-    let candidates = match pkg_spec {
-        PackageSpec::Id(id) => {
-            return Ok(db.entry_by_id(id));
-        }
-        PackageSpec::QualifiedName(qualified_name) => db
-            .entries_by_qualified_name(qualified_name)
-            .collect::<Vec<_>>(),
-        PackageSpec::Name(name) => db.entries_by_name(name).collect::<Vec<_>>(),
-    };
+    let candidates = db.entries_by_spec(pkg_spec).collect::<Vec<_>>();
     if candidates.len() > 1 {
         return Err(cx.reporter().report_error(
             MultipleMatchingPackagesSnafu {
