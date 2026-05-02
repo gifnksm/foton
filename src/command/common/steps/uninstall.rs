@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use snafu::{ResultExt as _, Snafu};
 
@@ -46,12 +46,26 @@ where
 enum UninstallTxErrorReport {
     #[snafu(display("resolved package not found in database: {pkg_id}"))]
     ResolvedPackageNotFound { pkg_id: PackageId },
-    #[snafu(display("failed to save package database"))]
-    SaveDatabase { source: PackageDatabaseError },
     #[snafu(display(
         "failed to remove package files for package {pkg_id}\nmanual cleanup may be required"
     ))]
     RemovePackageFiles { pkg_id: PackageId, source: FsError },
+    #[snafu(display("failed to begin uninstall transaction for package {pkg_id}"))]
+    BeginUninstall {
+        pkg_id: PackageId,
+        source: PackageDatabaseError,
+    },
+    #[snafu(display(
+        "\
+        failed to finalize uninstall transaction for package {pkg_id}\n\
+        font unregistration and package file removal may already have been applied\n\
+        rerunning the uninstall command or manual database cleanup may be required\
+        "
+    ))]
+    CompleteUninstall {
+        pkg_id: PackageId,
+        source: PackageDatabaseError,
+    },
 }
 
 impl From<UninstallTxErrorReport> for ReportValue<'static> {
@@ -62,7 +76,7 @@ impl From<UninstallTxErrorReport> for ReportValue<'static> {
 
 pub(in crate::command) fn uninstall_transaction<S>(
     cx: &ReportContext<S>,
-    db: &mut PackageDatabase<'_>,
+    db: &Arc<Mutex<PackageDatabase<'_>>>,
     pkg_id: &PackageId,
 ) -> Result<(), S::Error>
 where
@@ -74,13 +88,19 @@ where
     );
     let reporter = cx.reporter();
 
-    match db.begin_uninstall(pkg_id) {
-        BeginUninstallResult::CanUninstall => {}
-        BeginUninstallResult::NotFound => {
-            return Err(reporter.report_error(ResolvedPackageNotFoundSnafu { pkg_id }.build()));
+    {
+        let mut db = db.lock().unwrap();
+        let res = db
+            .begin_uninstall(pkg_id)
+            .context(BeginUninstallSnafu { pkg_id })
+            .report_error(reporter)?;
+        match res {
+            BeginUninstallResult::CanUninstall => {}
+            BeginUninstallResult::NotFound => {
+                return Err(reporter.report_error(ResolvedPackageNotFoundSnafu { pkg_id }.build()));
+            }
         }
     }
-    save(&cx, db)?;
 
     unregistration::unregister_package_fonts(&cx, pkg_id)?;
 
@@ -89,25 +109,13 @@ where
         .context(RemovePackageFilesSnafu { pkg_id })
         .report_error(reporter)?;
 
-    // `begin_uninstall` succeeded and the uninstall side effects completed just above, so
-    // finalizing the same uninstall in the package database should not fail. If it does, the
-    // package database state is internally inconsistent and we intentionally panic.
-    db.complete_uninstall(pkg_id).unwrap();
-    save(&cx, db)?;
+    {
+        let mut db = db.lock().unwrap();
+        db.complete_uninstall(pkg_id)
+            .context(CompleteUninstallSnafu { pkg_id })
+            .report_error(reporter)?;
+    }
 
-    Ok(())
-}
-
-fn save<S>(
-    cx: &ReportContext<UninstallTxScope<S>>,
-    db: &mut PackageDatabase<'_>,
-) -> Result<(), S::Error>
-where
-    S: ReportScope,
-{
-    db.save()
-        .context(SaveDatabaseSnafu)
-        .report_error(cx.reporter())?;
     Ok(())
 }
 
@@ -167,13 +175,13 @@ mod tests {
         {
             let mut db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
             assert!(matches!(
-                db.begin_install(&manifest),
+                db.begin_install(&manifest).unwrap(),
                 BeginInstallResult::CanInstall
             ));
             db.complete_install(&PKG_ID).unwrap();
-            db.save().unwrap();
 
-            uninstall_transaction(&cx, &mut db, &PKG_ID).unwrap();
+            let db = Arc::new(Mutex::new(db));
+            uninstall_transaction(&cx, &db, &PKG_ID).unwrap();
         }
 
         {

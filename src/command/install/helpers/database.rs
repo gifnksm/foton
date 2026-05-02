@@ -1,4 +1,7 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::BTreeSet,
+    sync::{Arc, Mutex},
+};
 
 use snafu::{ResultExt as _, Snafu};
 
@@ -41,9 +44,28 @@ where
 }
 
 #[derive(Debug, Snafu)]
+#[expect(clippy::enum_variant_names)]
 enum BeginInstallErrorReport {
-    #[snafu(display("failed to save package database"))]
-    SaveDatabase { source: PackageDatabaseError },
+    #[snafu(display("failed to begin install transaction for package {pkg_id}"))]
+    BeginInstall {
+        pkg_id: PackageId,
+        source: PackageDatabaseError,
+    },
+    #[snafu(display("failed to complete install transaction for package {pkg_id}"))]
+    CompleteInstall {
+        pkg_id: PackageId,
+        source: PackageDatabaseError,
+    },
+    #[snafu(display(
+        "\
+        failed to roll back install transaction for package {pkg_id}\n\
+        manual database cleanup may be required\
+        "
+    ))]
+    CancelInstall {
+        pkg_id: PackageId,
+        source: PackageDatabaseError,
+    },
 }
 
 impl From<BeginInstallErrorReport> for ReportValue<'static> {
@@ -58,60 +80,54 @@ where
     S: ReportScope,
 {
     CanInstall(DbGuard<'db, S>),
-    AlreadyInstalled(PackageDatabase<'db>),
-    OtherVersionInstalled(PackageDatabase<'db>, PackageVersion),
-    PendingInstallFound(PackageDatabase<'db>, BTreeSet<PackageVersion>),
-    PendingUninstallFound(PackageDatabase<'db>, BTreeSet<PackageVersion>),
+    AlreadyInstalled,
+    OtherVersionInstalled(PackageVersion),
+    PendingInstallFound(BTreeSet<PackageVersion>),
+    PendingUninstallFound(BTreeSet<PackageVersion>),
 }
 
 pub(in crate::command::install) fn begin_install<'db, S>(
     cx: &ReportContext<S>,
-    mut db: PackageDatabase<'db>,
+    db: Arc<Mutex<PackageDatabase<'db>>>,
     manifest: &PackageManifest,
 ) -> Result<BeginInstallTxResult<'db, S>, S::Error>
 where
     S: ReportScope,
 {
     let cx = BeginInstallScope::start(cx);
+    let pkg_id = manifest.metadata.id();
 
-    match db.begin_install(manifest) {
-        BeginInstallResult::CanInstall => {}
-        BeginInstallResult::AlreadyInstalled => {
-            return Ok(BeginInstallTxResult::AlreadyInstalled(db));
-        }
-        BeginInstallResult::OtherVersionInstalled(version) => {
-            return Ok(BeginInstallTxResult::OtherVersionInstalled(db, version));
-        }
-        BeginInstallResult::PendingInstallFound(versions) => {
-            return Ok(BeginInstallTxResult::PendingInstallFound(db, versions));
-        }
-        BeginInstallResult::PendingUninstallFound(versions) => {
-            return Ok(BeginInstallTxResult::PendingUninstallFound(db, versions));
+    {
+        let mut db = db.lock().unwrap();
+
+        let res = db
+            .begin_install(manifest)
+            .context(BeginInstallSnafu { pkg_id: &pkg_id })
+            .report_error(cx.reporter())?;
+
+        match res {
+            BeginInstallResult::CanInstall => {}
+            BeginInstallResult::AlreadyInstalled => {
+                return Ok(BeginInstallTxResult::AlreadyInstalled);
+            }
+            BeginInstallResult::OtherVersionInstalled(version) => {
+                return Ok(BeginInstallTxResult::OtherVersionInstalled(version));
+            }
+            BeginInstallResult::PendingInstallFound(versions) => {
+                return Ok(BeginInstallTxResult::PendingInstallFound(versions));
+            }
+            BeginInstallResult::PendingUninstallFound(versions) => {
+                return Ok(BeginInstallTxResult::PendingUninstallFound(versions));
+            }
         }
     }
 
-    save(&cx, &mut db)?;
-
     Ok(BeginInstallTxResult::CanInstall(DbGuard {
         installation_persisted: false,
-        installation_completed_in_memory: false,
         cx: cx.clone(),
         db,
-        pkg_id: manifest.metadata.id(),
+        pkg_id,
     }))
-}
-
-fn save<S>(
-    cx: &ReportContext<BeginInstallScope<S>>,
-    db: &mut PackageDatabase<'_>,
-) -> Result<(), S::Error>
-where
-    S: ReportScope,
-{
-    db.save()
-        .context(SaveDatabaseSnafu)
-        .report_error(cx.reporter())?;
-    Ok(())
 }
 
 #[derive(Debug)]
@@ -120,9 +136,8 @@ where
     S: ReportScope,
 {
     installation_persisted: bool,
-    installation_completed_in_memory: bool,
     cx: ReportContext<BeginInstallScope<S>>,
-    db: PackageDatabase<'db>,
+    db: Arc<Mutex<PackageDatabase<'db>>>,
     pkg_id: PackageId,
 }
 
@@ -131,19 +146,14 @@ where
     S: ReportScope,
 {
     pub(in crate::command::install) fn complete_install(mut self) -> Result<(), S::Error> {
-        // This guard only reaches completion after `begin_install` has persisted a pending-install
-        // entry for `self.pkg_id`. Failure here indicates an internal DB invariant violation.
-        // That is a bug in our state management rather than a recoverable runtime error, so we
-        // intentionally panic instead of attempting recovery.
-        self.db.complete_install(&self.pkg_id).unwrap();
-        self.installation_completed_in_memory = true;
-        self.save()?;
+        let mut db = self.db.lock().unwrap();
+        db.complete_install(&self.pkg_id)
+            .context(CompleteInstallSnafu {
+                pkg_id: &self.pkg_id,
+            })
+            .report_error(self.cx.reporter())?;
         self.installation_persisted = true;
         Ok(())
-    }
-
-    fn save(&mut self) -> Result<(), S::Error> {
-        save(&self.cx, &mut self.db)
     }
 }
 
@@ -156,28 +166,17 @@ where
             return;
         }
 
-        // If `complete_install()` has already advanced the in-memory DB state to `Installed`, the
-        // surrounding install flow is already failing and the package-dir / registration guards
-        // have already rolled back the external side effects by the time this guard is dropped. We
-        // must not persist that `Installed` state here, or the DB would become inconsistent with
-        // the actual system state. We therefore only roll back the DB here while it is still in
-        // `PendingInstall`.
-        if !self.installation_completed_in_memory {
-            self.cx
-                .reporter()
-                .report_info(format_args!("rolling back database changes..."));
+        self.cx
+            .reporter()
+            .report_info(format_args!("rolling back database changes..."));
 
-            // Dropping before `complete_install()` means the in-memory DB state is still
-            // `PendingInstall`, so rollback via `cancel_install()` is still valid here. Failure
-            // indicates an internal DB invariant violation. That is a bug in our state management,
-            // and silently continuing would leave the in-memory state corrupted, so we intentionally
-            // panic.
-            self.db.cancel_install(&self.pkg_id).unwrap();
-
-            // After rolling the in-memory DB state back to `PendingInstall`, we make a best-effort
-            // attempt to persist that rolled-back state before dropping the guard.
-            let _ = self.save();
-        }
+        let mut db = self.db.lock().unwrap();
+        let _ = db
+            .cancel_install(&self.pkg_id)
+            .context(CancelInstallSnafu {
+                pkg_id: &self.pkg_id,
+            })
+            .report_error(self.cx.reporter());
     }
 }
 
@@ -201,22 +200,26 @@ mod tests {
         let cx = TestScope::start(&cx);
         let mut db_lock_file = common::steps::open_db_lock_file(&cx).unwrap();
         let db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
+        let db = Arc::new(Mutex::new(db));
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id = manifest.metadata.id();
 
-        let mut guard = match begin_install(&cx, db, &manifest).unwrap() {
+        let guard = match begin_install(&cx, Arc::clone(&db), &manifest).unwrap() {
             BeginInstallTxResult::CanInstall(guard) => guard,
             other => panic!("unexpected begin_install result: {other:?}"),
         };
 
-        // Reload from disk while keeping the install guard alive so this assertion verifies
-        // `begin_install()` persisted `PendingInstall` before completion, rather than only
-        // checking the guard's in-memory DB state.
-        guard.db.reload().unwrap();
-        assert_eq!(
-            get_entry_state(&guard.db, &pkg_id),
-            Some(PackageState::PendingInstall)
-        );
+        {
+            let mut db = db.lock().unwrap();
+            // Reload from disk while keeping the install guard alive so this assertion verifies
+            // `begin_install()` persisted `PendingInstall` before completion, rather than only
+            // checking the guard's in-memory DB state.
+            db.reload().unwrap();
+            assert_eq!(
+                get_entry_state(&db, &pkg_id),
+                Some(PackageState::PendingInstall)
+            );
+        }
 
         drop(guard);
     }
@@ -231,6 +234,7 @@ mod tests {
 
         {
             let db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
+            let db = Arc::new(Mutex::new(db));
             let guard = match begin_install(&cx, db, &manifest).unwrap() {
                 BeginInstallTxResult::CanInstall(guard) => guard,
                 other => panic!("unexpected begin_install result: {other:?}"),
@@ -255,6 +259,7 @@ mod tests {
 
         {
             let db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
+            let db = Arc::new(Mutex::new(db));
             let guard = match begin_install(&cx, db, &manifest).unwrap() {
                 BeginInstallTxResult::CanInstall(guard) => guard,
                 other => panic!("unexpected begin_install result: {other:?}"),

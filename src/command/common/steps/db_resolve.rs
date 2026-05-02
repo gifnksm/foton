@@ -126,7 +126,7 @@ mod tests {
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let expected = manifest.metadata.id();
         assert!(matches!(
-            db.begin_install(&manifest),
+            db.begin_install(&manifest).unwrap(),
             BeginInstallResult::CanInstall
         ));
         db.complete_install(&expected).unwrap();
@@ -156,7 +156,7 @@ mod tests {
         let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id1 = manifest1.metadata.id();
         assert!(matches!(
-            db.begin_install(&manifest1),
+            db.begin_install(&manifest1).unwrap(),
             BeginInstallResult::CanInstall
         ));
         db.complete_install(&pkg_id1).unwrap();
@@ -164,7 +164,7 @@ mod tests {
         let manifest2 = testing::make_manifest("other-namespace", "example-font", "1.0.0");
         let pkg_id2 = manifest2.metadata.id();
         assert!(matches!(
-            db.begin_install(&manifest2),
+            db.begin_install(&manifest2).unwrap(),
             BeginInstallResult::CanInstall
         ));
         db.complete_install(&pkg_id2).unwrap();
@@ -184,7 +184,7 @@ mod tests {
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let expected = manifest.metadata.id();
         assert!(matches!(
-            db.begin_install(&manifest),
+            db.begin_install(&manifest).unwrap(),
             BeginInstallResult::CanInstall
         ));
 
@@ -199,7 +199,7 @@ mod tests {
             Some((PackageState::PendingInstall, expected.clone()))
         );
 
-        db.begin_uninstall(&expected);
+        db.begin_uninstall(&expected).unwrap();
 
         let resolved = resolve_spec_in_db(&cx, &db, &spec)
             .unwrap()
@@ -216,17 +216,17 @@ mod tests {
 
         let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         assert!(matches!(
-            db.begin_install(&manifest1),
+            db.begin_install(&manifest1).unwrap(),
             BeginInstallResult::CanInstall
         ));
 
         let manifest2 = testing::make_manifest("other-namespace", "example-font", "1.0.0");
         let pkg_id2 = manifest2.metadata.id();
         assert!(matches!(
-            db.begin_install(&manifest2),
+            db.begin_install(&manifest2).unwrap(),
             BeginInstallResult::CanInstall
         ));
-        db.begin_uninstall(&pkg_id2);
+        db.begin_uninstall(&pkg_id2).unwrap();
 
         let spec = "example-font".parse::<PackageSpec>().unwrap();
         let err = resolve_spec_in_db(&cx, &db, &spec).unwrap_err();

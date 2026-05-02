@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use snafu::Snafu;
 
 use crate::{
@@ -47,10 +49,12 @@ pub(crate) fn uninstall_package(
     let reporter = cx.reporter();
 
     let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
-    let mut db = common::steps::load_database(&cx, &mut db_lock_file)?;
+    let db = common::steps::load_database(&cx, &mut db_lock_file)?;
+    let db = Arc::new(Mutex::new(db));
 
     for pkg_spec in pkg_specs {
-        let Some((_state, manifest)) = common::steps::resolve_spec_in_db(&cx, &db, pkg_spec)?
+        let Some(pkg_id) = common::steps::resolve_spec_in_db(&cx, &db.lock().unwrap(), pkg_spec)?
+            .map(|(_state, manifest)| manifest.metadata.id())
         else {
             reporter.report_info(format_args!(
                 "no package matches the specified package `{pkg_spec}`; nothing to do"
@@ -58,8 +62,7 @@ pub(crate) fn uninstall_package(
             continue;
         };
 
-        let pkg_id = manifest.metadata.id();
-        common::steps::uninstall_transaction(&cx, &mut db, &pkg_id)?;
+        common::steps::uninstall_transaction(&cx, &db, &pkg_id)?;
     }
 
     Ok(())
