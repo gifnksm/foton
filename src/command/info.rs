@@ -4,6 +4,7 @@ use snafu::{ResultExt as _, Snafu};
 
 use crate::{
     cli::{
+        args::InfoArgs,
         context::RootContext,
         reporter::{
             NeverReport, ReportScope, ReportValue, RootReportScope, ScopeResultErrorExt as _,
@@ -52,22 +53,31 @@ pub(crate) enum InfoError {
     Failed,
 }
 
-pub(crate) fn info_package(cx: &RootContext, pkg_spec: &PackageSpec) -> Result<(), InfoError> {
+pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), InfoError> {
+    let InfoArgs { pkg_specs } = args;
+
     let cx = InfoScope::start(cx);
     let reporter = cx.reporter();
 
     let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
     let db = common::steps::load_database(&cx, &mut db_lock_file)?;
 
-    let Some((state, manifest)) = common::steps::resolve_spec_in_db(&cx, &db, pkg_spec)? else {
-        return Err(reporter.report_error(NoMatchingPackageSnafu { pkg_spec }.build()));
-    };
+    let mut res = Ok(());
+    for pkg_spec in pkg_specs {
+        let mut manifests = db.entries_by_spec(pkg_spec).peekable();
+        if manifests.peek().is_none() {
+            res = Err(reporter.report_error(NoMatchingPackageSnafu { pkg_spec }.build()));
+            continue;
+        }
 
-    render_package_info(io::stdout().lock(), state, manifest)
-        .context(WriteInfoSnafu)
-        .report_error(reporter)?;
+        for (state, manifest) in manifests {
+            render_package_info(io::stdout().lock(), state, manifest)
+                .context(WriteInfoSnafu)
+                .report_error(reporter)?;
+        }
+    }
 
-    Ok(())
+    res
 }
 
 fn render_package_info<W>(
@@ -117,6 +127,7 @@ where
                 .join(", ")
         )?;
     }
+    writeln!(writer)?;
     Ok(())
 }
 
@@ -143,6 +154,7 @@ mod tests {
                 "- URL: https://example.com/example-font-0.1.0.zip\n",
                 "  Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
                 "  Includes: **/*.ttf, **/*.otf, **/*.ttc\n",
+                "\n",
             )
         );
     }
@@ -185,6 +197,7 @@ include = ["fonts/*.ttf"]
                 "- URL: https://example.com/example-font-0.1.0.zip\n",
                 "  Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
                 "  Includes: fonts/*.ttf\n",
+                "\n",
             )
         );
     }
