@@ -1,30 +1,33 @@
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
-use snafu::{ResultExt as _, Snafu};
+use snafu::{OptionExt as _, ResultExt as _, Snafu};
 
 use crate::{
     cli::{
         context::ReportContext,
         message::BulletList,
         reporter::{
-            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
+            NeverReport, ReportScope, ReportValue, ResultIteratorExt as _,
+            ScopeResultErrorExt as _, SubReportScope,
         },
     },
     package::{PackageId, PackageManifest, PackageSpec},
-    registry::{RegistryId, RegistryIndex, RegistryIndexError},
+    registry::{
+        self, FetchRegistryError, RegistryId, RegistryIndex, RegistryIndexError, RegistrySource,
+    },
 };
 
 #[derive(Debug)]
-struct ResolveScope<S> {
+struct RegistryScope<S> {
     base_scope: Arc<S>,
 }
 
-impl<S> ReportScope for ResolveScope<S>
+impl<S> ReportScope for RegistryScope<S>
 where
     S: ReportScope,
 {
     type WarnReportValue = NeverReport;
-    type ErrorReportValue = ResolveErrorReport;
+    type ErrorReportValue = RegistryErrorReport;
     type Error = S::Error;
 
     fn make_failed(&self) -> Self::Error {
@@ -32,7 +35,7 @@ where
     }
 }
 
-impl<S> SubReportScope<S> for ResolveScope<S>
+impl<S> SubReportScope<S> for RegistryScope<S>
 where
     S: ReportScope,
 {
@@ -42,11 +45,33 @@ where
 }
 
 #[derive(Debug, Snafu)]
-enum ResolveErrorReport {
+enum RegistryErrorReport {
+    #[snafu(display(
+        concat!(
+            "specified registry `{reg_id}` not found in configuration\n",
+            "available registries:\n",
+            "{registry_ids}",
+        ),
+        reg_id = reg_id,
+        registry_ids = BulletList(available_registry_ids),
+    ))]
+    RegistryNotFound {
+        reg_id: RegistryId,
+        available_registry_ids: BTreeSet<RegistryId>,
+    },
+    #[snafu(display("no enabled registries found in configuration"))]
+    NoEnabledRegistries,
+    #[snafu(display("failed to fetch registry `{id}`"))]
+    FetchRegistry {
+        id: RegistryId,
+        #[snafu(source(from(FetchRegistryError, Box::new)))]
+        source: Box<FetchRegistryError>,
+    },
     #[snafu(display("failed to find package by {pkg_spec}"))]
     FindLatestPackagesBySpec {
         pkg_spec: PackageSpec,
-        source: RegistryIndexError,
+        #[snafu(source(from(RegistryIndexError, Box::new)))]
+        source: Box<RegistryIndexError>,
     },
     #[snafu(display(
         concat!(
@@ -65,21 +90,95 @@ enum ResolveErrorReport {
     PackageNotFoundForSpec { pkg_spec: PackageSpec },
 }
 
-impl From<ResolveErrorReport> for ReportValue<'static> {
-    fn from(report: ResolveErrorReport) -> Self {
+impl From<RegistryErrorReport> for ReportValue<'static> {
+    fn from(report: RegistryErrorReport) -> ReportValue<'static> {
         ReportValue::BoxedError(report.into())
     }
 }
 
-pub(crate) fn resolve_package<S>(
-    cx: &ReportContext<S>,
-    indexes: &[RegistryIndex],
-    pkg_spec: &PackageSpec,
-) -> Result<PackageManifest, S::Error>
+pub(in crate::command) fn resolve_registries_by_id<'a, S>(
+    cx: &'a ReportContext<S>,
+    registry_ids: Option<&[RegistryId]>,
+) -> Result<Vec<(RegistryId, &'a RegistrySource)>, S::Error>
 where
     S: ReportScope,
 {
-    let cx = ResolveScope::start_with_report(cx, format_args!("Resolving {pkg_spec}..."));
+    let config_registries = &cx.config().registries;
+    let cx = RegistryScope::start_with_report(cx, format_args!("Fetching package registries..."));
+
+    let registries: Vec<_> = match registry_ids {
+        Some(registry_ids) => {
+            let registry_ids = registry_ids.iter().cloned().collect::<BTreeSet<_>>();
+            registry_ids
+                .iter()
+                .map(|reg_id| {
+                    config_registries
+                        .get(reg_id)
+                        .map(|registry| (reg_id.clone(), &registry.source))
+                        .with_context(|| {
+                            let available_registry_ids =
+                                config_registries.keys().cloned().collect::<BTreeSet<_>>();
+                            RegistryNotFoundSnafu {
+                                reg_id,
+                                available_registry_ids,
+                            }
+                        })
+                        .report_error(cx.reporter())
+                })
+                .collect_to_end()?
+        }
+        None => config_registries
+            .iter()
+            .filter(|(_id, registry)| registry.enabled)
+            .map(|(id, registry)| (id.clone(), &registry.source))
+            .collect(),
+    };
+    if registries.is_empty() {
+        return Err(cx.reporter().report_error(NoEnabledRegistriesSnafu.build()));
+    }
+    Ok(registries)
+}
+
+pub(in crate::command) fn fetch_registries<S>(
+    cx: &ReportContext<S>,
+    registries: &[(RegistryId, &RegistrySource)],
+) -> Result<Vec<RegistryIndex>, S::Error>
+where
+    S: ReportScope,
+{
+    let cx = RegistryScope::start(cx);
+    registries
+        .iter()
+        .map(|(id, source)| {
+            registry::fetch_registry(cx.app_dirs(), id, source).context(FetchRegistrySnafu { id })
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .report_error(cx.reporter())
+}
+
+pub(crate) fn resolve_package_specs<S>(
+    cx: &ReportContext<S>,
+    indexes: &[RegistryIndex],
+    pkg_specs: &[PackageSpec],
+) -> Result<Vec<Arc<PackageManifest>>, S::Error>
+where
+    S: ReportScope,
+{
+    pkg_specs
+        .iter()
+        .map(|pkg_spec| resolve_package_spec(cx, indexes, pkg_spec))
+        .collect_to_end()
+}
+
+fn resolve_package_spec<S>(
+    cx: &ReportContext<S>,
+    indexes: &[RegistryIndex],
+    pkg_spec: &PackageSpec,
+) -> Result<Arc<PackageManifest>, S::Error>
+where
+    S: ReportScope,
+{
+    let cx = RegistryScope::start_with_report(cx, format_args!("Resolving {pkg_spec}..."));
     let reporter = cx.reporter();
 
     let mut manifests = vec![];
@@ -109,7 +208,7 @@ where
         manifest.metadata.id()
     ));
 
-    Ok(manifest)
+    Ok(Arc::new(manifest))
 }
 
 #[cfg(test)]
@@ -137,7 +236,7 @@ mod tests {
     fn resolve_for_test(
         registry_path: &Path,
         pkg_spec: &PackageSpec,
-    ) -> Result<PackageManifest, TestError> {
+    ) -> Result<Arc<PackageManifest>, TestError> {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         let index = RegistryIndex::open(
@@ -145,16 +244,16 @@ mod tests {
             registry_path.to_path_buf(),
         )
         .unwrap();
-        resolve_package(&cx, &[index], pkg_spec)
+        resolve_package_spec(&cx, &[index], pkg_spec)
     }
 
     fn resolve_for_test_with_indexes(
         indexes: &[RegistryIndex],
         pkg_spec: &PackageSpec,
-    ) -> Result<PackageManifest, TestError> {
+    ) -> Result<Arc<PackageManifest>, TestError> {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
-        resolve_package(&cx, indexes, pkg_spec)
+        resolve_package_spec(&cx, indexes, pkg_spec)
     }
 
     #[test]
