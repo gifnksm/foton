@@ -36,6 +36,12 @@ impl Display for PackageQualifiedName {
     }
 }
 
+impl From<&PackageQualifiedName> for PackageQualifiedName {
+    fn from(pkg_name: &PackageQualifiedName) -> Self {
+        pkg_name.clone()
+    }
+}
+
 #[derive(Debug, Snafu)]
 #[expect(clippy::enum_variant_names)]
 pub(crate) enum ParsePackageQualifiedNameError {
