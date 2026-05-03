@@ -48,6 +48,12 @@ impl Display for PackageVersion {
     }
 }
 
+impl From<&PackageVersion> for PackageVersion {
+    fn from(version: &PackageVersion) -> Self {
+        version.clone()
+    }
+}
+
 impl PartialEq<Version> for PackageVersion {
     fn eq(&self, other: &Version) -> bool {
         self.0.as_ref() == other

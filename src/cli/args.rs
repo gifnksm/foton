@@ -26,9 +26,9 @@ pub(crate) struct InstallArgs {
     /// Use a comma-separated list such as `--registry local,foton`.
     #[clap(long, value_name = "REGISTRY_ID", value_delimiter = ',')]
     pub(crate) registry: Option<Vec<RegistryId>>,
-    /// Package specifier: name, qualified name, or package ID.
-    #[clap(value_name = "PKG_SPEC")]
-    pub(crate) pkg_spec: PackageSpec,
+    /// Package specifiers: name, qualified name, or package ID.
+    #[clap(value_name = "PKG_SPEC", required = true)]
+    pub(crate) pkg_specs: Vec<PackageSpec>,
 }
 
 #[derive(Debug, clap::Args)]

@@ -72,6 +72,12 @@ impl Display for PackageName {
     }
 }
 
+impl From<&PackageName> for PackageName {
+    fn from(name: &PackageName) -> Self {
+        name.clone()
+    }
+}
+
 impl AsRef<str> for PackageName {
     fn as_ref(&self) -> &str {
         &self.0
