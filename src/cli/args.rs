@@ -24,8 +24,8 @@ pub(crate) struct InstallArgs {
     /// Package registry IDs to resolve the package from.
     ///
     /// Use a comma-separated list such as `--registry local,foton`.
-    #[clap(long, value_name = "REGISTRY_ID", value_delimiter = ',')]
-    pub(crate) registry: Option<Vec<RegistryId>>,
+    #[clap(long = "registry", value_name = "REGISTRY_ID", value_delimiter = ',')]
+    pub(crate) registries: Option<Vec<RegistryId>>,
     /// Package specifiers: name, qualified name, or package ID.
     #[clap(value_name = "PKG_SPEC", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,

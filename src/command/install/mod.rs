@@ -1,9 +1,9 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     sync::{Arc, Mutex},
 };
 
-use snafu::{OptionExt as _, ResultExt as _, Snafu};
+use snafu::Snafu;
 
 use crate::{
     cli::{
@@ -11,7 +11,7 @@ use crate::{
         context::{ReportContext, RootContext},
         message::BulletList,
         reporter::{
-            NeverReport, ReportScope, ReportValue, RootReportScope, ScopeResultErrorExt as _,
+            NeverReport, ReportScope, ReportValue, ResultIteratorExt as _, RootReportScope,
         },
     },
     command::{
@@ -23,7 +23,6 @@ use crate::{
         Package, PackageDirs, PackageId, PackageManifest, PackageQualifiedName, PackageSpec,
         PackageState, PackageVersion,
     },
-    registry::{self, FetchRegistryError, RegistryId, RegistryIndex, RegistrySource},
 };
 
 #[derive(Debug)]
@@ -47,27 +46,6 @@ impl RootReportScope for InstallScope {
 
 #[derive(Debug, Snafu)]
 enum InstallErrorReport {
-    #[snafu(display(
-        concat!(
-            "specified registry `{reg_id}` not found in configuration\n",
-            "available registries:\n",
-            "{registry_ids}",
-        ),
-        reg_id = reg_id,
-        registry_ids = BulletList(registry_ids),
-    ))]
-    RegistryNotFound {
-        reg_id: RegistryId,
-        registry_ids: BTreeSet<RegistryId>,
-    },
-    #[snafu(display("no enabled registries found in configuration"))]
-    NoEnabledRegistries,
-    #[snafu(display("failed to fetch registry `{id}`"))]
-    FetchRegistry {
-        id: RegistryId,
-        #[snafu(source(from(FetchRegistryError, Box::new)))]
-        source: Box<FetchRegistryError>,
-    },
     #[snafu(display("no valid font files found in package {pkg_id}"))]
     NoValidFonts { pkg_id: PackageId },
     #[snafu(display(
@@ -107,7 +85,7 @@ pub(crate) async fn install_package(
     args: &InstallArgs,
 ) -> Result<(), InstallError> {
     let InstallArgs {
-        registry,
+        registries,
         pkg_specs,
     } = args;
 
@@ -116,10 +94,7 @@ pub(crate) async fn install_package(
         format_args!("Installing {} package(s)...", pkg_specs.len()),
     );
 
-    let registries = resolve_registries(&cx, registry.as_ref())?;
-    if registries.is_empty() {
-        return Err(cx.reporter().report_error(NoEnabledRegistriesSnafu.build()));
-    }
+    let registries = common::steps::resolve_registries_by_id(&cx, registries.as_deref())?;
 
     let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
     let db = common::steps::load_database(&cx, &mut db_lock_file)?;
@@ -132,15 +107,9 @@ pub(crate) async fn install_package(
         return Ok(());
     }
 
-    let indexes = registries
-        .into_iter()
-        .map(|(id, source)| {
-            registry::fetch_registry(cx.app_dirs(), &id, source).context(FetchRegistrySnafu { id })
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .report_error(cx.reporter())?;
+    let indexes = common::steps::fetch_registries(&cx, &registries)?;
 
-    let manifests = resolve_package_specs(&cx, &indexes, &pkg_specs)?;
+    let manifests = common::steps::resolve_package_specs(&cx, &indexes, &pkg_specs)?;
     let manifests = dedup_and_check_conflicts(&cx, &manifests)?;
 
     for (db, manifest) in begin_install(&cx, &db, &manifests)? {
@@ -190,56 +159,6 @@ fn filter_installed_packages(
     filtered
 }
 
-fn resolve_registries<'a>(
-    cx: &'a ReportContext<InstallScope>,
-    registries: Option<&Vec<RegistryId>>,
-) -> Result<Vec<(RegistryId, &'a RegistrySource)>, InstallError> {
-    let config_registries = &cx.config().registries;
-    let Some(registry_ids) = registries
-        .as_ref()
-        .map(|registries| registries.iter().cloned().collect::<BTreeSet<_>>())
-    else {
-        return Ok(config_registries
-            .iter()
-            .filter(|(_id, registry)| registry.enabled)
-            .map(|(id, registry)| (id.clone(), &registry.source))
-            .collect());
-    };
-    let registries: Vec<_> = registry_ids
-        .iter()
-        .map(|reg_id| {
-            config_registries
-                .get(reg_id)
-                .map(|registry| (reg_id.clone(), &registry.source))
-                .with_context(|| RegistryNotFoundSnafu {
-                    reg_id,
-                    registry_ids: config_registries.keys().cloned().collect::<BTreeSet<_>>(),
-                })
-        })
-        .collect::<Result<_, _>>()
-        .report_error(cx.reporter())?;
-    Ok(registries)
-}
-
-fn resolve_package_specs(
-    cx: &ReportContext<InstallScope>,
-    indexes: &[RegistryIndex],
-    pkg_specs: &[PackageSpec],
-) -> Result<Vec<Arc<PackageManifest>>, InstallError> {
-    let mut err = None;
-    let mut manifests = vec![];
-    for pkg_spec in pkg_specs {
-        match steps::resolve_package(cx, indexes, pkg_spec) {
-            Ok(manifest) => manifests.push(Arc::new(manifest)),
-            Err(e) => err = Some(e),
-        }
-    }
-    if let Some(err) = err {
-        return Err(err);
-    }
-    Ok(manifests)
-}
-
 fn dedup_and_check_conflicts(
     cx: &ReportContext<InstallScope>,
     manifests: &[Arc<PackageManifest>],
@@ -256,25 +175,24 @@ fn dedup_and_check_conflicts(
             .or_default()
             .insert(version, Arc::clone(manifest));
     }
-    let mut manifests = vec![];
-    let mut err = None;
-    for (pkg_name, manifests_by_version) in &mut manifest_by_name {
-        if manifests_by_version.len() > 1 {
-            let versions = manifests_by_version.keys().cloned().collect::<Vec<_>>();
-            err = Some(
-                cx.reporter()
-                    .report_error(MultipleVersionsSnafu { pkg_name, versions }.build()),
-            );
-            continue;
-        }
-        if let Some((_, manifest)) = manifests_by_version.pop_first() {
-            manifests.push(manifest);
-        }
-    }
-    if let Some(err) = err {
-        return Err(err);
-    }
-    Ok(manifests)
+    manifest_by_name
+        .iter_mut()
+        .filter_map(|(pkg_name, manifests_by_version)| {
+            (|| {
+                if manifests_by_version.len() > 1 {
+                    let versions = manifests_by_version.keys().cloned().collect::<Vec<_>>();
+                    return Err(cx
+                        .reporter()
+                        .report_error(MultipleVersionsSnafu { pkg_name, versions }.build()));
+                }
+                let manifest = manifests_by_version
+                    .pop_first()
+                    .map(|(_, manifest)| manifest);
+                Ok(manifest)
+            })()
+            .transpose()
+        })
+        .collect_to_end()
 }
 
 type ManifestWithDbGuard<'db> = (DbGuard<'db, InstallScope>, Arc<PackageManifest>);
@@ -294,10 +212,7 @@ fn begin_install<'db>(
                     guards.push((db, Arc::clone(manifest)));
                     break;
                 }
-                BeginInstallTxResult::AlreadyInstalled => {
-                    reporter.report_info(format_args!("package is already installed, skipping"));
-                    break;
-                }
+                BeginInstallTxResult::AlreadyInstalled => unreachable!(),
                 BeginInstallTxResult::OtherVersionInstalled(version) => {
                     reporter.report_info(format_args!(
                     "another version of the package is already installed (version {version}), skipping"

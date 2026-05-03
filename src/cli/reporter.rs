@@ -376,3 +376,36 @@ where
         self.map_err(|err| reporter.report_error(err))
     }
 }
+
+pub(crate) trait ResultIteratorExt<T, E> {
+    fn collect_to_end<B>(self) -> Result<B, E>
+    where
+        B: FromIterator<T>;
+}
+
+impl<I, T, E> ResultIteratorExt<T, E> for I
+where
+    I: Iterator<Item = Result<T, E>>,
+{
+    fn collect_to_end<B>(self) -> Result<B, E>
+    where
+        B: FromIterator<T>,
+    {
+        let mut err = None;
+        let items = self
+            .filter_map(|res| match res {
+                Ok(item) => Some(item),
+                Err(e) => {
+                    if err.is_none() {
+                        err = Some(e);
+                    }
+                    None
+                }
+            })
+            .collect();
+        if let Some(err) = err {
+            return Err(err);
+        }
+        Ok(items)
+    }
+}
