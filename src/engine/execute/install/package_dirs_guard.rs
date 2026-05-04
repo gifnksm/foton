@@ -30,6 +30,10 @@ where
     fn make_failed(&self) -> Self::Error {
         self.base_scope.make_failed()
     }
+
+    fn make_cancelled(&self) -> Self::Error {
+        self.base_scope.make_cancelled()
+    }
 }
 
 impl<S> SubReportScope<S> for PackageDirsScope<S>
@@ -70,7 +74,7 @@ impl From<PackageDirErrorReport> for ReportValue<'static> {
     }
 }
 
-pub(in crate::command::install) fn create_new_package_dirs<S>(
+pub(super) fn create_new_package_dirs<S>(
     cx: &ReportContext<S>,
     pkg_id: &PackageId,
 ) -> Result<PackageDirsGuard<S>, S::Error>
@@ -92,7 +96,7 @@ where
 
 #[must_use]
 #[derive(Debug)]
-pub(in crate::command::install) struct PackageDirsGuard<S>
+pub(super) struct PackageDirsGuard<S>
 where
     S: ReportScope,
 {
@@ -135,7 +139,7 @@ impl<S> PackageDirsGuard<S>
 where
     S: ReportScope,
 {
-    pub(in crate::command::install) fn disarm(mut self) {
+    pub(super) fn disarm(mut self) {
         self.armed = false;
     }
 }

@@ -16,24 +16,28 @@ use crate::{
 };
 
 #[derive(Debug)]
-struct UninstallTxScope<S> {
+struct UninstallExecutionScope<S> {
     base_scope: Arc<S>,
 }
 
-impl<S> ReportScope for UninstallTxScope<S>
+impl<S> ReportScope for UninstallExecutionScope<S>
 where
     S: ReportScope,
 {
     type WarnReportValue = NeverReport;
-    type ErrorReportValue = UninstallTxErrorReport;
+    type ErrorReportValue = UninstallExecutionErrorReport;
     type Error = S::Error;
 
     fn make_failed(&self) -> Self::Error {
         self.base_scope.make_failed()
     }
+
+    fn make_cancelled(&self) -> Self::Error {
+        self.base_scope.make_cancelled()
+    }
 }
 
-impl<S> SubReportScope<S> for UninstallTxScope<S>
+impl<S> SubReportScope<S> for UninstallExecutionScope<S>
 where
     S: ReportScope,
 {
@@ -43,7 +47,7 @@ where
 }
 
 #[derive(Debug, Snafu)]
-enum UninstallTxErrorReport {
+enum UninstallExecutionErrorReport {
     #[snafu(display("resolved package not found in database: {pkg_id}"))]
     ResolvedPackageNotFound { pkg_id: PackageId },
     #[snafu(display(
@@ -73,13 +77,13 @@ enum UninstallTxErrorReport {
     },
 }
 
-impl From<UninstallTxErrorReport> for ReportValue<'static> {
-    fn from(report: UninstallTxErrorReport) -> Self {
+impl From<UninstallExecutionErrorReport> for ReportValue<'static> {
+    fn from(report: UninstallExecutionErrorReport) -> Self {
         ReportValue::BoxedError(report.into())
     }
 }
 
-pub(in crate::command) fn uninstall_transaction<S>(
+pub(crate) fn execute_uninstall<S>(
     cx: &ReportContext<S>,
     db: &Arc<Mutex<PackageDatabase<'_>>>,
     pkg_id: &PackageId,
@@ -87,7 +91,7 @@ pub(in crate::command) fn uninstall_transaction<S>(
 where
     S: ReportScope,
 {
-    let cx = UninstallTxScope::start_with_report(
+    let cx = UninstallExecutionScope::start_with_report(
         cx,
         format_args!("Beginning transaction to uninstall {pkg_id}..."),
     );
@@ -137,8 +141,7 @@ mod tests {
     use super::*;
     use crate::{
         cli::reporter::RootReportScope as _,
-        command::common,
-        db::{BeginInstallResult, PackageDatabase},
+        db::{DbLockFile, PackageDatabase},
         package::{PackageId, PackageState},
         util::testing::{self, TempdirContext, TestScope},
     };
@@ -164,33 +167,32 @@ mod tests {
         not(build_for_sandbox),
         ignore = "registry should be isolated in sandbox tests. use `cargo xtask sandbox run --test` instead."
     )]
-    fn uninstall_transaction_removes_db_record_and_package_files_on_success() {
+    fn execute_uninstall_removes_db_record_and_package_files_on_success() {
         let cx = TempdirContext::with_app_id(test_app_id());
         let cx = TestScope::start(&cx);
         let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
         fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
         fs::write(pkg_dirs.fonts_dir().join("example.ttf"), b"font").unwrap();
 
-        let mut db_lock_file = common::steps::open_db_lock_file(&cx).unwrap();
+        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
         let manifest = testing::make_manifest(
             PKG_ID.namespace().clone(),
             PKG_ID.name().clone(),
             PKG_ID.version().clone(),
         );
         {
-            let mut db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
-            assert!(matches!(
-                db.begin_install(&manifest).unwrap(),
-                BeginInstallResult::CanInstall
-            ));
+            let lock_file_guard = db_lock_file.try_acquire().unwrap();
+            let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            db.begin_install(&manifest).unwrap();
             db.complete_install(&PKG_ID).unwrap();
 
             let db = Arc::new(Mutex::new(db));
-            uninstall_transaction(&cx, &db, &PKG_ID).unwrap();
+            execute_uninstall(&cx, &db, &PKG_ID).unwrap();
         }
 
         {
-            let db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
+            let lock_file_guard = db_lock_file.try_acquire().unwrap();
+            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
             assert_eq!(get_entry_state(&db, &PKG_ID), None);
             assert!(!pkg_dirs.fonts_dir().exists());
             assert!(!pkg_dirs.version_dir().exists());

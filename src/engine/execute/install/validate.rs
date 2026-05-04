@@ -34,6 +34,10 @@ where
     fn make_failed(&self) -> Self::Error {
         self.base_scope.make_failed()
     }
+
+    fn make_cancelled(&self) -> Self::Error {
+        self.base_scope.make_cancelled()
+    }
 }
 
 impl<S> SubReportScope<S> for ValidationScope<S>
@@ -87,7 +91,7 @@ impl From<ValidationErrorReport> for ReportValue<'static> {
     }
 }
 
-pub(in crate::command::install) fn validate_and_prune_fonts<S>(
+pub(super) fn validate_and_prune_fonts<S>(
     cx: &ReportContext<S>,
     fonts_dir: &AbsolutePath,
     file_names: &[FileName],

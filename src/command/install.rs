@@ -14,14 +14,11 @@ use crate::{
             NeverReport, ReportScope, ReportValue, ResultIteratorExt as _, RootReportScope,
         },
     },
-    command::{
-        common,
-        install::helpers::{BeginInstallTxResult, DbGuard},
-    },
-    db::PackageDatabase,
+    command::common,
+    db::{Installability, PackageDatabase},
+    engine,
     package::{
-        Package, PackageDirs, PackageId, PackageManifest, PackageQualifiedName, PackageSpec,
-        PackageState, PackageVersion,
+        PackageId, PackageManifest, PackageQualifiedName, PackageSpec, PackageState, PackageVersion,
     },
 };
 
@@ -36,6 +33,10 @@ impl ReportScope for InstallScope {
     fn make_failed(&self) -> Self::Error {
         InstallError::Failed
     }
+
+    fn make_cancelled(&self) -> Self::Error {
+        InstallError::Cancelled
+    }
 }
 
 impl RootReportScope for InstallScope {
@@ -46,8 +47,6 @@ impl RootReportScope for InstallScope {
 
 #[derive(Debug, Snafu)]
 enum InstallErrorReport {
-    #[snafu(display("no valid font files found in package {pkg_id}"))]
-    NoValidFonts { pkg_id: PackageId },
     #[snafu(display(
         concat!(
             "multiple versions of package `{pkg_name}` are being installed:\n",
@@ -73,12 +72,9 @@ impl From<InstallErrorReport> for ReportValue<'static> {
 pub(crate) enum InstallError {
     #[snafu(display("failed to install package; see previous messages for details"))]
     Failed,
-    #[snafu(display("install cancelled"))]
+    #[snafu(display("operation cancelled"))]
     Cancelled,
 }
-
-mod helpers;
-mod steps;
 
 pub(crate) async fn install_package(
     cx: &RootContext,
@@ -111,18 +107,10 @@ pub(crate) async fn install_package(
 
     let manifests = common::steps::resolve_package_specs(&cx, &indexes, &pkg_specs)?;
     let manifests = dedup_and_check_conflicts(&cx, &manifests)?;
+    let manifests = cleanup_before_install(&cx, &db, &manifests)?;
 
-    for (db, manifest) in begin_install(&cx, &db, &manifests)? {
-        let pkg_id = manifest.metadata.id();
-        let pkg_dirs = helpers::create_new_package_dirs(&cx, &pkg_id)?;
-        let package = stage_package(&cx, &pkg_dirs, &manifest).await?;
-
-        let registration = steps::register_package_fonts(&cx, &package)?;
-
-        db.complete_install()?;
-
-        pkg_dirs.disarm();
-        registration.disarm();
+    for manifest in manifests {
+        engine::execute_install(&cx, &db, &manifest).await?;
     }
 
     Ok(())
@@ -195,31 +183,29 @@ fn dedup_and_check_conflicts(
         .collect_to_end()
 }
 
-type ManifestWithDbGuard<'db> = (DbGuard<'db, InstallScope>, Arc<PackageManifest>);
-
-fn begin_install<'db>(
+fn cleanup_before_install(
     cx: &ReportContext<InstallScope>,
-    db: &Arc<Mutex<PackageDatabase<'db>>>,
+    db: &Arc<Mutex<PackageDatabase<'_>>>,
     manifests: &[Arc<PackageManifest>],
-) -> Result<Vec<ManifestWithDbGuard<'db>>, InstallError> {
+) -> Result<Vec<Arc<PackageManifest>>, InstallError> {
     let reporter = cx.reporter();
-    let mut guards = vec![];
+    let mut install_manifests = vec![];
     for manifest in manifests {
         let qualified_name = &manifest.metadata.qualified_name;
         loop {
-            let cleanup_versions = match helpers::begin_install(cx, Arc::clone(db), manifest)? {
-                BeginInstallTxResult::CanInstall(db) => {
-                    guards.push((db, Arc::clone(manifest)));
+            let cleanup_versions = match db.lock().unwrap().check_installability(manifest) {
+                Installability::Installable => {
+                    install_manifests.push(Arc::clone(manifest));
                     break;
                 }
-                BeginInstallTxResult::AlreadyInstalled => unreachable!(),
-                BeginInstallTxResult::OtherVersionInstalled(version) => {
+                Installability::AlreadyInstalled => unreachable!(),
+                Installability::OtherVersionInstalled(version) => {
                     reporter.report_info(format_args!(
                     "another version of the package is already installed (version {version}), skipping"
                 ));
                     break;
                 }
-                BeginInstallTxResult::PendingInstallFound(versions) => {
+                Installability::PendingInstallFound(versions) => {
                     let bl = BulletList(
                         &versions
                             .iter()
@@ -235,7 +221,7 @@ fn begin_install<'db>(
                 ));
                     versions
                 }
-                BeginInstallTxResult::PendingUninstallFound(versions) => {
+                Installability::PendingUninstallFound(versions) => {
                     let bl = BulletList(
                         &versions
                             .iter()
@@ -255,55 +241,11 @@ fn begin_install<'db>(
 
             for version in cleanup_versions {
                 let uninstall_pkg_id = PackageId::new(qualified_name.clone(), version);
-                common::steps::uninstall_transaction(cx, db, &uninstall_pkg_id)?;
+                engine::execute_uninstall(cx, db, &uninstall_pkg_id)?;
             }
         }
     }
-    Ok(guards)
-}
-
-async fn stage_package(
-    cx: &ReportContext<InstallScope>,
-    pkg_dirs: &PackageDirs,
-    manifest: &PackageManifest,
-) -> Result<Package, InstallError> {
-    let pkg_id = manifest.metadata.id();
-    let reporter = cx.reporter();
-    let package_fonts_dir = pkg_dirs.fonts_dir();
-
-    let mut file_paths = vec![];
-
-    for source in &manifest.sources {
-        let file = cx
-            .cancel_token()
-            .run_until_cancelled(steps::download_archive(cx, &pkg_id, source))
-            .await
-            .unwrap_or(Err(InstallError::Cancelled))?;
-
-        file_paths.extend(steps::extract_archive(
-            cx,
-            file,
-            &source.include,
-            package_fonts_dir,
-        )?);
-    }
-
-    let valid_entries = steps::validate_and_prune_fonts(cx, package_fonts_dir, &file_paths)?;
-    if cx.cancel_token().is_cancelled() {
-        return Err(InstallError::Cancelled);
-    }
-
-    if valid_entries.is_empty() {
-        return Err(reporter.report_error(NoValidFontsSnafu { pkg_id }.build()));
-    }
-
-    reporter.report_info(format_args!(
-        "{} valid font(s) found in package",
-        valid_entries.len()
-    ));
-
-    let package = Package::new(pkg_id.clone(), pkg_dirs.clone(), valid_entries);
-    Ok(package)
+    Ok(install_manifests)
 }
 
 #[cfg(test)]
@@ -311,7 +253,6 @@ mod tests {
     use super::*;
     use crate::{
         command::common,
-        db::BeginInstallResult,
         util::testing::{self, TempdirContext},
     };
 
@@ -324,10 +265,7 @@ mod tests {
 
         let manifest = testing::make_manifest("other-namespace", "example-font", "1.0.0");
         let pkg_id = manifest.metadata.id();
-        assert!(matches!(
-            db.begin_install(&manifest).unwrap(),
-            BeginInstallResult::CanInstall
-        ));
+        db.begin_install(&manifest).unwrap();
         db.complete_install(&pkg_id).unwrap();
 
         let spec = "example-font".parse::<PackageSpec>().unwrap();
@@ -344,10 +282,7 @@ mod tests {
         let mut db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
 
         let manifest = testing::make_manifest("example-namespace", "example-font", "1.0.0");
-        assert!(matches!(
-            db.begin_install(&manifest).unwrap(),
-            BeginInstallResult::CanInstall
-        ));
+        db.begin_install(&manifest).unwrap();
 
         let spec = "example-font".parse::<PackageSpec>().unwrap();
         let filtered = filter_installed_packages(&cx, &db, &[spec]);
@@ -368,10 +303,7 @@ mod tests {
         let installed_manifest =
             testing::make_manifest("example-namespace", "installed-font", "1.0.0");
         let installed_pkg_id = installed_manifest.metadata.id();
-        assert!(matches!(
-            db.begin_install(&installed_manifest).unwrap(),
-            BeginInstallResult::CanInstall
-        ));
+        db.begin_install(&installed_manifest).unwrap();
         db.complete_install(&installed_pkg_id).unwrap();
 
         let specs = vec![
@@ -406,5 +338,38 @@ mod tests {
         let err = dedup_and_check_conflicts(&cx, &manifests).unwrap_err();
 
         assert!(matches!(err, InstallError::Failed));
+    }
+
+    #[test]
+    fn cleanup_before_install_skips_manifest_when_other_version_is_installed() {
+        let cx = TempdirContext::new();
+        let cx = InstallScope::start(&cx);
+        let mut db_lock_file = common::steps::open_db_lock_file(&cx).unwrap();
+        let mut db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
+
+        let installed_manifest =
+            testing::make_manifest("example-namespace", "example-font", "1.0.0");
+        let installed_pkg_id = installed_manifest.metadata.id();
+        db.begin_install(&installed_manifest).unwrap();
+        db.complete_install(&installed_pkg_id).unwrap();
+
+        let requested_manifest = Arc::new(testing::make_manifest(
+            "example-namespace",
+            "example-font",
+            "2.0.0",
+        ));
+        let db = Arc::new(Mutex::new(db));
+
+        let install_manifests =
+            cleanup_before_install(&cx, &db, &[Arc::clone(&requested_manifest)]).unwrap();
+
+        assert!(install_manifests.is_empty());
+        assert_eq!(
+            db.lock()
+                .unwrap()
+                .entry_by_id(&installed_pkg_id)
+                .map(|(state, manifest)| (state, manifest.metadata.id())),
+            Some((PackageState::Installed, installed_pkg_id)),
+        );
     }
 }

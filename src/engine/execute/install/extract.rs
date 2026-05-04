@@ -37,6 +37,10 @@ where
     fn make_failed(&self) -> Self::Error {
         self.base_scope.make_failed()
     }
+
+    fn make_cancelled(&self) -> Self::Error {
+        self.base_scope.make_cancelled()
+    }
 }
 
 impl<S> SubReportScope<S> for ExtractScope<S>
@@ -88,7 +92,7 @@ impl From<ExtractErrorReport> for ReportValue<'static> {
     }
 }
 
-pub(in crate::command::install) fn extract_archive<S>(
+pub(super) fn extract_archive<S>(
     cx: &ReportContext<S>,
     file: File,
     include: &[glob::Pattern],
