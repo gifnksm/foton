@@ -28,6 +28,10 @@ where
     fn make_failed(&self) -> Self::Error {
         self.base_scope.make_failed()
     }
+
+    fn make_cancelled(&self) -> Self::Error {
+        self.base_scope.make_cancelled()
+    }
 }
 
 impl<S> SubReportScope<S> for DbResolveScope<S>
@@ -93,7 +97,6 @@ mod tests {
     use crate::{
         cli::reporter::RootReportScope as _,
         command::common,
-        db::BeginInstallResult,
         util::testing::{self, TempdirContext, TestError, TestScope},
     };
 
@@ -129,10 +132,7 @@ mod tests {
         let mut db = common::steps::load_database(&cx, &mut lock_file).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let expected = manifest.metadata.id();
-        assert!(matches!(
-            db.begin_install(&manifest).unwrap(),
-            BeginInstallResult::CanInstall
-        ));
+        db.begin_install(&manifest).unwrap();
         db.complete_install(&expected).unwrap();
 
         for spec in [
@@ -159,18 +159,12 @@ mod tests {
 
         let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let pkg_id1 = manifest1.metadata.id();
-        assert!(matches!(
-            db.begin_install(&manifest1).unwrap(),
-            BeginInstallResult::CanInstall
-        ));
+        db.begin_install(&manifest1).unwrap();
         db.complete_install(&pkg_id1).unwrap();
 
         let manifest2 = testing::make_manifest("other-namespace", "example-font", "1.0.0");
         let pkg_id2 = manifest2.metadata.id();
-        assert!(matches!(
-            db.begin_install(&manifest2).unwrap(),
-            BeginInstallResult::CanInstall
-        ));
+        db.begin_install(&manifest2).unwrap();
         db.complete_install(&pkg_id2).unwrap();
 
         let spec = "example-font".parse::<PackageSpec>().unwrap();
@@ -187,10 +181,7 @@ mod tests {
         let mut db = common::steps::load_database(&cx, &mut lock_file).unwrap();
         let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
         let expected = manifest.metadata.id();
-        assert!(matches!(
-            db.begin_install(&manifest).unwrap(),
-            BeginInstallResult::CanInstall
-        ));
+        db.begin_install(&manifest).unwrap();
 
         let spec = "example-namespace/example-font"
             .parse::<PackageSpec>()
@@ -219,17 +210,11 @@ mod tests {
         let mut db = common::steps::load_database(&cx, &mut lock_file).unwrap();
 
         let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
-        assert!(matches!(
-            db.begin_install(&manifest1).unwrap(),
-            BeginInstallResult::CanInstall
-        ));
+        db.begin_install(&manifest1).unwrap();
 
         let manifest2 = testing::make_manifest("other-namespace", "example-font", "1.0.0");
         let pkg_id2 = manifest2.metadata.id();
-        assert!(matches!(
-            db.begin_install(&manifest2).unwrap(),
-            BeginInstallResult::CanInstall
-        ));
+        db.begin_install(&manifest2).unwrap();
         db.begin_uninstall(&pkg_id2).unwrap();
 
         let spec = "example-font".parse::<PackageSpec>().unwrap();

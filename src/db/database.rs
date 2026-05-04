@@ -9,6 +9,7 @@ use snafu::{IntoError as _, OptionExt as _, ResultExt as _, Snafu};
 use tempfile::NamedTempFile;
 
 use crate::{
+    cli::message::BulletList,
     db::{
         DbLockFileGuard,
         persist::{self, PersistError, PersistedPackageDb, PersistedPackageEntry},
@@ -41,6 +42,44 @@ pub(crate) enum PackageDatabaseError {
         pkg_id: PackageId,
         expected: PackageState,
         actual: PackageState,
+    },
+    #[snafu(display("package ID {pkg_id} is already installed"))]
+    AlreadyInstalled { pkg_id: PackageId },
+    #[snafu(display(
+        "package {pkg_name} version {installed_version} is already installed, cannot install version {attempted_version}",
+    ))]
+    OtherVersionInstalled {
+        pkg_name: PackageQualifiedName,
+        installed_version: PackageVersion,
+        attempted_version: PackageVersion,
+    },
+    #[snafu(display(
+        concat!(
+            "pending install(s) found for package {pkg_name}, attempted to install version {attempted_version}: pending versions:\n",
+            "{pending_versions}",
+        ),
+        pkg_name = pkg_name,
+        attempted_version = attempted_version,
+        pending_versions = BulletList(pending_versions),
+    ))]
+    PendingInstallFound {
+        pkg_name: PackageQualifiedName,
+        pending_versions: BTreeSet<PackageVersion>,
+        attempted_version: PackageVersion,
+    },
+    #[snafu(display(
+        concat!(
+            "pending uninstall(s) found for package {pkg_name}, attempted to install version {attempted_version}: pending versions:\n",
+            "{pending_versions}",
+        ),
+        pkg_name = pkg_name,
+        attempted_version = attempted_version,
+        pending_versions = BulletList(pending_versions),
+    ))]
+    PendingUninstallFound {
+        pkg_name: PackageQualifiedName,
+        pending_versions: BTreeSet<PackageVersion>,
+        attempted_version: PackageVersion,
     },
     #[cfg(test)]
     #[snafu(display("simulated failure to save package database"))]
@@ -209,10 +248,7 @@ impl<'a> PackageDatabase<'a> {
         Some(entry)
     }
 
-    pub(crate) fn begin_install(
-        &mut self,
-        manifest: &PackageManifest,
-    ) -> Result<BeginInstallResult, PackageDatabaseError> {
+    pub(crate) fn check_installability(&self, manifest: &PackageManifest) -> Installability {
         let mut pending_installs = BTreeSet::new();
         let mut pending_uninstalls = BTreeSet::new();
         let pkg_name = manifest.metadata.qualified_name.clone();
@@ -221,11 +257,11 @@ impl<'a> PackageDatabase<'a> {
             match state {
                 PackageState::Installed => {
                     let result = if m.metadata.version == pkg_version {
-                        BeginInstallResult::AlreadyInstalled
+                        Installability::AlreadyInstalled
                     } else {
-                        BeginInstallResult::OtherVersionInstalled(m.metadata.version.clone())
+                        Installability::OtherVersionInstalled(m.metadata.version.clone())
                     };
-                    return Ok(result);
+                    return result;
                 }
                 PackageState::PendingInstall => {
                     pending_installs.insert(m.metadata.version.clone());
@@ -236,20 +272,54 @@ impl<'a> PackageDatabase<'a> {
             }
         }
         if !pending_uninstalls.is_empty() {
-            return Ok(BeginInstallResult::PendingUninstallFound(
-                pending_uninstalls,
-            ));
+            return Installability::PendingUninstallFound(pending_uninstalls);
         }
         if !pending_installs.is_empty() {
-            return Ok(BeginInstallResult::PendingInstallFound(pending_installs));
+            return Installability::PendingInstallFound(pending_installs);
         }
+        Installability::Installable
+    }
+
+    pub(crate) fn begin_install(
+        &mut self,
+        manifest: &PackageManifest,
+    ) -> Result<(), PackageDatabaseError> {
+        let result = self.check_installability(manifest);
+        let pkg_id = manifest.metadata.id();
+        match result {
+            Installability::Installable => {}
+            Installability::AlreadyInstalled => AlreadyInstalledSnafu { pkg_id }.fail()?,
+            Installability::OtherVersionInstalled(installed_version) => {
+                OtherVersionInstalledSnafu {
+                    pkg_name: pkg_id.qualified_name(),
+                    installed_version,
+                    attempted_version: pkg_id.version(),
+                }
+                .fail()?;
+            }
+            Installability::PendingInstallFound(pending_versions) => PendingInstallFoundSnafu {
+                pkg_name: pkg_id.qualified_name(),
+                pending_versions,
+                attempted_version: pkg_id.version(),
+            }
+            .fail()?,
+            Installability::PendingUninstallFound(pending_versions) => {
+                PendingUninstallFoundSnafu {
+                    pkg_name: pkg_id.qualified_name(),
+                    pending_versions,
+                    attempted_version: pkg_id.version(),
+                }
+                .fail()?;
+            }
+        }
+
         self.insert_entry(PackageState::PendingInstall, manifest.clone());
         if let Err(err) = self.save() {
-            let pkg_id = PackageId::new(pkg_name, pkg_version);
+            let pkg_id = manifest.metadata.id();
             let _ = self.remove_entry(&pkg_id);
             return Err(err);
         }
-        Ok(BeginInstallResult::CanInstall)
+        Ok(())
     }
 
     pub(crate) fn complete_install(
@@ -357,8 +427,8 @@ impl<'a> PackageDatabase<'a> {
 }
 
 #[derive(Debug, Clone, derive_more::IsVariant)]
-pub(crate) enum BeginInstallResult {
-    CanInstall,
+pub(crate) enum Installability {
+    Installable,
     AlreadyInstalled,
     OtherVersionInstalled(PackageVersion),
     PendingInstallFound(BTreeSet<PackageVersion>),
@@ -461,10 +531,7 @@ mod tests {
             None,
             Some(PackageState::Installed),
             |db| {
-                assert!(matches!(
-                    db.begin_install(&manifest).unwrap(),
-                    BeginInstallResult::CanInstall
-                ));
+                db.begin_install(&manifest).unwrap();
                 db.complete_install(&pkg_id).unwrap();
             },
         );
@@ -479,10 +546,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            assert!(matches!(
-                db.begin_install(&manifest).unwrap(),
-                BeginInstallResult::CanInstall
-            ));
+            db.begin_install(&manifest).unwrap();
         });
         assert_status_change(
             &app_dirs,
@@ -491,11 +555,11 @@ mod tests {
             Some(PackageState::PendingInstall),
             Some(PackageState::PendingInstall),
             |db| {
-                let result = db.begin_install(&manifest).unwrap();
+                let err = db.begin_install(&manifest).unwrap_err();
                 assert!(matches!(
-                    result,
-                    BeginInstallResult::PendingInstallFound(ref versions)
-                        if versions.contains(&Version::new(0, 1, 0).into())
+                    err,
+                    PackageDatabaseError::PendingInstallFound { pending_versions, .. }
+                        if pending_versions.contains(&Version::new(0, 1, 0).into())
                 ));
             },
         );
@@ -513,10 +577,7 @@ mod tests {
         let next_pkg_id = next_manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            assert!(matches!(
-                db.begin_install(&installed_manifest).unwrap(),
-                BeginInstallResult::CanInstall
-            ));
+            db.begin_install(&installed_manifest).unwrap();
             db.complete_install(&installed_pkg_id).unwrap();
         });
         assert_statuses_change(
@@ -531,11 +592,11 @@ mod tests {
                 (&next_pkg_id, None, None),
             ],
             |db| {
-                let result = db.begin_install(&next_manifest).unwrap();
+                let err = db.begin_install(&next_manifest).unwrap_err();
                 assert!(matches!(
-                    result,
-                    BeginInstallResult::OtherVersionInstalled(version)
-                        if version == Version::new(0, 1, 0)
+                    err,
+                    PackageDatabaseError::OtherVersionInstalled { installed_version, ..}
+                        if installed_version == Version::new(0, 1, 0)
                 ));
             },
         );
@@ -550,10 +611,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            assert!(matches!(
-                db.begin_install(&manifest).unwrap(),
-                BeginInstallResult::CanInstall
-            ));
+            db.begin_install(&manifest).unwrap();
         });
         assert_status_change(
             &app_dirs,
@@ -576,10 +634,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            assert!(matches!(
-                db.begin_install(&manifest).unwrap(),
-                BeginInstallResult::CanInstall
-            ));
+            db.begin_install(&manifest).unwrap();
             db.complete_install(&pkg_id).unwrap();
         });
         assert_status_change(
@@ -607,10 +662,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            assert!(matches!(
-                db.begin_install(&manifest).unwrap(),
-                BeginInstallResult::CanInstall
-            ));
+            db.begin_install(&manifest).unwrap();
             db.complete_install(&pkg_id).unwrap();
             assert!(matches!(
                 db.begin_uninstall(&pkg_id).unwrap(),
@@ -624,11 +676,11 @@ mod tests {
             Some(PackageState::PendingUninstall),
             Some(PackageState::PendingUninstall),
             |db| {
-                let result = db.begin_install(&manifest).unwrap();
+                let err = db.begin_install(&manifest).unwrap_err();
                 assert!(matches!(
-                    result,
-                    BeginInstallResult::PendingUninstallFound(ref versions)
-                        if versions.contains(&Version::new(0, 1, 0).into())
+                    err,
+                    PackageDatabaseError::PendingUninstallFound { pending_versions, .. }
+                        if pending_versions.contains(&Version::new(0, 1, 0).into())
                 ));
             },
         );
@@ -658,10 +710,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            assert!(matches!(
-                db.begin_install(&manifest).unwrap(),
-                BeginInstallResult::CanInstall
-            ));
+            db.begin_install(&manifest).unwrap();
         });
         assert_status_change(
             &app_dirs,
@@ -686,10 +735,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            assert!(matches!(
-                db.begin_install(&manifest).unwrap(),
-                BeginInstallResult::CanInstall
-            ));
+            db.begin_install(&manifest).unwrap();
         });
         assert_status_change(
             &app_dirs,
@@ -714,10 +760,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            assert!(matches!(
-                db.begin_install(&manifest).unwrap(),
-                BeginInstallResult::CanInstall
-            ));
+            db.begin_install(&manifest).unwrap();
             db.complete_install(&pkg_id).unwrap();
         });
         assert_status_change(
@@ -743,10 +786,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            assert!(matches!(
-                db.begin_install(&manifest).unwrap(),
-                BeginInstallResult::CanInstall
-            ));
+            db.begin_install(&manifest).unwrap();
             db.complete_install(&pkg_id).unwrap();
             assert!(matches!(
                 db.begin_uninstall(&pkg_id).unwrap(),

@@ -4,7 +4,7 @@ use crate::{
     platform::windows::steps::{registration, unregistration},
 };
 
-pub(in crate::command::install) fn register_package_fonts<S>(
+pub(super) fn register_package_fonts<S>(
     cx: &ReportContext<S>,
     package: &Package,
 ) -> Result<RegistrationGuard<S>, S::Error>
@@ -22,7 +22,7 @@ where
 
 #[must_use]
 #[derive(Debug)]
-pub(in crate::command::install) struct RegistrationGuard<S>
+pub(super) struct RegistrationGuard<S>
 where
     S: ReportScope,
 {
@@ -50,7 +50,7 @@ impl<S> RegistrationGuard<S>
 where
     S: ReportScope,
 {
-    pub(crate) fn disarm(mut self) {
+    pub(super) fn disarm(mut self) {
         self.armed = false;
     }
 }

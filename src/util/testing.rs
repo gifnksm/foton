@@ -28,6 +28,10 @@ impl ReportScope for TestScope {
     fn make_failed(&self) -> Self::Error {
         TestError::Failed
     }
+
+    fn make_cancelled(&self) -> Self::Error {
+        TestError::Cancelled
+    }
 }
 
 impl RootReportScope for TestScope {
@@ -39,6 +43,7 @@ impl RootReportScope for TestScope {
 #[derive(Debug)]
 pub(crate) enum TestError {
     Failed,
+    Cancelled,
 }
 
 #[derive(Debug)]

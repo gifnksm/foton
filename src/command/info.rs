@@ -25,6 +25,9 @@ impl ReportScope for InfoScope {
     fn make_failed(&self) -> Self::Error {
         InfoError::Failed
     }
+    fn make_cancelled(&self) -> Self::Error {
+        InfoError::Cancelled
+    }
 }
 
 impl RootReportScope for InfoScope {
@@ -51,6 +54,8 @@ impl From<InfoErrorReport> for ReportValue<'static> {
 pub(crate) enum InfoError {
     #[snafu(display("failed to print package information; see previous messages for details"))]
     Failed,
+    #[snafu(display("operation cancelled"))]
+    Cancelled,
 }
 
 pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), InfoError> {

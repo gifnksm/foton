@@ -25,6 +25,10 @@ impl ReportScope for ListScope {
     fn make_failed(&self) -> Self::Error {
         ListError::Failed
     }
+
+    fn make_cancelled(&self) -> Self::Error {
+        ListError::Cancelled
+    }
 }
 
 impl RootReportScope for ListScope {
@@ -49,6 +53,8 @@ impl From<ListErrorReport> for ReportValue<'static> {
 pub(crate) enum ListError {
     #[snafu(display("failed to list installed packages; see previous messages for details"))]
     Failed,
+    #[snafu(display("operation cancelled"))]
+    Cancelled,
 }
 
 pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), ListError> {

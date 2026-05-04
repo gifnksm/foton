@@ -9,6 +9,7 @@ use crate::{
         reporter::{NeverReport, ReportScope, RootReportScope},
     },
     command::common,
+    engine,
 };
 
 #[derive(Debug)]
@@ -22,6 +23,10 @@ impl ReportScope for UninstallScope {
     fn make_failed(&self) -> Self::Error {
         UninstallError::Failed
     }
+
+    fn make_cancelled(&self) -> Self::Error {
+        UninstallError::Cancelled
+    }
 }
 
 impl RootReportScope for UninstallScope {
@@ -34,6 +39,8 @@ impl RootReportScope for UninstallScope {
 pub(crate) enum UninstallError {
     #[snafu(display("failed to uninstall package; see previous messages for details"))]
     Failed,
+    #[snafu(display("operation cancelled"))]
+    Cancelled,
 }
 
 pub(crate) fn uninstall_package(
@@ -62,7 +69,7 @@ pub(crate) fn uninstall_package(
             continue;
         };
 
-        common::steps::uninstall_transaction(&cx, &db, &pkg_id)?;
+        engine::execute_uninstall(&cx, &db, &pkg_id)?;
     }
 
     Ok(())

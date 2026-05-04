@@ -31,6 +31,7 @@ use crate::{
 mod cli;
 mod command;
 mod db;
+mod engine;
 mod package;
 mod platform;
 mod registry;

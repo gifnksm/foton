@@ -35,6 +35,10 @@ where
     fn make_failed(&self) -> Self::Error {
         self.base_scope.make_failed()
     }
+
+    fn make_cancelled(&self) -> Self::Error {
+        self.base_scope.make_cancelled()
+    }
 }
 
 impl<S> SubReportScope<S> for DownloadScope<S>
@@ -82,7 +86,7 @@ impl From<DownloadErrorReport> for ReportValue<'static> {
     }
 }
 
-pub(in crate::command::install) async fn download_archive<S>(
+pub(super) async fn download_archive<S>(
     cx: &ReportContext<S>,
     pkg_id: &PackageId,
     source: &PackageSource,

@@ -28,6 +28,9 @@ where
     fn make_failed(&self) -> Self::Error {
         self.base_scope.make_failed()
     }
+    fn make_cancelled(&self) -> Self::Error {
+        self.base_scope.make_cancelled()
+    }
 }
 
 impl<S> SubReportScope<S> for DatabaseLoadScope<S>

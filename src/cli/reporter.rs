@@ -188,6 +188,7 @@ pub(crate) trait ReportScope: Debug {
     type Error;
 
     fn make_failed(&self) -> Self::Error;
+    fn make_cancelled(&self) -> Self::Error;
 }
 
 pub(crate) trait RootReportScope: ReportScope {
