@@ -1,5 +1,4 @@
-pub(in crate::command) use self::{database::*, db_resolve::*, registry::*};
+pub(in crate::command) use self::{database::*, registry::*};
 
 mod database;
-mod db_resolve;
 mod registry;

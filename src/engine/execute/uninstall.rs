@@ -12,7 +12,7 @@ use crate::{
             NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
         },
     },
-    db::{BeginUninstallResult, PackageDatabase, PackageDatabaseError},
+    db::{PackageDatabase, PackageDatabaseError},
     package::{self, PackageDirs, PackageId},
     platform::windows::steps::unregistration,
     util::fs::FsError,
@@ -45,8 +45,6 @@ where
 
 #[derive(Debug, Snafu)]
 enum UninstallExecutionErrorReport {
-    #[snafu(display("resolved package not found in database: {pkg_id}"))]
-    ResolvedPackageNotFound { pkg_id: PackageId },
     #[snafu(display(
         concat!(
             "failed to remove package files for package {pkg_id}\n",
@@ -96,16 +94,9 @@ where
 
     {
         let mut db = db.lock().unwrap();
-        let res = db
-            .begin_uninstall(pkg_id)
+        db.begin_uninstall(pkg_id)
             .context(BeginUninstallSnafu { pkg_id })
             .report_error(reporter)?;
-        match res {
-            BeginUninstallResult::CanUninstall => {}
-            BeginUninstallResult::NotFound => {
-                return Err(reporter.report_error(ResolvedPackageNotFoundSnafu { pkg_id }.build()));
-            }
-        }
     }
 
     unregistration::unregister_package_fonts(&cx, pkg_id)?;
@@ -140,7 +131,7 @@ mod tests {
         cli::reporter::RootReportScope as _,
         db::{DbLockFile, PackageDatabase},
         package::{PackageId, PackageState},
-        util::testing::{self, TempdirContext, TestScope},
+        util::testing::{self, TempdirContext, TestError, TestScope},
     };
 
     fn test_app_id() -> String {
@@ -157,6 +148,20 @@ mod tests {
 
     fn get_entry_state(db: &PackageDatabase<'_>, pkg_id: &PackageId) -> Option<PackageState> {
         db.entry_by_id(pkg_id).map(|(state, _manifest)| state)
+    }
+
+    #[test]
+    fn execute_uninstall_reports_missing_package() {
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+
+        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
+        let lock_file_guard = db_lock_file.try_acquire().unwrap();
+        let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+        let db = Arc::new(Mutex::new(db));
+
+        let err = execute_uninstall(&cx, &db, &PKG_ID).unwrap_err();
+        assert!(matches!(err, TestError::Failed));
     }
 
     #[test]
@@ -180,8 +185,7 @@ mod tests {
         {
             let lock_file_guard = db_lock_file.try_acquire().unwrap();
             let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
-            db.begin_install(&manifest).unwrap();
-            db.complete_install(&PKG_ID).unwrap();
+            testing::mark_as_installed(&mut db, &manifest);
 
             let db = Arc::new(Mutex::new(db));
             execute_uninstall(&cx, &db, &PKG_ID).unwrap();
