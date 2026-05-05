@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{marker::PhantomData, path::PathBuf};
 
 use snafu::{ResultExt as _, Snafu};
 
@@ -19,7 +19,7 @@ use crate::{
 
 #[derive(Debug)]
 struct RegistrationScope<S> {
-    base_scope: Arc<S>,
+    _base_scope: PhantomData<S>,
 }
 
 impl<S> ReportScope for RegistrationScope<S>
@@ -29,22 +29,16 @@ where
     type WarnReportValue = RegistrationWarnReport;
     type ErrorReportValue = RegistrationErrorReport;
     type Error = S::Error;
-
-    fn make_failed(&self) -> Self::Error {
-        self.base_scope.make_failed()
-    }
-
-    fn make_cancelled(&self) -> Self::Error {
-        self.base_scope.make_cancelled()
-    }
 }
 
 impl<S> SubReportScope<S> for RegistrationScope<S>
 where
     S: ReportScope,
 {
-    fn new(base_scope: Arc<S>) -> Self {
-        Self { base_scope }
+    fn new() -> Self {
+        Self {
+            _base_scope: PhantomData,
+        }
     }
 }
 

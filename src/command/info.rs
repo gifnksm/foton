@@ -7,7 +7,8 @@ use crate::{
         args::InfoArgs,
         context::RootContext,
         reporter::{
-            NeverReport, ReportScope, ReportValue, RootReportScope, ScopeResultErrorExt as _,
+            NeverReport, OperationError, ReportScope, ReportValue, RootReportScope,
+            ScopeResultErrorExt as _,
         },
     },
     command::common,
@@ -21,13 +22,6 @@ impl ReportScope for InfoScope {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = InfoErrorReport;
     type Error = InfoError;
-
-    fn make_failed(&self) -> Self::Error {
-        InfoError::Failed
-    }
-    fn make_cancelled(&self) -> Self::Error {
-        InfoError::Cancelled
-    }
 }
 
 impl RootReportScope for InfoScope {
@@ -56,6 +50,16 @@ pub(crate) enum InfoError {
     Failed,
     #[snafu(display("operation cancelled"))]
     Cancelled,
+}
+
+impl OperationError for InfoError {
+    fn failed() -> Self {
+        Self::Failed
+    }
+
+    fn cancelled() -> Self {
+        Self::Cancelled
+    }
 }
 
 pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), InfoError> {

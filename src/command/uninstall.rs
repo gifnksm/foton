@@ -6,7 +6,7 @@ use crate::{
     cli::{
         args::UninstallArgs,
         context::RootContext,
-        reporter::{NeverReport, ReportScope, RootReportScope},
+        reporter::{NeverReport, OperationError, ReportScope, RootReportScope},
     },
     command::common,
     engine,
@@ -19,14 +19,6 @@ impl ReportScope for UninstallScope {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = NeverReport;
     type Error = UninstallError;
-
-    fn make_failed(&self) -> Self::Error {
-        UninstallError::Failed
-    }
-
-    fn make_cancelled(&self) -> Self::Error {
-        UninstallError::Cancelled
-    }
 }
 
 impl RootReportScope for UninstallScope {
@@ -41,6 +33,16 @@ pub(crate) enum UninstallError {
     Failed,
     #[snafu(display("operation cancelled"))]
     Cancelled,
+}
+
+impl OperationError for UninstallError {
+    fn failed() -> Self {
+        Self::Failed
+    }
+
+    fn cancelled() -> Self {
+        Self::Cancelled
+    }
 }
 
 pub(crate) fn uninstall_package(

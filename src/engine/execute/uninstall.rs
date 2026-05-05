@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    marker::PhantomData,
+    sync::{Arc, Mutex},
+};
 
 use snafu::{ResultExt as _, Snafu};
 
@@ -17,7 +20,7 @@ use crate::{
 
 #[derive(Debug)]
 struct UninstallExecutionScope<S> {
-    base_scope: Arc<S>,
+    _base_scope: PhantomData<S>,
 }
 
 impl<S> ReportScope for UninstallExecutionScope<S>
@@ -27,22 +30,16 @@ where
     type WarnReportValue = NeverReport;
     type ErrorReportValue = UninstallExecutionErrorReport;
     type Error = S::Error;
-
-    fn make_failed(&self) -> Self::Error {
-        self.base_scope.make_failed()
-    }
-
-    fn make_cancelled(&self) -> Self::Error {
-        self.base_scope.make_cancelled()
-    }
 }
 
 impl<S> SubReportScope<S> for UninstallExecutionScope<S>
 where
     S: ReportScope,
 {
-    fn new(base_scope: Arc<S>) -> Self {
-        Self { base_scope }
+    fn new() -> Self {
+        Self {
+            _base_scope: PhantomData,
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-use std::{fs::File, io, pin::pin, sync::Arc};
+use std::{fs::File, io, marker::PhantomData, pin::pin};
 
 use bytes::Bytes;
 use futures_core::Stream;
@@ -21,7 +21,7 @@ use crate::{
 
 #[derive(Debug)]
 struct DownloadScope<S> {
-    base_scope: Arc<S>,
+    _base_scope: PhantomData<S>,
 }
 
 impl<S> ReportScope for DownloadScope<S>
@@ -31,22 +31,16 @@ where
     type WarnReportValue = NeverReport;
     type ErrorReportValue = DownloadErrorReport;
     type Error = S::Error;
-
-    fn make_failed(&self) -> Self::Error {
-        self.base_scope.make_failed()
-    }
-
-    fn make_cancelled(&self) -> Self::Error {
-        self.base_scope.make_cancelled()
-    }
 }
 
 impl<S> SubReportScope<S> for DownloadScope<S>
 where
     S: ReportScope,
 {
-    fn new(base_scope: Arc<S>) -> Self {
-        Self { base_scope }
+    fn new() -> Self {
+        Self {
+            _base_scope: PhantomData,
+        }
     }
 }
 

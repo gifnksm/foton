@@ -1,11 +1,14 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    marker::PhantomData,
+    sync::{Arc, Mutex},
+};
 
 use snafu::Snafu;
 
 use crate::{
     cli::{
         context::ReportContext,
-        reporter::{NeverReport, ReportScope, ReportValue, SubReportScope},
+        reporter::{NeverReport, OperationError as _, ReportScope, ReportValue, SubReportScope},
     },
     db::PackageDatabase,
     package::{Package, PackageDirs, PackageId, PackageManifest},
@@ -20,7 +23,7 @@ mod validate;
 
 #[derive(Debug)]
 struct InstallExecutionScope<S> {
-    base_scope: Arc<S>,
+    _base_scope: PhantomData<S>,
 }
 
 impl<S> ReportScope for InstallExecutionScope<S>
@@ -30,22 +33,16 @@ where
     type WarnReportValue = NeverReport;
     type ErrorReportValue = InstallExecutionErrorReport;
     type Error = S::Error;
-
-    fn make_failed(&self) -> Self::Error {
-        self.base_scope.make_failed()
-    }
-
-    fn make_cancelled(&self) -> Self::Error {
-        self.base_scope.make_cancelled()
-    }
 }
 
 impl<S> SubReportScope<S> for InstallExecutionScope<S>
 where
     S: ReportScope,
 {
-    fn new(base_scope: Arc<S>) -> Self {
-        Self { base_scope }
+    fn new() -> Self {
+        Self {
+            _base_scope: PhantomData,
+        }
     }
 }
 
@@ -106,7 +103,7 @@ where
             .cancel_token()
             .run_until_cancelled(download::download_archive(cx, &pkg_id, source))
             .await
-            .unwrap_or(Err(cx.scope().make_cancelled()))?;
+            .unwrap_or(Err(S::Error::cancelled()))?;
 
         file_paths.extend(extract::extract_archive(
             cx,
@@ -118,7 +115,7 @@ where
 
     let valid_entries = validate::validate_and_prune_fonts(cx, package_fonts_dir, &file_paths)?;
     if cx.cancel_token().is_cancelled() {
-        return Err(cx.scope().make_cancelled());
+        return Err(S::Error::cancelled());
     }
 
     if valid_entries.is_empty() {

@@ -182,13 +182,15 @@ impl From<NeverReport> for ReportValue<'_> {
     }
 }
 
+pub(crate) trait OperationError {
+    fn failed() -> Self;
+    fn cancelled() -> Self;
+}
+
 pub(crate) trait ReportScope: Debug {
     type WarnReportValue: Into<ReportValue<'static>>;
     type ErrorReportValue: Into<ReportValue<'static>>;
-    type Error;
-
-    fn make_failed(&self) -> Self::Error;
-    fn make_cancelled(&self) -> Self::Error;
+    type Error: OperationError;
 }
 
 pub(crate) trait RootReportScope: ReportScope {
@@ -213,15 +215,14 @@ pub(crate) trait RootReportScope: ReportScope {
 }
 
 pub(crate) trait SubReportScope<S>: ReportScope {
-    fn new(base_scope: Arc<S>) -> Self;
+    fn new() -> Self;
 
     fn start(base_cx: &ReportContext<S>) -> ReportContext<Self>
     where
         Self: Sized,
         S: ReportScope<Error = Self::Error>,
     {
-        let base_scope = Arc::clone(base_cx.scope());
-        base_cx.with_scope(Self::new(base_scope))
+        base_cx.with_scope(Self::new())
     }
 
     fn start_with_report<M>(base_cx: &ReportContext<S>, message: M) -> ReportContext<Self>
@@ -255,10 +256,6 @@ impl<S> ScopedReporter<S>
 where
     S: ReportScope,
 {
-    pub(crate) fn scope(&self) -> &Arc<S> {
-        &self.scope
-    }
-
     pub(crate) fn with_scope<T>(&self, scope: T) -> ScopedReporter<T>
     where
         T: ReportScope<Error = S::Error>,
@@ -289,7 +286,7 @@ where
 
     pub(crate) fn report_error(&self, report: S::ErrorReportValue) -> S::Error {
         self.root_reporter.report_error(report);
-        self.scope.make_failed()
+        S::Error::failed()
     }
 
     pub(crate) fn download_progress_bar(&self, len: Option<u64>) -> ProgressBar {

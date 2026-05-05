@@ -91,8 +91,4 @@ where
             cancel_token: self.cancel_token.clone(),
         }
     }
-
-    pub(crate) fn scope(&self) -> &Arc<S> {
-        self.reporter.scope()
-    }
 }

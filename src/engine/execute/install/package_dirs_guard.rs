@@ -1,4 +1,4 @@
-use std::{ops::Deref, sync::Arc};
+use std::{marker::PhantomData, ops::Deref};
 
 use snafu::{ResultExt as _, Snafu};
 
@@ -16,7 +16,7 @@ use crate::{
 
 #[derive(Debug)]
 struct PackageDirsScope<S> {
-    base_scope: Arc<S>,
+    _base_scope: PhantomData<S>,
 }
 
 impl<S> ReportScope for PackageDirsScope<S>
@@ -26,22 +26,16 @@ where
     type WarnReportValue = PackageDirWarnReport;
     type ErrorReportValue = PackageDirErrorReport;
     type Error = S::Error;
-
-    fn make_failed(&self) -> Self::Error {
-        self.base_scope.make_failed()
-    }
-
-    fn make_cancelled(&self) -> Self::Error {
-        self.base_scope.make_cancelled()
-    }
 }
 
 impl<S> SubReportScope<S> for PackageDirsScope<S>
 where
     S: ReportScope,
 {
-    fn new(base_scope: Arc<S>) -> Self {
-        Self { base_scope }
+    fn new() -> Self {
+        Self {
+            _base_scope: PhantomData,
+        }
     }
 }
 

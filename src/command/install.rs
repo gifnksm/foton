@@ -11,7 +11,8 @@ use crate::{
         context::{ReportContext, RootContext},
         message::BulletList,
         reporter::{
-            NeverReport, ReportScope, ReportValue, ResultIteratorExt as _, RootReportScope,
+            NeverReport, OperationError, ReportScope, ReportValue, ResultIteratorExt as _,
+            RootReportScope,
         },
     },
     command::common,
@@ -29,14 +30,6 @@ impl ReportScope for InstallScope {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = InstallErrorReport;
     type Error = InstallError;
-
-    fn make_failed(&self) -> Self::Error {
-        InstallError::Failed
-    }
-
-    fn make_cancelled(&self) -> Self::Error {
-        InstallError::Cancelled
-    }
 }
 
 impl RootReportScope for InstallScope {
@@ -74,6 +67,16 @@ pub(crate) enum InstallError {
     Failed,
     #[snafu(display("operation cancelled"))]
     Cancelled,
+}
+
+impl OperationError for InstallError {
+    fn failed() -> Self {
+        Self::Failed
+    }
+
+    fn cancelled() -> Self {
+        Self::Cancelled
+    }
 }
 
 pub(crate) async fn install_package(
