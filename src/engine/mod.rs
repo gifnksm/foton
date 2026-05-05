@@ -1,3 +1,4 @@
-pub(crate) use self::execute::*;
+pub(crate) use self::{execute::*, resolve::*};
 
 mod execute;
+mod resolve;

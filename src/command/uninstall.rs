@@ -6,6 +6,7 @@ use crate::{
     cli::{
         args::UninstallArgs,
         context::RootContext,
+        message::BulletList,
         reporter::{NeverReport, OperationError, ReportScope, RootReportScope},
     },
     command::common,
@@ -55,23 +56,32 @@ pub(crate) fn uninstall_package(
         cx,
         format_args!("Uninstalling {} package(s)...", pkg_specs.len()),
     );
-    let reporter = cx.reporter();
 
     let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
     let db = common::steps::load_database(&cx, &mut db_lock_file)?;
     let db = Arc::new(Mutex::new(db));
 
-    for pkg_spec in pkg_specs {
-        let Some(pkg_id) = common::steps::resolve_spec_in_db(&cx, &db.lock().unwrap(), pkg_spec)?
-            .map(|(_state, manifest)| manifest.metadata.id())
-        else {
-            reporter.report_info(format_args!(
-                "no package matches the specified package `{pkg_spec}`; nothing to do"
-            ));
-            continue;
-        };
+    let targets = engine::resolve_uninstall_targets(&cx, &db.lock().unwrap(), pkg_specs)?;
 
-        engine::execute_uninstall(&cx, &db, &pkg_id)?;
+    if targets.is_empty() {
+        cx.reporter().report_info(format_args!(
+            "no packages need to be uninstalled, nothing to do"
+        ));
+        return Ok(());
+    }
+
+    cx.reporter().report_info(format_args!(
+        "Uninstalling the following packages:\n{}",
+        BulletList(
+            &targets
+                .iter()
+                .map(|target| format!("{} ({})", target.pkg_id, target.current_state))
+                .collect::<Vec<_>>(),
+        )
+    ));
+
+    for target in &targets {
+        engine::execute_uninstall(&cx, &db, &target.pkg_id)?;
     }
 
     Ok(())

@@ -383,15 +383,10 @@ impl<'a> PackageDatabase<'a> {
     pub(crate) fn begin_uninstall(
         &mut self,
         pkg_id: &PackageId,
-    ) -> Result<BeginUninstallResult, PackageDatabaseError> {
-        let Some(entry) = self
-            .persist_db
-            .packages
-            .get_mut(pkg_id.qualified_name())
-            .and_then(|version_map| version_map.versions.get_mut(pkg_id.version()))
-        else {
-            return Ok(BeginUninstallResult::NotFound);
-        };
+    ) -> Result<(), PackageDatabaseError> {
+        let entry = self
+            .entry_mut(pkg_id)
+            .context(EntryNotFoundSnafu { pkg_id })?;
         let old_state = entry.state;
         entry.state = PackageState::PendingUninstall;
         if let Err(err) = self.save() {
@@ -399,7 +394,7 @@ impl<'a> PackageDatabase<'a> {
             entry.state = old_state;
             return Err(err);
         }
-        Ok(BeginUninstallResult::CanUninstall)
+        Ok(())
     }
 
     pub(crate) fn complete_uninstall(
@@ -433,12 +428,6 @@ pub(crate) enum Installability {
     OtherVersionInstalled(PackageVersion),
     PendingInstallFound(BTreeSet<PackageVersion>),
     PendingUninstallFound(BTreeSet<PackageVersion>),
-}
-
-#[derive(Debug, Clone, derive_more::IsVariant)]
-pub(crate) enum BeginUninstallResult {
-    CanUninstall,
-    NotFound,
 }
 
 #[cfg(test)]
@@ -546,7 +535,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            db.begin_install(&manifest).unwrap();
+            testing::mark_as_pending_installed(db, &manifest);
         });
         assert_status_change(
             &app_dirs,
@@ -577,8 +566,7 @@ mod tests {
         let next_pkg_id = next_manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            db.begin_install(&installed_manifest).unwrap();
-            db.complete_install(&installed_pkg_id).unwrap();
+            testing::mark_as_installed(db, &installed_manifest);
         });
         assert_statuses_change(
             &app_dirs,
@@ -611,7 +599,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            db.begin_install(&manifest).unwrap();
+            testing::mark_as_pending_installed(db, &manifest);
         });
         assert_status_change(
             &app_dirs,
@@ -634,8 +622,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            db.begin_install(&manifest).unwrap();
-            db.complete_install(&pkg_id).unwrap();
+            testing::mark_as_installed(db, &manifest);
         });
         assert_status_change(
             &app_dirs,
@@ -644,10 +631,7 @@ mod tests {
             Some(PackageState::Installed),
             None,
             |db| {
-                assert!(matches!(
-                    db.begin_uninstall(&pkg_id).unwrap(),
-                    BeginUninstallResult::CanUninstall
-                ));
+                db.begin_uninstall(&pkg_id).unwrap();
                 db.complete_uninstall(&pkg_id).unwrap();
             },
         );
@@ -662,12 +646,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            db.begin_install(&manifest).unwrap();
-            db.complete_install(&pkg_id).unwrap();
-            assert!(matches!(
-                db.begin_uninstall(&pkg_id).unwrap(),
-                BeginUninstallResult::CanUninstall
-            ));
+            testing::mark_as_pending_uninstalled(db, &manifest);
         });
         assert_status_change(
             &app_dirs,
@@ -710,7 +689,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            db.begin_install(&manifest).unwrap();
+            testing::mark_as_pending_installed(db, &manifest);
         });
         assert_status_change(
             &app_dirs,
@@ -735,7 +714,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            db.begin_install(&manifest).unwrap();
+            testing::mark_as_pending_installed(db, &manifest);
         });
         assert_status_change(
             &app_dirs,
@@ -752,6 +731,25 @@ mod tests {
     }
 
     #[test]
+    fn begin_uninstall_reports_missing_entry() {
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
+        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+
+        let pkg_id = "example-namespace/example-font@0.1.0"
+            .parse::<PackageId>()
+            .unwrap();
+
+        assert_status_change(&app_dirs, &mut lock_file, &pkg_id, None, None, |db| {
+            let err = db.begin_uninstall(&pkg_id).unwrap_err();
+            assert!(matches!(
+                err,
+                PackageDatabaseError::EntryNotFound { pkg_id: missing_pkg_id }
+                    if missing_pkg_id == pkg_id
+            ));
+        });
+    }
+
+    #[test]
     fn begin_uninstall_save_failure_restores_installed_state() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
@@ -760,8 +758,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            db.begin_install(&manifest).unwrap();
-            db.complete_install(&pkg_id).unwrap();
+            testing::mark_as_installed(db, &manifest);
         });
         assert_status_change(
             &app_dirs,
@@ -786,12 +783,7 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            db.begin_install(&manifest).unwrap();
-            db.complete_install(&pkg_id).unwrap();
-            assert!(matches!(
-                db.begin_uninstall(&pkg_id).unwrap(),
-                BeginUninstallResult::CanUninstall
-            ));
+            testing::mark_as_pending_uninstalled(db, &manifest);
         });
         assert_status_change(
             &app_dirs,

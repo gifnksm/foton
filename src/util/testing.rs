@@ -8,8 +8,10 @@ use crate::{
         context::RootContext,
         reporter::{NeverReport, OperationError, ReportScope, RootReportScope, RootReporter},
     },
+    db::PackageDatabase,
     package::{
-        PackageDirs, PackageId, PackageManifest, PackageName, PackageNamespace, PackageVersion,
+        PackageDirs, PackageId, PackageManifest, PackageName, PackageNamespace, PackageState,
+        PackageVersion,
     },
     registry::{RegistryId, RegistryIndex},
     util::app_dirs::AppDirs,
@@ -136,4 +138,34 @@ where
 {
     let manifest_str = make_manifest_str(namespace, name, version);
     toml::from_str(&manifest_str).unwrap()
+}
+
+pub(crate) fn mark_as_pending_installed(db: &mut PackageDatabase<'_>, manifest: &PackageManifest) {
+    let pkg_id = manifest.metadata.id();
+    db.begin_install(manifest).unwrap();
+    assert_eq!(
+        db.entry_by_id(&pkg_id).unwrap().0,
+        PackageState::PendingInstall
+    );
+}
+
+pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &PackageManifest) {
+    let pkg_id = manifest.metadata.id();
+    db.begin_install(manifest).unwrap();
+    db.complete_install(&pkg_id).unwrap();
+    assert_eq!(db.entry_by_id(&pkg_id).unwrap().0, PackageState::Installed);
+}
+
+pub(crate) fn mark_as_pending_uninstalled(
+    db: &mut PackageDatabase<'_>,
+    manifest: &PackageManifest,
+) {
+    let pkg_id = manifest.metadata.id();
+    db.begin_install(manifest).unwrap();
+    db.complete_install(&pkg_id).unwrap();
+    db.begin_uninstall(&pkg_id).unwrap();
+    assert_eq!(
+        db.entry_by_id(&pkg_id).unwrap().0,
+        PackageState::PendingUninstall
+    );
 }
