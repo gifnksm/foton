@@ -7,7 +7,8 @@ use crate::{
         args::ListArgs,
         context::RootContext,
         reporter::{
-            NeverReport, ReportScope, ReportValue, RootReportScope, ScopeResultErrorExt as _,
+            NeverReport, OperationError, ReportScope, ReportValue, RootReportScope,
+            ScopeResultErrorExt as _,
         },
     },
     command::common,
@@ -21,14 +22,6 @@ impl ReportScope for ListScope {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = ListErrorReport;
     type Error = ListError;
-
-    fn make_failed(&self) -> Self::Error {
-        ListError::Failed
-    }
-
-    fn make_cancelled(&self) -> Self::Error {
-        ListError::Cancelled
-    }
 }
 
 impl RootReportScope for ListScope {
@@ -55,6 +48,16 @@ pub(crate) enum ListError {
     Failed,
     #[snafu(display("operation cancelled"))]
     Cancelled,
+}
+
+impl OperationError for ListError {
+    fn failed() -> Self {
+        Self::Failed
+    }
+
+    fn cancelled() -> Self {
+        Self::Cancelled
+    }
 }
 
 pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), ListError> {

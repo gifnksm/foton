@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::marker::PhantomData;
 
 use snafu::{IntoError as _, ResultExt as _, Snafu};
 
@@ -14,7 +14,7 @@ use crate::{
 
 #[derive(Debug)]
 struct DatabaseLoadScope<S> {
-    base_scope: Arc<S>,
+    _base_scope: PhantomData<S>,
 }
 
 impl<S> ReportScope for DatabaseLoadScope<S>
@@ -24,21 +24,16 @@ where
     type WarnReportValue = NeverReport;
     type ErrorReportValue = DatabaseLoadErrorReport;
     type Error = S::Error;
-
-    fn make_failed(&self) -> Self::Error {
-        self.base_scope.make_failed()
-    }
-    fn make_cancelled(&self) -> Self::Error {
-        self.base_scope.make_cancelled()
-    }
 }
 
 impl<S> SubReportScope<S> for DatabaseLoadScope<S>
 where
     S: ReportScope,
 {
-    fn new(base_scope: Arc<S>) -> Self {
-        Self { base_scope }
+    fn new() -> Self {
+        Self {
+            _base_scope: PhantomData,
+        }
     }
 }
 

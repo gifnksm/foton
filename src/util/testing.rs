@@ -6,7 +6,7 @@ use crate::{
     cli::{
         config::FotonConfig,
         context::RootContext,
-        reporter::{NeverReport, ReportScope, RootReportScope, RootReporter},
+        reporter::{NeverReport, OperationError, ReportScope, RootReportScope, RootReporter},
     },
     package::{
         PackageDirs, PackageId, PackageManifest, PackageName, PackageNamespace, PackageVersion,
@@ -24,14 +24,6 @@ impl ReportScope for TestScope {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = NeverReport;
     type Error = TestError;
-
-    fn make_failed(&self) -> Self::Error {
-        TestError::Failed
-    }
-
-    fn make_cancelled(&self) -> Self::Error {
-        TestError::Cancelled
-    }
 }
 
 impl RootReportScope for TestScope {
@@ -44,6 +36,16 @@ impl RootReportScope for TestScope {
 pub(crate) enum TestError {
     Failed,
     Cancelled,
+}
+
+impl OperationError for TestError {
+    fn failed() -> Self {
+        Self::Failed
+    }
+
+    fn cancelled() -> Self {
+        Self::Cancelled
+    }
 }
 
 #[derive(Debug)]

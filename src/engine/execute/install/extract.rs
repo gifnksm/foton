@@ -2,8 +2,8 @@ use std::{
     ffi::OsString,
     fs::File,
     io::{self, Write as _},
+    marker::PhantomData,
     path::PathBuf,
-    sync::Arc,
 };
 
 use glob::MatchOptions;
@@ -23,7 +23,7 @@ use crate::{
 
 #[derive(Debug)]
 struct ExtractScope<S> {
-    base_scope: Arc<S>,
+    _base_scope: PhantomData<S>,
 }
 
 impl<S> ReportScope for ExtractScope<S>
@@ -33,22 +33,16 @@ where
     type WarnReportValue = NeverReport;
     type ErrorReportValue = ExtractErrorReport;
     type Error = S::Error;
-
-    fn make_failed(&self) -> Self::Error {
-        self.base_scope.make_failed()
-    }
-
-    fn make_cancelled(&self) -> Self::Error {
-        self.base_scope.make_cancelled()
-    }
 }
 
 impl<S> SubReportScope<S> for ExtractScope<S>
 where
     S: ReportScope,
 {
-    fn new(base_scope: Arc<S>) -> Self {
-        Self { base_scope }
+    fn new() -> Self {
+        Self {
+            _base_scope: PhantomData,
+        }
     }
 }
 

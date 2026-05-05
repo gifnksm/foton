@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, marker::PhantomData, path::PathBuf};
 
 use snafu::{ResultExt as _, Snafu};
 
@@ -20,7 +20,7 @@ use crate::{
 
 #[derive(Debug)]
 struct ValidationScope<S> {
-    base_scope: Arc<S>,
+    _base_scope: PhantomData<S>,
 }
 
 impl<S> ReportScope for ValidationScope<S>
@@ -30,22 +30,16 @@ where
     type WarnReportValue = ValidationWarnReport;
     type ErrorReportValue = ValidationErrorReport;
     type Error = S::Error;
-
-    fn make_failed(&self) -> Self::Error {
-        self.base_scope.make_failed()
-    }
-
-    fn make_cancelled(&self) -> Self::Error {
-        self.base_scope.make_cancelled()
-    }
 }
 
 impl<S> SubReportScope<S> for ValidationScope<S>
 where
     S: ReportScope,
 {
-    fn new(base_scope: Arc<S>) -> Self {
-        Self { base_scope }
+    fn new() -> Self {
+        Self {
+            _base_scope: PhantomData,
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::marker::PhantomData;
 
 use snafu::Snafu;
 
@@ -14,7 +14,7 @@ use crate::{
 
 #[derive(Debug)]
 struct DbResolveScope<S> {
-    base_scope: Arc<S>,
+    _base_scope: PhantomData<S>,
 }
 
 impl<S> ReportScope for DbResolveScope<S>
@@ -24,22 +24,16 @@ where
     type WarnReportValue = NeverReport;
     type ErrorReportValue = DbResolveErrorReport;
     type Error = S::Error;
-
-    fn make_failed(&self) -> Self::Error {
-        self.base_scope.make_failed()
-    }
-
-    fn make_cancelled(&self) -> Self::Error {
-        self.base_scope.make_cancelled()
-    }
 }
 
 impl<S> SubReportScope<S> for DbResolveScope<S>
 where
     S: ReportScope,
 {
-    fn new(base_scope: Arc<S>) -> Self {
-        Self { base_scope }
+    fn new() -> Self {
+        Self {
+            _base_scope: PhantomData,
+        }
     }
 }
 
