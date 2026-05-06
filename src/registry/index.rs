@@ -283,24 +283,16 @@ mod tests {
     use super::*;
     use crate::util::testing;
 
-    fn write_manifest(root: &Path, namespace: &str, name: &str, version: &str) {
-        write_manifest_str(
-            root,
-            namespace,
-            name,
-            version,
-            &testing::make_manifest_str(namespace, name, version),
-        );
+    fn write_manifest(root: &Path, pkg_id: &str) {
+        write_manifest_str(root, pkg_id, &testing::make_manifest_str(pkg_id));
     }
 
-    fn write_manifest_str(
-        root: &Path,
-        namespace: &str,
-        name: &str,
-        version: &str,
-        manifest_str: &str,
-    ) {
-        let dir = root.join(namespace).join(name).join(version);
+    fn write_manifest_str(root: &Path, pkg_id: &str, manifest_str: &str) {
+        let pkg_id = PackageId::from_str(pkg_id).unwrap();
+        let dir = root
+            .join(pkg_id.namespace())
+            .join(pkg_id.name())
+            .join(pkg_id.version().to_string());
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("manifest.toml"), manifest_str).unwrap();
     }
@@ -308,7 +300,7 @@ mod tests {
     #[test]
     fn find_package_by_id_reads_manifest() {
         let (tempdir, registry) = testing::make_registry();
-        write_manifest(tempdir.path(), "example-namespace", "example-font", "0.1.0");
+        write_manifest(tempdir.path(), "example-namespace/example-font@0.1.0");
 
         let pkg_id: PackageId = "example-namespace/example-font@0.1.0".parse().unwrap();
         let manifest = registry.find_package_by_id(&pkg_id).unwrap().unwrap();
@@ -319,8 +311,8 @@ mod tests {
     #[test]
     fn find_latest_package_by_qualified_name_picks_latest_version() {
         let (tempdir, registry) = testing::make_registry();
-        write_manifest(tempdir.path(), "example-namespace", "example-font", "0.1.0");
-        write_manifest(tempdir.path(), "example-namespace", "example-font", "0.2.0");
+        write_manifest(tempdir.path(), "example-namespace/example-font@0.1.0");
+        write_manifest(tempdir.path(), "example-namespace/example-font@0.2.0");
 
         let qualified_name: PackageQualifiedName =
             "example-namespace/example-font".parse().unwrap();
@@ -338,9 +330,9 @@ mod tests {
     #[test]
     fn find_latest_packages_by_name_returns_latest_manifest_per_package() {
         let (tempdir, registry) = testing::make_registry();
-        write_manifest(tempdir.path(), "example-namespace", "example-font", "0.1.0");
-        write_manifest(tempdir.path(), "example-namespace", "example-font", "0.2.0");
-        write_manifest(tempdir.path(), "other-namespace", "example-font", "1.0.0");
+        write_manifest(tempdir.path(), "example-namespace/example-font@0.1.0");
+        write_manifest(tempdir.path(), "example-namespace/example-font@0.2.0");
+        write_manifest(tempdir.path(), "other-namespace/example-font@1.0.0");
 
         let name: PackageName = "example-font".parse().unwrap();
         let manifests = registry.find_latest_packages_by_name(&name).unwrap();
@@ -367,10 +359,8 @@ mod tests {
         let (tempdir, registry) = testing::make_registry();
         write_manifest_str(
             tempdir.path(),
-            "example-namespace",
-            "example-font",
-            "0.1.0",
-            &testing::make_manifest_str("example-namespace", "example-font", "0.1.1"),
+            "example-namespace/example-font@0.1.0",
+            &testing::make_manifest_str("example-namespace/example-font@0.1.1"),
         );
 
         let pkg_id: PackageId = "example-namespace/example-font@0.1.0".parse().unwrap();

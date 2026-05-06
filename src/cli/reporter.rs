@@ -182,7 +182,7 @@ impl From<NeverReport> for ReportValue<'_> {
     }
 }
 
-pub(crate) trait OperationError {
+pub(crate) trait OperationError: Debug {
     fn failed() -> Self;
     fn cancelled() -> Self;
 }

@@ -9,7 +9,6 @@ use crate::{
         message::BulletList,
         reporter::{NeverReport, OperationError, ReportScope, RootReportScope},
     },
-    command::common,
     db::{Installability, PackageDatabase},
     engine::{self, ResolvedInstallTarget},
     package::PackageId,
@@ -62,10 +61,10 @@ pub(crate) async fn install_package(
         format_args!("Installing {} package(s)...", pkg_specs.len()),
     );
 
-    let registries = common::steps::resolve_registries_by_id(&cx, registries.as_deref())?;
+    let registries = engine::resolve_registries_by_id(&cx, registries.as_deref())?;
 
-    let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
-    let db = common::steps::load_database(&cx, &mut db_lock_file)?;
+    let mut db_lock_file = engine::open_db_lock_file(&cx)?;
+    let db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let targets = engine::resolve_install_targets(&cx, &db, &registries, pkg_specs)?;
 
@@ -165,7 +164,6 @@ fn cleanup_before_install(
 mod tests {
     use super::*;
     use crate::{
-        command::common,
         package::PackageState,
         registry::RegistryId,
         util::testing::{self, TempdirContext},
@@ -175,16 +173,14 @@ mod tests {
     fn cleanup_before_install_skips_manifest_when_other_version_is_installed() {
         let cx = TempdirContext::new();
         let cx = InstallScope::start(&cx);
-        let mut db_lock_file = common::steps::open_db_lock_file(&cx).unwrap();
-        let mut db = common::steps::load_database(&cx, &mut db_lock_file).unwrap();
+        let mut db_lock_file = engine::open_db_lock_file(&cx).unwrap();
+        let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
 
-        let installed_manifest =
-            testing::make_manifest("example-namespace", "example-font", "1.0.0");
+        let installed_manifest = testing::make_manifest("example-namespace/example-font@1.0.0");
         testing::mark_as_installed(&mut db, &installed_manifest);
         let installed_pkg_id = installed_manifest.metadata.id();
 
-        let requested_manifest =
-            testing::make_manifest("example-namespace", "example-font", "2.0.0");
+        let requested_manifest = testing::make_manifest("example-namespace/example-font@2.0.0");
         let db = Arc::new(Mutex::new(db));
 
         let target = ResolvedInstallTarget {

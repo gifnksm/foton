@@ -9,7 +9,6 @@ use crate::{
         message::BulletList,
         reporter::{NeverReport, OperationError, ReportScope, RootReportScope},
     },
-    command::common,
     engine,
 };
 
@@ -57,8 +56,8 @@ pub(crate) fn uninstall_package(
         format_args!("Uninstalling {} package(s)...", pkg_specs.len()),
     );
 
-    let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
-    let db = common::steps::load_database(&cx, &mut db_lock_file)?;
+    let mut db_lock_file = engine::open_db_lock_file(&cx)?;
+    let db = engine::load_database(&cx, &mut db_lock_file)?;
     let db = Arc::new(Mutex::new(db));
 
     let targets = engine::resolve_uninstall_targets(&cx, &db.lock().unwrap(), pkg_specs)?;

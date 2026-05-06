@@ -129,7 +129,8 @@ mod tests {
     use super::*;
     use crate::{
         cli::reporter::RootReportScope as _,
-        db::{DbLockFile, PackageDatabase},
+        db::PackageDatabase,
+        engine,
         package::{PackageId, PackageState},
         util::testing::{self, TempdirContext, TestError, TestScope},
     };
@@ -154,14 +155,11 @@ mod tests {
     fn execute_uninstall_reports_missing_package() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
-
-        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = db_lock_file.try_acquire().unwrap();
-        let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
-        let db = Arc::new(Mutex::new(db));
-
-        let err = execute_uninstall(&cx, &db, &PKG_ID).unwrap_err();
-        assert!(matches!(err, TestError::Failed));
+        testing::with_db(&cx, |db| {
+            let db = Arc::new(Mutex::new(db));
+            let err = execute_uninstall(&cx, &db, &PKG_ID).unwrap_err();
+            assert!(matches!(err, TestError::Failed));
+        });
     }
 
     #[test]
@@ -176,24 +174,17 @@ mod tests {
         fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
         fs::write(pkg_dirs.fonts_dir().join("example.ttf"), b"font").unwrap();
 
-        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let manifest = testing::make_manifest(
-            PKG_ID.namespace().clone(),
-            PKG_ID.name().clone(),
-            PKG_ID.version().clone(),
-        );
+        let mut db_lock_file = engine::open_db_lock_file(&cx).unwrap();
+        let manifest = testing::make_manifest(&*PKG_ID);
         {
-            let lock_file_guard = db_lock_file.try_acquire().unwrap();
-            let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
             testing::mark_as_installed(&mut db, &manifest);
-
             let db = Arc::new(Mutex::new(db));
             execute_uninstall(&cx, &db, &PKG_ID).unwrap();
         }
 
         {
-            let lock_file_guard = db_lock_file.try_acquire().unwrap();
-            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
             assert_eq!(get_entry_state(&db, &PKG_ID), None);
             assert!(!pkg_dirs.fonts_dir().exists());
             assert!(!pkg_dirs.version_dir().exists());

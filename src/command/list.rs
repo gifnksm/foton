@@ -11,7 +11,7 @@ use crate::{
             ScopeResultErrorExt as _,
         },
     },
-    command::common,
+    engine,
     package::{PackageId, PackageManifest, PackageState},
 };
 
@@ -66,8 +66,8 @@ pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), List
     let cx = ListScope::start(cx);
     let reporter = cx.reporter();
 
-    let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
-    let db = common::steps::load_database(&cx, &mut db_lock_file)?;
+    let mut db_lock_file = engine::open_db_lock_file(&cx)?;
+    let db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let renderer = if *show_pending {
         (&AllEntryRender {}) as &dyn EntryRender
@@ -144,15 +144,15 @@ mod tests {
         vec![
             (
                 PackageState::Installed,
-                testing::make_manifest("example-namespace", "installed-font", "1.0.0"),
+                testing::make_manifest("example-namespace/installed-font@1.0.0"),
             ),
             (
                 PackageState::PendingInstall,
-                testing::make_manifest("example-namespace", "pending-install-font", "1.1.0"),
+                testing::make_manifest("example-namespace/pending-install-font@1.1.0"),
             ),
             (
                 PackageState::PendingUninstall,
-                testing::make_manifest("example-namespace", "pending-uninstall-font", "1.2.0"),
+                testing::make_manifest("example-namespace/pending-uninstall-font@1.2.0"),
             ),
         ]
     }

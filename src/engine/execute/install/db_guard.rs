@@ -154,7 +154,7 @@ mod tests {
     use super::*;
     use crate::{
         cli::reporter::RootReportScope as _,
-        db::DbLockFile,
+        engine,
         package::PackageState,
         util::testing::{self, TempdirContext, TestScope},
     };
@@ -167,52 +167,47 @@ mod tests {
     fn begin_install_persists_pending_install_before_completion() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
-        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = db_lock_file.try_acquire().unwrap();
-        let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
-        let db = Arc::new(Mutex::new(db));
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
-        let guard = begin_install(&cx, Arc::clone(&db), &manifest).unwrap();
-
-        {
-            let mut db = db.lock().unwrap();
-            // Reload from disk while keeping the install guard alive so this assertion verifies
-            // `begin_install()` persisted `PendingInstall` before completion, rather than only
-            // checking the guard's in-memory DB state.
-            db.reload().unwrap();
-            assert_eq!(
-                get_entry_state(&db, &pkg_id),
-                Some(PackageState::PendingInstall)
-            );
-        }
-
-        drop(guard);
+        testing::with_db(&cx, |db| {
+            let db = Arc::new(Mutex::new(db));
+            let guard = begin_install(&cx, Arc::clone(&db), &manifest).unwrap();
+            {
+                let mut db = db.lock().unwrap();
+                // Reload from disk while keeping the install guard alive so this assertion verifies
+                // `begin_install()` persisted `PendingInstall` before completion, rather than only
+                // checking the guard's in-memory DB state.
+                db.reload().unwrap();
+                assert_eq!(
+                    get_entry_state(&db, &pkg_id),
+                    Some(PackageState::PendingInstall)
+                );
+            }
+            drop(guard);
+        });
     }
 
     #[test]
     fn dropping_install_guard_rolls_back_persisted_pending_install() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
-        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
+        let mut db_lock_file = engine::open_db_lock_file(&cx).unwrap();
+
         {
-            let lock_file_guard = db_lock_file.try_acquire().unwrap();
-            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
             let db = Arc::new(Mutex::new(db));
             let guard = begin_install(&cx, db, &manifest).unwrap();
-
             drop(guard);
         }
 
         {
-            let lock_file_guard = db_lock_file.try_acquire().unwrap();
-            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
             assert_eq!(get_entry_state(&db, &pkg_id), None);
         }
     }
@@ -221,23 +216,21 @@ mod tests {
     fn complete_install_persists_installed_state() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
-        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
+        let mut db_lock_file = engine::open_db_lock_file(&cx).unwrap();
+
         {
-            let lock_file_guard = db_lock_file.try_acquire().unwrap();
-            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
             let db = Arc::new(Mutex::new(db));
             let guard = begin_install(&cx, db, &manifest).unwrap();
-
             guard.complete_install().unwrap();
         }
 
         {
-            let lock_file_guard = db_lock_file.try_acquire().unwrap();
-            let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+            let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
             assert_eq!(get_entry_state(&db, &pkg_id), Some(PackageState::Installed));
         }
     }

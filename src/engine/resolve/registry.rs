@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, marker::PhantomData};
 
-use snafu::{OptionExt as _, Snafu};
+use snafu::{OptionExt as _, ResultExt as _, Snafu};
 
 use crate::{
     cli::{
@@ -11,7 +11,7 @@ use crate::{
             ScopeResultErrorExt as _, SubReportScope,
         },
     },
-    registry::{RegistryId, RegistrySource},
+    registry::{self, FetchRegistryError, RegistryId, RegistryIndex, RegistrySource},
 };
 
 #[derive(Debug)]
@@ -56,6 +56,12 @@ enum RegistryErrorReport {
     },
     #[snafu(display("no enabled registries found in configuration"))]
     NoEnabledRegistries,
+    #[snafu(display("failed to fetch registry `{id}`"))]
+    FetchRegistry {
+        id: RegistryId,
+        #[snafu(source(from(FetchRegistryError, Box::new)))]
+        source: Box<FetchRegistryError>,
+    },
 }
 
 impl From<RegistryErrorReport> for ReportValue<'static> {
@@ -64,7 +70,7 @@ impl From<RegistryErrorReport> for ReportValue<'static> {
     }
 }
 
-pub(in crate::command) fn resolve_registries_by_id<'a, S>(
+pub(crate) fn resolve_registries_by_id<'a, S>(
     cx: &'a ReportContext<S>,
     registry_ids: Option<&[RegistryId]>,
 ) -> Result<Vec<(RegistryId, &'a RegistrySource)>, S::Error>
@@ -72,7 +78,7 @@ where
     S: ReportScope,
 {
     let config_registries = &cx.config().registries;
-    let cx = RegistryScope::start_with_report(cx, format_args!("Fetching package registries..."));
+    let cx = RegistryScope::start(cx);
 
     let registries: Vec<_> = match registry_ids {
         Some(registry_ids) => {
@@ -105,4 +111,23 @@ where
         return Err(cx.reporter().report_error(NoEnabledRegistriesSnafu.build()));
     }
     Ok(registries)
+}
+
+pub(super) fn fetch_registries<S>(
+    cx: &ReportContext<S>,
+    registries: &[(RegistryId, &RegistrySource)],
+) -> Result<Vec<RegistryIndex>, S::Error>
+where
+    S: ReportScope,
+{
+    let cx = RegistryScope::start_with_report(cx, format_args!("Fetching package registries..."));
+
+    registries
+        .iter()
+        .map(|(id, source)| {
+            registry::fetch_registry(cx.app_dirs(), id, source)
+                .context(FetchRegistrySnafu { id })
+                .report_error(cx.reporter())
+        })
+        .collect::<Result<Vec<_>, _>>()
 }

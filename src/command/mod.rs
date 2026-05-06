@@ -2,7 +2,6 @@ pub(crate) use self::{
     generate_man::*, info::*, install::*, list::*, print_completion::*, uninstall::*,
 };
 
-mod common;
 mod generate_man;
 mod info;
 mod install;

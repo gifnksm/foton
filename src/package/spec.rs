@@ -7,7 +7,7 @@ use crate::package::{
     ParsePackageQualifiedNameError,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum PackageSpec {
     Name(PackageName),
     QualifiedName(PackageQualifiedName),
