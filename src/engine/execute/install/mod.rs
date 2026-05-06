@@ -3,16 +3,21 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use snafu::Snafu;
+use snafu::{ResultExt as _, Snafu};
 
 use crate::{
     cli::{
         context::ReportContext,
-        reporter::{NeverReport, OperationError as _, ReportScope, ReportValue, SubReportScope},
+        reporter::{
+            NeverReport, OperationError as _, ReportScope, ReportValue, ScopeResultErrorExt as _,
+            SubReportScope,
+        },
     },
     db::PackageDatabase,
     engine::execute::install::db_guard::InstallDbGuard,
-    package::{Package, PackageDirs, PackageId, PackageManifest},
+    package::{self, Package, PackageDirs, PackageId, PackageManifest},
+    platform::windows::steps::unregistration,
+    util::fs::FsError,
 };
 
 mod db_guard;
@@ -55,6 +60,14 @@ impl From<InstallExecutionErrorReport> for ReportValue<'static> {
 
 #[derive(Debug, Snafu)]
 enum InstallExecutionErrorReport {
+    #[snafu(display(
+        concat!(
+            "failed to remove package files for package {pkg_id}\n",
+            "manual cleanup may be required",
+        ),
+        pkg_id = pkg_id,
+    ))]
+    RemovePackageFiles { pkg_id: PackageId, source: FsError },
     #[snafu(display("no valid font files found in package {pkg_id}"))]
     NoValidFonts { pkg_id: PackageId },
 }
@@ -86,15 +99,21 @@ where
         let cx =
             InstallExecutionScope::start_with_report(cx, format_args!("Installing {pkg_id}..."));
 
-        let pkg_dirs = package_dirs_guard::create_new_package_dirs(&cx, &pkg_id)?;
-        let package = stage_package(&cx, &pkg_dirs, &self.manifest).await?;
+        let pkg_dirs = PackageDirs::new(cx.app_dirs(), &pkg_id);
+        unregistration::unregister_package_fonts(&cx, &pkg_id)?;
+        package::remove_package_dirs(&pkg_dirs)
+            .context(RemovePackageFilesSnafu { pkg_id: &pkg_id })
+            .report_error(cx.reporter())?;
 
-        let registration = registration::register_package_fonts(&cx, &package)?;
+        let pkg_dirs_guard = package_dirs_guard::create_new_package_dirs(&cx, &pkg_id)?;
+        let package = stage_package(&cx, &pkg_dirs_guard, &self.manifest).await?;
+
+        let registration_guard = registration::register_package_fonts(&cx, &package)?;
 
         self.db_guard.complete_install()?;
 
-        pkg_dirs.disarm();
-        registration.disarm();
+        pkg_dirs_guard.disarm();
+        registration_guard.disarm();
 
         Ok(())
     }
