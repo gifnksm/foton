@@ -60,6 +60,22 @@ impl From<&PackageId> for PackageId {
     }
 }
 
+impl TryFrom<String> for PackageId {
+    type Error = ParsePackageIdError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl TryFrom<&str> for PackageId {
+    type Error = ParsePackageIdError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
 #[derive(Debug, Snafu)]
 #[expect(clippy::enum_variant_names)]
 pub(crate) enum ParsePackageIdError {
@@ -131,7 +147,7 @@ mod tests {
 
     #[test]
     fn package_id_parses_valid_string() {
-        let pkg_id: PackageId = "example-namespace/example-font@0.1.0".parse().unwrap();
+        let pkg_id = PackageId::from_str("example-namespace/example-font@0.1.0").unwrap();
 
         assert_eq!(pkg_id.namespace().to_string(), "example-namespace");
         assert_eq!(pkg_id.name().to_string(), "example-font");
@@ -149,7 +165,7 @@ mod tests {
             "example-namespace/example-font@0.1.0@latest",
         ] {
             assert!(matches!(
-                input.parse::<PackageId>(),
+                PackageId::from_str(input),
                 Err(ParsePackageIdError::InvalidFormat)
             ));
         }
@@ -157,28 +173,19 @@ mod tests {
 
     #[test]
     fn package_id_reports_invalid_namespace() {
-        let err = "0example-namespace/example-font@0.1.0"
-            .parse::<PackageId>()
-            .unwrap_err();
-
+        let err = PackageId::from_str("0example-namespace/example-font@0.1.0").unwrap_err();
         assert!(matches!(err, ParsePackageIdError::InvalidNamespace { .. }));
     }
 
     #[test]
     fn package_id_reports_invalid_name() {
-        let err = "example-namespace/0example-font@0.1.0"
-            .parse::<PackageId>()
-            .unwrap_err();
-
+        let err = PackageId::from_str("example-namespace/0example-font@0.1.0").unwrap_err();
         assert!(matches!(err, ParsePackageIdError::InvalidName { .. }));
     }
 
     #[test]
     fn package_id_reports_invalid_version() {
-        let err = "example-namespace/example-font@latest"
-            .parse::<PackageId>()
-            .unwrap_err();
-
+        let err = PackageId::from_str("example-namespace/example-font@latest").unwrap_err();
         assert!(matches!(err, ParsePackageIdError::InvalidVersion { .. }));
     }
 

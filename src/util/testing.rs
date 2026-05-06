@@ -5,14 +5,12 @@ use tempfile::TempDir;
 use crate::{
     cli::{
         config::FotonConfig,
-        context::RootContext,
+        context::{ReportContext, RootContext},
         reporter::{NeverReport, OperationError, ReportScope, RootReportScope, RootReporter},
     },
     db::PackageDatabase,
-    package::{
-        PackageDirs, PackageId, PackageManifest, PackageName, PackageNamespace, PackageState,
-        PackageVersion,
-    },
+    engine,
+    package::{PackageDirs, PackageId, PackageManifest, PackageState},
     registry::{RegistryId, RegistryIndex},
     util::app_dirs::AppDirs,
 };
@@ -108,15 +106,14 @@ pub(crate) fn make_registry() -> (TempDir, RegistryIndex) {
     (tempdir, registry)
 }
 
-pub(crate) fn make_manifest_str<NS, N, V>(namespace: NS, name: N, version: V) -> String
+pub(crate) fn make_manifest_str<I>(pkg_id: I) -> String
 where
-    NS: TryInto<PackageNamespace, Error: Debug>,
-    N: TryInto<PackageName, Error: Debug>,
-    V: TryInto<PackageVersion, Error: Debug>,
+    I: TryInto<PackageId, Error: Debug>,
 {
-    let namespace = namespace.try_into().unwrap();
-    let name = name.try_into().unwrap();
-    let version = version.try_into().unwrap();
+    let pkg_id = pkg_id.try_into().unwrap();
+    let namespace = pkg_id.namespace();
+    let name = pkg_id.name();
+    let version = pkg_id.version();
     format!(
         r#"
 [package]
@@ -130,13 +127,11 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     )
 }
 
-pub(crate) fn make_manifest<NS, N, V>(namespace: NS, name: N, version: V) -> PackageManifest
+pub(crate) fn make_manifest<I>(pkg_id: I) -> PackageManifest
 where
-    NS: TryInto<PackageNamespace, Error: Debug>,
-    N: TryInto<PackageName, Error: Debug>,
-    V: TryInto<PackageVersion, Error: Debug>,
+    I: TryInto<PackageId, Error: Debug>,
 {
-    let manifest_str = make_manifest_str(namespace, name, version);
+    let manifest_str = make_manifest_str(pkg_id);
     toml::from_str(&manifest_str).unwrap()
 }
 
@@ -168,4 +163,14 @@ pub(crate) fn mark_as_pending_uninstalled(
         db.entry_by_id(&pkg_id).unwrap().0,
         PackageState::PendingUninstall
     );
+}
+
+pub(crate) fn with_db<S, F>(cx: &ReportContext<S>, f: F)
+where
+    S: ReportScope,
+    F: FnOnce(PackageDatabase<'_>),
+{
+    let mut lock_file = engine::open_db_lock_file(cx).unwrap();
+    let db = engine::load_database(cx, &mut lock_file).unwrap();
+    f(db);
 }

@@ -432,6 +432,8 @@ pub(crate) enum Installability {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr as _;
+
     use semver::Version;
 
     use super::*;
@@ -510,7 +512,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         assert_status_change(
@@ -531,7 +533,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
@@ -559,10 +561,9 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let installed_manifest =
-            testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let installed_manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let installed_pkg_id = installed_manifest.metadata.id();
-        let next_manifest = testing::make_manifest("example-namespace", "example-font", "0.2.0");
+        let next_manifest = testing::make_manifest("example-namespace/example-font@0.2.0");
         let next_pkg_id = next_manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
@@ -595,7 +596,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
@@ -618,7 +619,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
@@ -642,7 +643,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
@@ -670,7 +671,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         assert_status_change(&app_dirs, &mut lock_file, &pkg_id, None, None, |db| {
@@ -685,7 +686,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
@@ -710,7 +711,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
@@ -735,9 +736,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let pkg_id = "example-namespace/example-font@0.1.0"
-            .parse::<PackageId>()
-            .unwrap();
+        let pkg_id = PackageId::from_str("example-namespace/example-font@0.1.0").unwrap();
 
         assert_status_change(&app_dirs, &mut lock_file, &pkg_id, None, None, |db| {
             let err = db.begin_uninstall(&pkg_id).unwrap_err();
@@ -754,7 +753,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
@@ -779,7 +778,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {

@@ -119,10 +119,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr as _;
+
     use super::*;
     use crate::{
         cli::reporter::RootReportScope as _,
-        db::DbLockFile,
         util::testing::{self, TempdirContext, TestError, TestScope},
     };
 
@@ -132,26 +133,20 @@ mod tests {
         let cx = TestScope::start(&cx);
         let scope_cx = UninstallResolveScope::start(&cx);
 
-        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = db_lock_file.try_acquire().unwrap();
-        let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+        testing::with_db(&cx, |db| {
+            let pkg_specs = vec![
+                PackageSpec::from_str("example-namespace/example-font@0.1.0").unwrap(),
+                PackageSpec::from_str("example-namespace/example-font").unwrap(),
+                PackageSpec::from_str("example-font").unwrap(),
+            ];
+            for spec in &pkg_specs {
+                let resolved = resolve_spec(&scope_cx, &db, spec).unwrap();
+                assert!(resolved.is_none());
+            }
 
-        let pkg_specs = vec![
-            "example-namespace/example-font@0.1.0"
-                .parse::<PackageSpec>()
-                .unwrap(),
-            "example-namespace/example-font"
-                .parse::<PackageSpec>()
-                .unwrap(),
-            "example-font".parse::<PackageSpec>().unwrap(),
-        ];
-        for spec in &pkg_specs {
-            let resolved = resolve_spec(&scope_cx, &db, spec).unwrap();
-            assert!(resolved.is_none());
-        }
-
-        let targets = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap();
-        assert!(targets.is_empty());
+            let targets = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap();
+            assert!(targets.is_empty());
+        });
     }
 
     #[test]
@@ -160,26 +155,20 @@ mod tests {
         let cx = TestScope::start(&cx);
         let cx = UninstallResolveScope::start(&cx);
 
-        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = db_lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+        testing::with_db(&cx, |mut db| {
+            let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+            let expected = manifest.metadata.id();
+            testing::mark_as_installed(&mut db, &manifest);
 
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
-        let expected = manifest.metadata.id();
-        testing::mark_as_installed(&mut db, &manifest);
-
-        for spec in [
-            "example-namespace/example-font@0.1.0"
-                .parse::<PackageSpec>()
-                .unwrap(),
-            "example-namespace/example-font"
-                .parse::<PackageSpec>()
-                .unwrap(),
-        ] {
-            let resolved = resolve_spec(&cx, &db, &spec).unwrap().unwrap();
-            assert_eq!(resolved.pkg_id, expected);
-            assert_eq!(resolved.current_state, PackageState::Installed);
-        }
+            for spec in [
+                PackageSpec::from_str("example-namespace/example-font@0.1.0").unwrap(),
+                PackageSpec::from_str("example-namespace/example-font").unwrap(),
+            ] {
+                let resolved = resolve_spec(&cx, &db, &spec).unwrap().unwrap();
+                assert_eq!(resolved.pkg_id, expected);
+                assert_eq!(resolved.current_state, PackageState::Installed);
+            }
+        });
     }
 
     #[test]
@@ -188,19 +177,17 @@ mod tests {
         let cx = TestScope::start(&cx);
         let cx = UninstallResolveScope::start(&cx);
 
-        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = db_lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+        let manifest1 = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest2 = testing::make_manifest("other-namespace/example-font@1.0.0");
+        let spec = PackageSpec::from_str("example-font").unwrap();
 
-        let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
-        testing::mark_as_installed(&mut db, &manifest1);
+        testing::with_db(&cx, |mut db| {
+            testing::mark_as_installed(&mut db, &manifest1);
+            testing::mark_as_installed(&mut db, &manifest2);
 
-        let manifest2 = testing::make_manifest("other-namespace", "example-font", "1.0.0");
-        testing::mark_as_installed(&mut db, &manifest2);
-
-        let spec = "example-font".parse::<PackageSpec>().unwrap();
-        let err = resolve_spec(&cx, &db, &spec).unwrap_err();
-        assert!(matches!(err, TestError::Failed));
+            let err = resolve_spec(&cx, &db, &spec).unwrap_err();
+            assert!(matches!(err, TestError::Failed));
+        });
     }
 
     #[test]
@@ -208,25 +195,20 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = db_lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
-
-        let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
-        testing::mark_as_installed(&mut db, &manifest1);
-
-        let manifest2 = testing::make_manifest("other-namespace", "example-font", "1.0.0");
-        testing::mark_as_installed(&mut db, &manifest2);
-
+        let manifest1 = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest2 = testing::make_manifest("other-namespace/example-font@1.0.0");
         let pkg_specs = vec![
-            "example-namespace/example-font@0.1.0"
-                .parse::<PackageSpec>()
-                .unwrap(),
-            "example-font".parse::<PackageSpec>().unwrap(),
+            PackageSpec::from_str("example-namespace/example-font@0.1.0").unwrap(),
+            PackageSpec::from_str("example-font").unwrap(),
         ];
 
-        let err = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap_err();
-        assert!(matches!(err, TestError::Failed));
+        testing::with_db(&cx, |mut db| {
+            testing::mark_as_installed(&mut db, &manifest1);
+            testing::mark_as_installed(&mut db, &manifest2);
+
+            let err = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap_err();
+            assert!(matches!(err, TestError::Failed));
+        });
     }
 
     #[test]
@@ -234,28 +216,21 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = db_lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
-
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let expected_pkg_id = manifest.metadata.id();
-        testing::mark_as_installed(&mut db, &manifest);
-
         let pkg_specs = vec![
-            "example-namespace/example-font@0.1.0"
-                .parse::<PackageSpec>()
-                .unwrap(),
-            "example-namespace/example-font"
-                .parse::<PackageSpec>()
-                .unwrap(),
+            PackageSpec::from_str("example-namespace/example-font@0.1.0").unwrap(),
+            PackageSpec::from_str("example-namespace/example-font").unwrap(),
         ];
 
-        let targets = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap();
+        testing::with_db(&cx, |mut db| {
+            testing::mark_as_installed(&mut db, &manifest);
+            let targets = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap();
 
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].pkg_id, expected_pkg_id);
-        assert_eq!(targets[0].current_state, PackageState::Installed);
+            assert_eq!(targets.len(), 1);
+            assert_eq!(targets[0].pkg_id, expected_pkg_id);
+            assert_eq!(targets[0].current_state, PackageState::Installed);
+        });
     }
 
     #[test]
@@ -264,26 +239,24 @@ mod tests {
         let cx = TestScope::start(&cx);
         let cx = UninstallResolveScope::start(&cx);
 
-        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = db_lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
-
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let expected = manifest.metadata.id();
-        testing::mark_as_pending_installed(&mut db, &manifest);
 
-        let spec = "example-namespace/example-font"
-            .parse::<PackageSpec>()
-            .unwrap();
-        let resolved = resolve_spec(&cx, &db, &spec).unwrap().unwrap();
-        assert_eq!(resolved.pkg_id, expected);
-        assert_eq!(resolved.current_state, PackageState::PendingInstall);
+        let spec = PackageSpec::from_str("example-namespace/example-font").unwrap();
 
-        db.begin_uninstall(&expected).unwrap();
+        testing::with_db(&cx, |mut db| {
+            testing::mark_as_pending_installed(&mut db, &manifest);
 
-        let resolved = resolve_spec(&cx, &db, &spec).unwrap().unwrap();
-        assert_eq!(resolved.pkg_id, expected);
-        assert_eq!(resolved.current_state, PackageState::PendingUninstall);
+            let resolved = resolve_spec(&cx, &db, &spec).unwrap().unwrap();
+            assert_eq!(resolved.pkg_id, expected);
+            assert_eq!(resolved.current_state, PackageState::PendingInstall);
+
+            db.begin_uninstall(&expected).unwrap();
+
+            let resolved = resolve_spec(&cx, &db, &spec).unwrap().unwrap();
+            assert_eq!(resolved.pkg_id, expected);
+            assert_eq!(resolved.current_state, PackageState::PendingUninstall);
+        });
     }
 
     #[test]
@@ -292,19 +265,16 @@ mod tests {
         let cx = TestScope::start(&cx);
         let cx = UninstallResolveScope::start(&cx);
 
-        let mut db_lock_file = DbLockFile::open(cx.app_dirs()).unwrap();
-        let lock_file_guard = db_lock_file.try_acquire().unwrap();
-        let mut db = PackageDatabase::load(cx.app_dirs(), lock_file_guard).unwrap();
+        let manifest1 = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest2 = testing::make_manifest("other-namespace/example-font@1.0.0");
+        let spec = PackageSpec::from_str("example-font").unwrap();
 
-        let manifest1 = testing::make_manifest("example-namespace", "example-font", "0.1.0");
-        testing::mark_as_pending_installed(&mut db, &manifest1);
+        testing::with_db(&cx, |mut db| {
+            testing::mark_as_pending_installed(&mut db, &manifest1);
+            testing::mark_as_pending_uninstalled(&mut db, &manifest2);
 
-        let manifest2 = testing::make_manifest("other-namespace", "example-font", "1.0.0");
-        testing::mark_as_pending_uninstalled(&mut db, &manifest2);
-
-        let spec = "example-font".parse::<PackageSpec>().unwrap();
-        let err = resolve_spec(&cx, &db, &spec).unwrap_err();
-
-        assert!(matches!(err, TestError::Failed));
+            let err = resolve_spec(&cx, &db, &spec).unwrap_err();
+            assert!(matches!(err, TestError::Failed));
+        });
     }
 }

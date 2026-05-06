@@ -11,7 +11,7 @@ use crate::{
             ScopeResultErrorExt as _,
         },
     },
-    command::common,
+    engine,
     package::{PackageManifest, PackageMetadata, PackageSource, PackageSpec, PackageState},
 };
 
@@ -68,8 +68,8 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
     let cx = InfoScope::start(cx);
     let reporter = cx.reporter();
 
-    let mut db_lock_file = common::steps::open_db_lock_file(&cx)?;
-    let db = common::steps::load_database(&cx, &mut db_lock_file)?;
+    let mut db_lock_file = engine::open_db_lock_file(&cx)?;
+    let db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let mut res = Ok(());
     for pkg_spec in pkg_specs {
@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn render_package_info_prints_all_present_fields() {
-        let manifest = testing::make_manifest("example-namespace", "example-font", "0.1.0");
+        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let mut output = Vec::new();
 
         render_package_info(&mut output, PackageState::Installed, &manifest).unwrap();

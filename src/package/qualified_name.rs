@@ -117,18 +117,15 @@ mod tests {
             "example-namespace/example/font",
         ] {
             assert!(matches!(
-                input.parse::<PackageQualifiedName>(),
-                Err(ParsePackageQualifiedNameError::InvalidFormat)
+                PackageQualifiedName::from_str(input).unwrap_err(),
+                ParsePackageQualifiedNameError::InvalidFormat
             ));
         }
     }
 
     #[test]
     fn package_qualified_name_reports_invalid_namespace() {
-        let err = "0example-namespace/example-font"
-            .parse::<PackageQualifiedName>()
-            .unwrap_err();
-
+        let err = PackageQualifiedName::from_str("0example-namespace/example-font").unwrap_err();
         assert!(matches!(
             err,
             ParsePackageQualifiedNameError::InvalidNamespace { .. }
@@ -137,9 +134,7 @@ mod tests {
 
     #[test]
     fn package_qualified_name_reports_invalid_name() {
-        let err = "example-namespace/0example-font"
-            .parse::<PackageQualifiedName>()
-            .unwrap_err();
+        let err = PackageQualifiedName::from_str("example-namespace/0example-font").unwrap_err();
 
         assert!(matches!(
             err,

@@ -22,7 +22,13 @@ pub(crate) enum DbLockFileError {
     Open { path: PathBuf, source: io::Error },
     #[snafu(display("failed to acquire database lock: {path}", path = path.display()))]
     Acquire { path: PathBuf, source: io::Error },
-    #[snafu(display("database is already locked: {path}", path = path.display()))]
+    #[snafu(display(
+        concat!(
+            "database is already locked: {path}\n",
+            "another operation is already in progress",
+        ),
+        path = path.display()
+    ))]
     AlreadyLocked { path: PathBuf, source: io::Error },
 }
 
