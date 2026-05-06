@@ -251,7 +251,7 @@ mod tests {
             assert_eq!(resolved.pkg_id, expected);
             assert_eq!(resolved.current_state, PackageState::PendingInstall);
 
-            db.begin_uninstall(&expected).unwrap();
+            db.apply_uninstall_transaction(&expected).unwrap();
 
             let resolved = resolve_spec(&cx, &db, &spec).unwrap().unwrap();
             assert_eq!(resolved.pkg_id, expected);

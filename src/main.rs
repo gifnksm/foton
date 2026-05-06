@@ -174,7 +174,7 @@ async fn run_command(cx: &RootContext, args: Args) -> Result<(), CommandError> {
 
     match command {
         Command::Install(args) => command::install_package(cx, &args).await?,
-        Command::Uninstall(args) => command::uninstall_package(cx, &args)?,
+        Command::Uninstall(args) => command::uninstall_package(cx, &args).await?,
         Command::List(args) => command::list_package(cx, &args)?,
         Command::Info(args) => command::info_package(cx, &args)?,
     }

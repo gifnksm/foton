@@ -11,6 +11,7 @@ use crate::{
         reporter::{NeverReport, OperationError as _, ReportScope, ReportValue, SubReportScope},
     },
     db::PackageDatabase,
+    engine::execute::install::db_guard::InstallDbGuard,
     package::{Package, PackageDirs, PackageId, PackageManifest},
 };
 
@@ -58,30 +59,45 @@ enum InstallExecutionErrorReport {
     NoValidFonts { pkg_id: PackageId },
 }
 
-pub(crate) async fn execute_install<S>(
-    cx: &ReportContext<S>,
-    db: &Arc<Mutex<PackageDatabase<'_>>>,
-    manifest: &PackageManifest,
-) -> Result<(), S::Error>
+#[derive(Debug)]
+pub(crate) struct InstallExecution<'db, S>
 where
     S: ReportScope,
 {
-    let cx = InstallExecutionScope::start(cx);
+    db_guard: InstallDbGuard<'db, S>,
+    manifest: Arc<PackageManifest>,
+}
 
-    let db = db_guard::begin_install(&cx, Arc::clone(db), manifest)?;
+impl<'db, S> InstallExecution<'db, S>
+where
+    S: ReportScope,
+{
+    pub(crate) fn new(
+        cx: &ReportContext<S>,
+        db: Arc<Mutex<PackageDatabase<'db>>>,
+        manifest: Arc<PackageManifest>,
+    ) -> Self {
+        let db_guard = db_guard::begin_install(cx, db, &manifest);
+        Self { db_guard, manifest }
+    }
 
-    let pkg_id = manifest.metadata.id();
-    let pkg_dirs = package_dirs_guard::create_new_package_dirs(&cx, &pkg_id)?;
-    let package = stage_package(&cx, &pkg_dirs, manifest).await?;
+    pub(crate) async fn execute(self, cx: &ReportContext<S>) -> Result<(), S::Error> {
+        let pkg_id = self.manifest.metadata.id();
+        let cx =
+            InstallExecutionScope::start_with_report(cx, format_args!("Installing {pkg_id}..."));
 
-    let registration = registration::register_package_fonts(&cx, &package)?;
+        let pkg_dirs = package_dirs_guard::create_new_package_dirs(&cx, &pkg_id)?;
+        let package = stage_package(&cx, &pkg_dirs, &self.manifest).await?;
 
-    db.complete_install()?;
+        let registration = registration::register_package_fonts(&cx, &package)?;
 
-    pkg_dirs.disarm();
-    registration.disarm();
+        self.db_guard.complete_install()?;
 
-    Ok(())
+        pkg_dirs.disarm();
+        registration.disarm();
+
+        Ok(())
+    }
 }
 
 async fn stage_package<S>(

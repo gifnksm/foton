@@ -23,7 +23,7 @@ pub(in crate::db::persist) fn serialize_payload(
 }
 
 pub(in crate::db) mod types {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, sync::Arc};
 
     use serde::{Deserialize, Serialize};
 
@@ -42,6 +42,6 @@ pub(in crate::db) mod types {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub(in crate::db) struct PersistedPackageEntry {
         pub(in crate::db) state: PackageState,
-        pub(in crate::db) manifest: PackageManifest,
+        pub(in crate::db) manifest: Arc<PackageManifest>,
     }
 }
