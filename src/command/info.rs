@@ -80,7 +80,7 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
         }
 
         for (state, manifest) in manifests {
-            render_package_info(io::stdout().lock(), state, manifest)
+            render_package_info(io::stdout().lock(), state, &manifest)
                 .context(WriteInfoSnafu)
                 .report_error(reporter)?;
         }

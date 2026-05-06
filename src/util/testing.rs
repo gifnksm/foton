@@ -127,38 +127,41 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     )
 }
 
-pub(crate) fn make_manifest<I>(pkg_id: I) -> PackageManifest
+pub(crate) fn make_manifest<I>(pkg_id: I) -> Arc<PackageManifest>
 where
     I: TryInto<PackageId, Error: Debug>,
 {
     let manifest_str = make_manifest_str(pkg_id);
-    toml::from_str(&manifest_str).unwrap()
+    Arc::new(toml::from_str(&manifest_str).unwrap())
 }
 
-pub(crate) fn mark_as_pending_installed(db: &mut PackageDatabase<'_>, manifest: &PackageManifest) {
+pub(crate) fn mark_as_pending_installed(
+    db: &mut PackageDatabase<'_>,
+    manifest: &Arc<PackageManifest>,
+) {
     let pkg_id = manifest.metadata.id();
-    db.begin_install(manifest).unwrap();
+    db.apply_install_transaction(manifest).unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().0,
         PackageState::PendingInstall
     );
 }
 
-pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &PackageManifest) {
+pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &Arc<PackageManifest>) {
     let pkg_id = manifest.metadata.id();
-    db.begin_install(manifest).unwrap();
+    db.apply_install_transaction(manifest).unwrap();
     db.complete_install(&pkg_id).unwrap();
     assert_eq!(db.entry_by_id(&pkg_id).unwrap().0, PackageState::Installed);
 }
 
 pub(crate) fn mark_as_pending_uninstalled(
     db: &mut PackageDatabase<'_>,
-    manifest: &PackageManifest,
+    manifest: &Arc<PackageManifest>,
 ) {
     let pkg_id = manifest.metadata.id();
-    db.begin_install(manifest).unwrap();
+    db.apply_install_transaction(manifest).unwrap();
     db.complete_install(&pkg_id).unwrap();
-    db.begin_uninstall(&pkg_id).unwrap();
+    db.apply_uninstall_transaction(&pkg_id).unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().0,
         PackageState::PendingUninstall

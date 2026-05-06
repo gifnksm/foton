@@ -13,7 +13,7 @@ use crate::{
         },
     },
     db::{PackageDatabase, PackageDatabaseError},
-    package::{self, PackageDirs, PackageId},
+    package::{self, PackageDirs, PackageId, PackageState},
     platform::windows::steps::unregistration,
     util::fs::FsError,
 };
@@ -53,11 +53,6 @@ enum UninstallExecutionErrorReport {
         pkg_id = pkg_id,
     ))]
     RemovePackageFiles { pkg_id: PackageId, source: FsError },
-    #[snafu(display("failed to begin uninstall transaction for package {pkg_id}"))]
-    BeginUninstall {
-        pkg_id: PackageId,
-        source: PackageDatabaseError,
-    },
     #[snafu(display(
         concat!(
             "failed to finalize uninstall transaction for package {pkg_id}\n",
@@ -78,7 +73,26 @@ impl From<UninstallExecutionErrorReport> for ReportValue<'static> {
     }
 }
 
-pub(crate) fn execute_uninstall<S>(
+#[derive(Debug)]
+pub(crate) struct UninstallExecution<'db> {
+    db: Arc<Mutex<PackageDatabase<'db>>>,
+    pkg_id: PackageId,
+}
+
+impl<'db> UninstallExecution<'db> {
+    pub(crate) fn new(db: Arc<Mutex<PackageDatabase<'db>>>, pkg_id: PackageId) -> Self {
+        Self { db, pkg_id }
+    }
+
+    pub(crate) fn execute<S>(self, cx: &ReportContext<S>) -> Result<(), S::Error>
+    where
+        S: ReportScope,
+    {
+        execute_uninstall(cx, &self.db, &self.pkg_id)
+    }
+}
+
+fn execute_uninstall<S>(
     cx: &ReportContext<S>,
     db: &Arc<Mutex<PackageDatabase<'_>>>,
     pkg_id: &PackageId,
@@ -86,17 +100,16 @@ pub(crate) fn execute_uninstall<S>(
 where
     S: ReportScope,
 {
-    let cx = UninstallExecutionScope::start_with_report(
-        cx,
-        format_args!("Beginning transaction to uninstall {pkg_id}..."),
-    );
+    let cx =
+        UninstallExecutionScope::start_with_report(cx, format_args!("Uninstalling {pkg_id}..."));
     let reporter = cx.reporter();
 
     {
-        let mut db = db.lock().unwrap();
-        db.begin_uninstall(pkg_id)
-            .context(BeginUninstallSnafu { pkg_id })
-            .report_error(reporter)?;
+        let db = db.lock().unwrap();
+        assert_eq!(
+            db.entry_by_id(pkg_id).map(|(state, _)| state),
+            Some(PackageState::PendingUninstall)
+        );
     }
 
     unregistration::unregister_package_fonts(&cx, pkg_id)?;
@@ -132,7 +145,7 @@ mod tests {
         db::PackageDatabase,
         engine,
         package::{PackageId, PackageState},
-        util::testing::{self, TempdirContext, TestError, TestScope},
+        util::testing::{self, TempdirContext, TestScope},
     };
 
     fn test_app_id() -> String {
@@ -152,13 +165,13 @@ mod tests {
     }
 
     #[test]
-    fn execute_uninstall_reports_missing_package() {
+    #[should_panic(expected = "assertion `left == right` failed")]
+    fn execute_uninstall_requires_pending_uninstall_state() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         testing::with_db(&cx, |db| {
             let db = Arc::new(Mutex::new(db));
-            let err = execute_uninstall(&cx, &db, &PKG_ID).unwrap_err();
-            assert!(matches!(err, TestError::Failed));
+            let _ = execute_uninstall(&cx, &db, &PKG_ID);
         });
     }
 
@@ -178,7 +191,7 @@ mod tests {
         let manifest = testing::make_manifest(&*PKG_ID);
         {
             let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            testing::mark_as_installed(&mut db, &manifest);
+            testing::mark_as_pending_uninstalled(&mut db, &manifest);
             let db = Arc::new(Mutex::new(db));
             execute_uninstall(&cx, &db, &PKG_ID).unwrap();
         }

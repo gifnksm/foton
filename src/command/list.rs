@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, sync::Arc};
 
 use snafu::{ResultExt as _, Snafu};
 
@@ -82,13 +82,13 @@ pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), List
     Ok(())
 }
 
-fn render_entries<'a, I>(
+fn render_entries<I>(
     writer: &mut dyn io::Write,
     entries: I,
     render: &dyn EntryRender,
 ) -> io::Result<()>
 where
-    I: IntoIterator<Item = (PackageState, &'a PackageManifest)>,
+    I: IntoIterator<Item = (PackageState, Arc<PackageManifest>)>,
 {
     for (state, manifest) in entries {
         let id = manifest.metadata.id();
@@ -140,7 +140,7 @@ mod tests {
     use super::*;
     use crate::util::testing;
 
-    fn make_entries() -> Vec<(PackageState, PackageManifest)> {
+    fn make_entries() -> Vec<(PackageState, Arc<PackageManifest>)> {
         vec![
             (
                 PackageState::Installed,
@@ -162,12 +162,7 @@ mod tests {
         let entries = make_entries();
         let mut output = Vec::new();
 
-        render_entries(
-            &mut output,
-            entries.iter().map(|(state, manifest)| (*state, manifest)),
-            &InstalledEntryRender {},
-        )
-        .unwrap();
+        render_entries(&mut output, entries, &InstalledEntryRender {}).unwrap();
 
         let output = String::from_utf8(output).unwrap();
         assert_eq!(output, "example-namespace/installed-font@1.0.0\n");
@@ -178,12 +173,7 @@ mod tests {
         let entries = make_entries();
         let mut output = Vec::new();
 
-        render_entries(
-            &mut output,
-            entries.iter().map(|(state, manifest)| (*state, manifest)),
-            &AllEntryRender {},
-        )
-        .unwrap();
+        render_entries(&mut output, entries, &AllEntryRender {}).unwrap();
 
         let output = String::from_utf8(output).unwrap();
         assert_eq!(

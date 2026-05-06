@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
+    sync::Arc,
 };
 
 use snafu::{ResultExt as _, Snafu};
@@ -14,7 +15,7 @@ use crate::{
             ScopeResultErrorExt as _, SubReportScope,
         },
     },
-    db::PackageDatabase,
+    db::{Installability, PackageDatabase},
     package::{
         PackageId, PackageManifest, PackageQualifiedName, PackageSpec, PackageState, PackageVersion,
     },
@@ -93,7 +94,7 @@ impl From<InstallResolveErrorReport> for ReportValue<'static> {
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedInstallTarget {
     pub(crate) reg_id: RegistryId,
-    pub(crate) manifest: PackageManifest,
+    pub(crate) manifest: Arc<PackageManifest>,
 }
 
 pub(crate) fn resolve_install_targets<S>(
@@ -115,10 +116,15 @@ where
 
     let indexes = super::registry::fetch_registries(&cx, registries)?;
 
-    let mut targets = pkg_specs
+    let targets: Vec<_> = pkg_specs
         .iter()
         .map(|pkg_spec| resolve_spec(&cx, &indexes, pkg_spec))
         .collect_to_end()?;
+
+    let mut targets = targets
+        .into_iter()
+        .filter(|target| check_installability(&cx, db, target))
+        .collect();
 
     dedup_and_check_conflicts(&cx, &mut targets)?;
 
@@ -194,8 +200,36 @@ where
 
     Ok(ResolvedInstallTarget {
         reg_id: reg_id.clone(),
-        manifest,
+        manifest: Arc::new(manifest),
     })
+}
+
+fn check_installability<S>(
+    cx: &ReportContext<InstallResolveScope<S>>,
+    db: &PackageDatabase<'_>,
+    target: &ResolvedInstallTarget,
+) -> bool
+where
+    S: ReportScope,
+{
+    let pkg_id = target.manifest.metadata.id();
+    match db.check_installability(&target.manifest) {
+        Installability::Installable => true,
+        Installability::AlreadyInstalled => {
+            cx.reporter().report_info(format_args!(
+                "package {pkg_id} is already installed, skipping"
+            ));
+            false
+        }
+        Installability::OtherVersionInstalled(package_version) => {
+            let pkg_name = &target.manifest.metadata.qualified_name;
+            let requested_version = &target.manifest.metadata.version;
+            cx.reporter().report_info(format_args!(
+                "another version of package {pkg_name} is already installed (installed: {package_version}, requested: {requested_version}), skipping"
+            ));
+            false
+        }
+    }
 }
 
 fn dedup_and_check_conflicts<S>(
@@ -488,7 +522,7 @@ mod tests {
         let mut targets = vec![
             ResolvedInstallTarget {
                 reg_id: reg_id.clone(),
-                manifest: manifest.clone(),
+                manifest: Arc::clone(&manifest),
             },
             ResolvedInstallTarget { reg_id, manifest },
         ];

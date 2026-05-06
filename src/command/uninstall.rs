@@ -45,7 +45,7 @@ impl OperationError for UninstallError {
     }
 }
 
-pub(crate) fn uninstall_package(
+pub(crate) async fn uninstall_package(
     cx: &RootContext,
     args: &UninstallArgs,
 ) -> Result<(), UninstallError> {
@@ -79,8 +79,9 @@ pub(crate) fn uninstall_package(
         )
     ));
 
-    for target in &targets {
-        engine::execute_uninstall(&cx, &db, &target.pkg_id)?;
+    let executions = engine::prepare_uninstall(&cx, &db, &targets)?;
+    for execution in executions {
+        execution.execute(&cx).await?;
     }
 
     Ok(())

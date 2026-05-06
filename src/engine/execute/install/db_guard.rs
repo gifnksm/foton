@@ -13,7 +13,7 @@ use crate::{
         },
     },
     db::{PackageDatabase, PackageDatabaseError},
-    package::{PackageId, PackageManifest},
+    package::{PackageId, PackageManifest, PackageState},
 };
 
 #[derive(Debug)]
@@ -42,13 +42,7 @@ where
 }
 
 #[derive(Debug, Snafu)]
-#[expect(clippy::enum_variant_names)]
 enum InstallDbGuardErrorReport {
-    #[snafu(display("failed to begin install transaction for package {pkg_id}"))]
-    BeginInstall {
-        pkg_id: PackageId,
-        source: PackageDatabaseError,
-    },
     #[snafu(display("failed to complete install transaction for package {pkg_id}"))]
     CompleteInstall {
         pkg_id: PackageId,
@@ -77,7 +71,7 @@ pub(super) fn begin_install<'db, S>(
     cx: &ReportContext<S>,
     db: Arc<Mutex<PackageDatabase<'db>>>,
     manifest: &PackageManifest,
-) -> Result<InstallDbGuard<'db, S>, S::Error>
+) -> InstallDbGuard<'db, S>
 where
     S: ReportScope,
 {
@@ -85,18 +79,19 @@ where
     let pkg_id = manifest.metadata.id();
 
     {
-        let mut db = db.lock().unwrap();
-        db.begin_install(manifest)
-            .context(BeginInstallSnafu { pkg_id: &pkg_id })
-            .report_error(cx.reporter())?;
+        let db = db.lock().unwrap();
+        assert_eq!(
+            db.entry_by_id(&pkg_id).map(|(state, _)| state),
+            Some(PackageState::PendingInstall)
+        );
     }
 
-    Ok(InstallDbGuard {
+    InstallDbGuard {
         installation_persisted: false,
         cx: cx.clone(),
         db,
         pkg_id,
-    })
+    }
 }
 
 #[derive(Debug)]
@@ -164,16 +159,17 @@ mod tests {
     }
 
     #[test]
-    fn begin_install_persists_pending_install_before_completion() {
+    fn install_db_guard_preserves_pending_install_before_completion() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
         let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
-        testing::with_db(&cx, |db| {
+        testing::with_db(&cx, |mut db| {
+            db.apply_install_transaction(&manifest).unwrap();
             let db = Arc::new(Mutex::new(db));
-            let guard = begin_install(&cx, Arc::clone(&db), &manifest).unwrap();
+            let guard = begin_install(&cx, Arc::clone(&db), &manifest);
             {
                 let mut db = db.lock().unwrap();
                 // Reload from disk while keeping the install guard alive so this assertion verifies
@@ -200,9 +196,10 @@ mod tests {
         let mut db_lock_file = engine::open_db_lock_file(&cx).unwrap();
 
         {
-            let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
+            let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
+            db.apply_install_transaction(&manifest).unwrap();
             let db = Arc::new(Mutex::new(db));
-            let guard = begin_install(&cx, db, &manifest).unwrap();
+            let guard = begin_install(&cx, db, &manifest);
             drop(guard);
         }
 
@@ -223,9 +220,10 @@ mod tests {
         let mut db_lock_file = engine::open_db_lock_file(&cx).unwrap();
 
         {
-            let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
+            let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
+            db.apply_install_transaction(&manifest).unwrap();
             let db = Arc::new(Mutex::new(db));
-            let guard = begin_install(&cx, db, &manifest).unwrap();
+            let guard = begin_install(&cx, db, &manifest);
             guard.complete_install().unwrap();
         }
 
