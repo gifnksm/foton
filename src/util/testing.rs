@@ -9,7 +9,10 @@ use crate::{
         reporter::{NeverReport, OperationError, ReportScope, RootReportScope, RootReporter},
     },
     db::PackageDatabase,
-    engine,
+    engine::{
+        self, ExecutionPlan, ExecutionPlanOp, InstallOp, InstallReason, ResolvedInstallTarget,
+        ResolvedUninstallTarget, SkipOp, UninstallOp, UninstallReason,
+    },
     package::{PackageDirs, PackageId, PackageManifest, PackageState},
     registry::{RegistryId, RegistryIndex},
     util::app_dirs::AppDirs,
@@ -135,12 +138,58 @@ where
     Arc::new(toml::from_str(&manifest_str).unwrap())
 }
 
+pub(crate) fn make_resolved_install_target(
+    manifest: &Arc<PackageManifest>,
+) -> ResolvedInstallTarget {
+    ResolvedInstallTarget {
+        manifest: Arc::clone(manifest),
+    }
+}
+
+pub(crate) fn make_resolved_uninstall_target<I>(pkg_id: I) -> ResolvedUninstallTarget
+where
+    I: TryInto<PackageId, Error: Debug>,
+{
+    ResolvedUninstallTarget {
+        pkg_id: pkg_id.try_into().unwrap(),
+    }
+}
+
+pub(crate) fn make_install_plan(manifest: &Arc<PackageManifest>) -> ExecutionPlan {
+    ExecutionPlan::new_for_test([InstallOp {
+        manifest: Arc::clone(manifest),
+        reason: InstallReason::RequestedByUser,
+    }
+    .into()])
+}
+
+pub(crate) fn make_uninstall_plan(pkg_id: &PackageId) -> ExecutionPlan {
+    ExecutionPlan::new_for_test([UninstallOp {
+        pkg_id: pkg_id.clone(),
+        reason: UninstallReason::RequestedByUser,
+    }
+    .into()])
+}
+
+pub(crate) fn mark_as_state(
+    db: &mut PackageDatabase<'_>,
+    manifest: &Arc<PackageManifest>,
+    state: PackageState,
+) {
+    match state {
+        PackageState::Installed => mark_as_installed(db, manifest),
+        PackageState::PendingInstall => mark_as_pending_installed(db, manifest),
+        PackageState::PendingUninstall => mark_as_pending_uninstalled(db, manifest),
+    }
+}
+
 pub(crate) fn mark_as_pending_installed(
     db: &mut PackageDatabase<'_>,
     manifest: &Arc<PackageManifest>,
 ) {
     let pkg_id = manifest.metadata.id();
-    db.apply_install_transaction(manifest).unwrap();
+    let plan = make_install_plan(manifest);
+    db.apply_plan_transaction(&plan).unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().0,
         PackageState::PendingInstall
@@ -149,7 +198,8 @@ pub(crate) fn mark_as_pending_installed(
 
 pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &Arc<PackageManifest>) {
     let pkg_id = manifest.metadata.id();
-    db.apply_install_transaction(manifest).unwrap();
+    let plan = make_install_plan(manifest);
+    db.apply_plan_transaction(&plan).unwrap();
     db.complete_install(&pkg_id).unwrap();
     assert_eq!(db.entry_by_id(&pkg_id).unwrap().0, PackageState::Installed);
 }
@@ -159,21 +209,80 @@ pub(crate) fn mark_as_pending_uninstalled(
     manifest: &Arc<PackageManifest>,
 ) {
     let pkg_id = manifest.metadata.id();
-    db.apply_install_transaction(manifest).unwrap();
+    let plan = make_install_plan(manifest);
+    db.apply_plan_transaction(&plan).unwrap();
     db.complete_install(&pkg_id).unwrap();
-    db.apply_uninstall_transaction(&pkg_id).unwrap();
+    let plan = make_uninstall_plan(&manifest.metadata.id());
+    db.apply_plan_transaction(&plan).unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().0,
         PackageState::PendingUninstall
     );
 }
 
-pub(crate) fn with_db<S, F>(cx: &ReportContext<S>, f: F)
+#[track_caller]
+pub(crate) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
+    let actual_ops = actual.ops();
+    let expected_ops = expected.ops();
+    assert_eq!(
+        expected_ops.len(),
+        actual_ops.len(),
+        "plan op count mismatch:\n  actual: {actual_ops:?}\nexpected: {expected_ops:?}",
+    );
+    for (actual_op, expected_op) in actual_ops.iter().zip(expected_ops) {
+        match (actual_op, expected_op) {
+            (
+                ExecutionPlanOp::Install(InstallOp {
+                    manifest: actual_manifest,
+                    reason: actual_reason,
+                }),
+                ExecutionPlanOp::Install(InstallOp {
+                    manifest: expected_manifest,
+                    reason: expected_reason,
+                }),
+            ) => {
+                assert!(Arc::ptr_eq(actual_manifest, expected_manifest));
+                assert_eq!(actual_reason, expected_reason);
+            }
+            (
+                ExecutionPlanOp::Uninstall(UninstallOp {
+                    pkg_id: actual_pkg_id,
+                    reason: actual_reason,
+                }),
+                ExecutionPlanOp::Uninstall(UninstallOp {
+                    pkg_id: expected_pkg_id,
+                    reason: expected_reason,
+                }),
+            ) => {
+                assert_eq!(actual_pkg_id, expected_pkg_id);
+                assert_eq!(actual_reason, expected_reason);
+            }
+            (
+                ExecutionPlanOp::Skip(SkipOp {
+                    pkg_id: actual_pkg_id,
+                    reason: actual_reason,
+                }),
+                ExecutionPlanOp::Skip(SkipOp {
+                    pkg_id: expected_pkg_id,
+                    reason: expected_reason,
+                }),
+            ) => {
+                assert_eq!(actual_pkg_id, expected_pkg_id);
+                assert_eq!(actual_reason, expected_reason);
+            }
+            (actual_op, expected_op) => {
+                panic!("mismatched plan ops\n  actual: {actual_op:?}\nexpected: {expected_op:?}")
+            }
+        }
+    }
+}
+
+pub(crate) fn with_db<S, F, T>(cx: &ReportContext<S>, f: F) -> T
 where
     S: ReportScope,
-    F: FnOnce(PackageDatabase<'_>),
+    F: FnOnce(PackageDatabase<'_>) -> T,
 {
     let mut lock_file = engine::open_db_lock_file(cx).unwrap();
     let db = engine::load_database(cx, &mut lock_file).unwrap();
-    f(db);
+    f(db)
 }

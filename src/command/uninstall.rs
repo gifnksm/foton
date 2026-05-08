@@ -6,7 +6,6 @@ use crate::{
     cli::{
         args::UninstallArgs,
         context::RootContext,
-        message::BulletList,
         reporter::{NeverReport, OperationError, ReportScope, RootReportScope},
     },
     engine,
@@ -58,10 +57,8 @@ pub(crate) async fn uninstall_package(
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
     let db = engine::load_database(&cx, &mut db_lock_file)?;
-    let db = Arc::new(Mutex::new(db));
 
-    let targets = engine::resolve_uninstall_targets(&cx, &db.lock().unwrap(), pkg_specs)?;
-
+    let targets = engine::resolve_uninstall_targets(&cx, &db, pkg_specs)?;
     if targets.is_empty() {
         cx.reporter().report_info(format_args!(
             "no packages need to be uninstalled, nothing to do"
@@ -69,17 +66,11 @@ pub(crate) async fn uninstall_package(
         return Ok(());
     }
 
-    cx.reporter().report_info(format_args!(
-        "Uninstalling the following packages:\n{}",
-        BulletList(
-            &targets
-                .iter()
-                .map(|target| format!("{} ({})", target.pkg_id, target.current_state))
-                .collect::<Vec<_>>(),
-        )
-    ));
+    let plan = engine::plan_uninstall(&db, &targets);
+    engine::report_plan(&cx, &plan);
 
-    let executions = engine::prepare_uninstall(&cx, &db, &targets)?;
+    let db = Arc::new(Mutex::new(db));
+    let executions = engine::prepare(&cx, &db, &plan)?;
     for execution in executions {
         execution.execute(&cx).await?;
     }

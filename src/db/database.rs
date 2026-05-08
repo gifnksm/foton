@@ -13,9 +13,9 @@ use crate::{
         DbLockFileGuard,
         persist::{self, PersistError, PersistedPackageDb, PersistedPackageEntry},
     },
+    engine::{ExecutionPlan, ExecutionPlanOp, InstallOp, UninstallOp},
     package::{
         PackageId, PackageManifest, PackageName, PackageQualifiedName, PackageSpec, PackageState,
-        PackageVersion,
     },
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
@@ -44,14 +44,6 @@ pub(crate) enum PackageDatabaseError {
     },
     #[snafu(display("package ID {pkg_id} is already installed"))]
     AlreadyInstalled { pkg_id: PackageId },
-    #[snafu(display(
-        "package {pkg_name} version {installed_version} is already installed, cannot install version {attempted_version}",
-    ))]
-    OtherVersionInstalled {
-        pkg_name: PackageQualifiedName,
-        installed_version: PackageVersion,
-        attempted_version: PackageVersion,
-    },
     #[cfg(test)]
     #[snafu(display("simulated failure to save package database"))]
     SimulatedSaveFailure,
@@ -234,59 +226,58 @@ impl<'a> PackageDatabase<'a> {
     pub(crate) fn check_installability(&self, manifest: &PackageManifest) -> Installability {
         let pkg_name = manifest.metadata.qualified_name.clone();
         let pkg_version = manifest.metadata.version.clone();
+        let mut installed_other_versions = vec![];
+        let mut pending_installs = vec![];
+        let mut pending_uninstalls = vec![];
         for (state, m) in self.entries_by_qualified_name(&pkg_name) {
-            match state {
-                PackageState::Installed => {
-                    let result = if m.metadata.version == pkg_version {
-                        Installability::AlreadyInstalled
-                    } else {
-                        Installability::OtherVersionInstalled(m.metadata.version.clone())
-                    };
-                    return result;
+            if m.metadata.version == pkg_version {
+                match state {
+                    PackageState::Installed => return Installability::AlreadyInstalled,
+                    PackageState::PendingInstall | PackageState::PendingUninstall => {}
                 }
-                PackageState::PendingInstall | PackageState::PendingUninstall => {}
+            } else {
+                match state {
+                    PackageState::Installed => installed_other_versions.push(m.metadata.id()),
+                    PackageState::PendingInstall => pending_installs.push(m.metadata.id()),
+                    PackageState::PendingUninstall => pending_uninstalls.push(m.metadata.id()),
+                }
             }
         }
-        Installability::Installable
+        Installability::Installable {
+            installed_other_versions,
+            pending_installs,
+            pending_uninstalls,
+        }
     }
 
-    pub(crate) fn apply_install_transaction(
+    pub(crate) fn check_uninstallability(&self, pkg_id: &PackageId) -> Uninstallability {
+        if self.entry_by_id(pkg_id).is_some() {
+            Uninstallability::Uninstallable
+        } else {
+            Uninstallability::AlreadyUninstalled
+        }
+    }
+
+    pub(crate) fn apply_plan_transaction(
         &mut self,
-        manifest: &Arc<PackageManifest>,
-    ) -> Result<InstallTransactionResult, PackageDatabaseError> {
-        let result = self.check_installability(manifest);
-        let pkg_id = manifest.metadata.id();
-        match result {
-            Installability::Installable => {}
-            Installability::AlreadyInstalled => {
-                return Err(AlreadyInstalledSnafu { pkg_id }.build());
-            }
-            Installability::OtherVersionInstalled(installed_version) => {
-                OtherVersionInstalledSnafu {
-                    pkg_name: pkg_id.qualified_name(),
-                    installed_version,
-                    attempted_version: pkg_id.version(),
+        plan: &ExecutionPlan,
+    ) -> Result<(), PackageDatabaseError> {
+        for op in plan.ops() {
+            match op {
+                ExecutionPlanOp::Install(InstallOp { manifest, .. }) => {
+                    self.insert_entry(PackageState::PendingInstall, Arc::clone(manifest));
                 }
-                .fail()?;
+                ExecutionPlanOp::Uninstall(UninstallOp { pkg_id, .. }) => {
+                    let entry = self
+                        .entry_mut(pkg_id)
+                        .context(EntryNotFoundSnafu { pkg_id })?;
+                    entry.state = PackageState::PendingUninstall;
+                }
+                ExecutionPlanOp::Skip(_) => {}
             }
         }
-        let mut pending_uninstalls = vec![];
-        if let Some(version_map) = self.persist_db.packages.get_mut(pkg_id.qualified_name()) {
-            for (version, entry) in &mut version_map.versions {
-                assert!(matches!(
-                    entry.state,
-                    PackageState::PendingInstall | PackageState::PendingUninstall
-                ));
-                if version == pkg_id.version() {
-                    continue;
-                }
-                entry.state = PackageState::PendingUninstall;
-                pending_uninstalls.push(entry.manifest.metadata.id());
-            }
-        }
-        self.insert_entry(PackageState::PendingInstall, Arc::clone(manifest));
         self.save()?;
-        Ok(InstallTransactionResult { pending_uninstalls })
+        Ok(())
     }
 
     pub(crate) fn complete_install(
@@ -341,18 +332,6 @@ impl<'a> PackageDatabase<'a> {
         Ok(())
     }
 
-    pub(crate) fn apply_uninstall_transaction(
-        &mut self,
-        pkg_id: &PackageId,
-    ) -> Result<(), PackageDatabaseError> {
-        let entry = self
-            .entry_mut(pkg_id)
-            .context(EntryNotFoundSnafu { pkg_id })?;
-        entry.state = PackageState::PendingUninstall;
-        self.save()?;
-        Ok(())
-    }
-
     pub(crate) fn complete_uninstall(
         &mut self,
         pkg_id: &PackageId,
@@ -376,24 +355,25 @@ impl<'a> PackageDatabase<'a> {
 
 #[derive(Debug, Clone, derive_more::IsVariant)]
 pub(crate) enum Installability {
-    Installable,
+    Installable {
+        installed_other_versions: Vec<PackageId>,
+        pending_installs: Vec<PackageId>,
+        pending_uninstalls: Vec<PackageId>,
+    },
     AlreadyInstalled,
-    OtherVersionInstalled(PackageVersion),
 }
 
-#[derive(Debug)]
-pub(crate) struct InstallTransactionResult {
-    pub(crate) pending_uninstalls: Vec<PackageId>,
+#[derive(Debug, Clone, derive_more::IsVariant)]
+pub(crate) enum Uninstallability {
+    Uninstallable,
+    AlreadyUninstalled,
 }
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr as _;
-
-    use semver::Version;
 
     use super::*;
-    use crate::{db::DbLockFile, util::testing};
+    use crate::{db::DbLockFile, engine::UninstallReason, util::testing};
 
     fn get_entry_state(db: &PackageDatabase<'_>, id: &PackageId) -> Option<PackageState> {
         let (state, manifest) = db.entry_by_id(id)?;
@@ -478,14 +458,15 @@ mod tests {
             None,
             Some(PackageState::Installed),
             |db| {
-                db.apply_install_transaction(&manifest).unwrap();
+                let plan = testing::make_install_plan(&manifest);
+                db.apply_plan_transaction(&plan).unwrap();
                 db.complete_install(&pkg_id).unwrap();
             },
         );
     }
 
     #[test]
-    fn apply_install_transaction_keeps_same_version_pending_install() {
+    fn apply_plan_transaction_keeps_same_version_pending_install() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
@@ -502,105 +483,68 @@ mod tests {
             Some(PackageState::PendingInstall),
             Some(PackageState::PendingInstall),
             |db| {
-                let res = db.apply_install_transaction(&manifest).unwrap();
-                assert!(res.pending_uninstalls.is_empty());
+                let plan = testing::make_install_plan(&manifest);
+                db.apply_plan_transaction(&plan).unwrap();
             },
         );
     }
 
     #[test]
-    fn apply_install_transaction_moves_other_pending_install_to_pending_uninstall() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
-
-        let old_manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
-        let old_pkg_id = old_manifest.metadata.id();
-        let new_manifest = testing::make_manifest("example-namespace/example-font@0.2.0");
-        let new_pkg_id = new_manifest.metadata.id();
-
-        with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_pending_installed(db, &old_manifest);
-        });
-        assert_statuses_change(
-            &app_dirs,
-            &mut lock_file,
-            &[
-                (
-                    &old_pkg_id,
-                    Some(PackageState::PendingInstall),
-                    Some(PackageState::PendingUninstall),
-                ),
-                (&new_pkg_id, None, Some(PackageState::PendingInstall)),
-            ],
-            |db| {
-                let res = db.apply_install_transaction(&new_manifest).unwrap();
-                assert_eq!(res.pending_uninstalls, vec![old_pkg_id.clone()]);
-            },
-        );
-    }
-
-    #[test]
-    fn apply_install_transaction_reports_other_installed_version() {
+    fn apply_plan_transaction_save_failure_rolls_back_previous_states() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let installed_manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
-        let installed_pkg_id = installed_manifest.metadata.id();
-        let next_manifest = testing::make_manifest("example-namespace/example-font@0.2.0");
-        let next_pkg_id = next_manifest.metadata.id();
+        let pending_install_manifest =
+            testing::make_manifest("example-namespace/example-font@0.2.0");
+        let pending_uninstall_manifest =
+            testing::make_manifest("example-namespace/example-font@0.3.0");
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_installed(db, &installed_manifest);
+            testing::mark_as_pending_installed(db, &pending_install_manifest);
+            testing::mark_as_pending_uninstalled(db, &pending_uninstall_manifest);
         });
         assert_statuses_change(
             &app_dirs,
             &mut lock_file,
             &[
                 (
-                    &installed_pkg_id,
+                    &installed_manifest.metadata.id(),
                     Some(PackageState::Installed),
                     Some(PackageState::Installed),
                 ),
-                (&next_pkg_id, None, None),
-            ],
-            |db| {
-                let err = db.apply_install_transaction(&next_manifest).unwrap_err();
-                assert!(matches!(
-                    err,
-                    PackageDatabaseError::OtherVersionInstalled { installed_version, ..}
-                        if installed_version == Version::new(0, 1, 0)
-                ));
-            },
-        );
-    }
-
-    #[test]
-    fn apply_install_transaction_save_failure_restores_other_pending_install_state() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
-
-        let old_manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
-        let old_pkg_id = old_manifest.metadata.id();
-        let new_manifest = testing::make_manifest("example-namespace/example-font@0.2.0");
-        let new_pkg_id = new_manifest.metadata.id();
-
-        with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_pending_installed(db, &old_manifest);
-        });
-        assert_statuses_change(
-            &app_dirs,
-            &mut lock_file,
-            &[
                 (
-                    &old_pkg_id,
+                    &pending_install_manifest.metadata.id(),
                     Some(PackageState::PendingInstall),
                     Some(PackageState::PendingInstall),
                 ),
-                (&new_pkg_id, None, None),
+                (
+                    &pending_uninstall_manifest.metadata.id(),
+                    Some(PackageState::PendingUninstall),
+                    Some(PackageState::PendingUninstall),
+                ),
             ],
             |db| {
+                let plan = ExecutionPlan::new_for_test([
+                    UninstallOp {
+                        pkg_id: installed_manifest.metadata.id(),
+                        reason: UninstallReason::RequestedByUser,
+                    }
+                    .into(),
+                    UninstallOp {
+                        pkg_id: pending_install_manifest.metadata.id(),
+                        reason: UninstallReason::RequestedByUser,
+                    }
+                    .into(),
+                    UninstallOp {
+                        pkg_id: pending_uninstall_manifest.metadata.id(),
+                        reason: UninstallReason::RequestedByUser,
+                    }
+                    .into(),
+                ]);
                 db.simulate_save_failure = true;
-                let err = db.apply_install_transaction(&new_manifest).unwrap_err();
+                let err = db.apply_plan_transaction(&plan).unwrap_err();
                 assert!(matches!(err, PackageDatabaseError::SimulatedSaveFailure));
             },
         );
@@ -647,49 +591,11 @@ mod tests {
             Some(PackageState::Installed),
             None,
             |db| {
-                db.apply_uninstall_transaction(&pkg_id).unwrap();
+                let plan = testing::make_uninstall_plan(&pkg_id);
+                db.apply_plan_transaction(&plan).unwrap();
                 db.complete_uninstall(&pkg_id).unwrap();
             },
         );
-    }
-
-    #[test]
-    fn apply_install_transaction_replaces_same_version_pending_uninstall() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
-
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
-
-        with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_pending_uninstalled(db, &manifest);
-        });
-        assert_status_change(
-            &app_dirs,
-            &mut lock_file,
-            &pkg_id,
-            Some(PackageState::PendingUninstall),
-            Some(PackageState::PendingInstall),
-            |db| {
-                let res = db.apply_install_transaction(&manifest).unwrap();
-                assert!(res.pending_uninstalls.is_empty());
-            },
-        );
-    }
-
-    #[test]
-    fn apply_install_transaction_save_failure_rolls_back_pending_entry() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
-
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
-
-        assert_status_change(&app_dirs, &mut lock_file, &pkg_id, None, None, |db| {
-            db.simulate_save_failure = true;
-            let err = db.apply_install_transaction(&manifest).unwrap_err();
-            assert!(matches!(err, PackageDatabaseError::SimulatedSaveFailure));
-        });
     }
 
     #[test]
@@ -737,48 +643,6 @@ mod tests {
             |db| {
                 db.simulate_save_failure = true;
                 let err = db.cancel_install(&pkg_id).unwrap_err();
-                assert!(matches!(err, PackageDatabaseError::SimulatedSaveFailure));
-            },
-        );
-    }
-
-    #[test]
-    fn apply_uninstall_transaction_reports_missing_entry() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
-
-        let pkg_id = PackageId::from_str("example-namespace/example-font@0.1.0").unwrap();
-
-        assert_status_change(&app_dirs, &mut lock_file, &pkg_id, None, None, |db| {
-            let err = db.apply_uninstall_transaction(&pkg_id).unwrap_err();
-            assert!(matches!(
-                err,
-                PackageDatabaseError::EntryNotFound { pkg_id: missing_pkg_id }
-                    if missing_pkg_id == pkg_id
-            ));
-        });
-    }
-
-    #[test]
-    fn apply_uninstall_transaction_save_failure_restores_installed_state() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
-
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
-
-        with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_installed(db, &manifest);
-        });
-        assert_status_change(
-            &app_dirs,
-            &mut lock_file,
-            &pkg_id,
-            Some(PackageState::Installed),
-            Some(PackageState::Installed),
-            |db| {
-                db.simulate_save_failure = true;
-                let err = db.apply_uninstall_transaction(&pkg_id).unwrap_err();
                 assert!(matches!(err, PackageDatabaseError::SimulatedSaveFailure));
             },
         );

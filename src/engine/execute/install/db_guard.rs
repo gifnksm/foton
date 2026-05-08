@@ -167,7 +167,8 @@ mod tests {
         let pkg_id = manifest.metadata.id();
 
         testing::with_db(&cx, |mut db| {
-            db.apply_install_transaction(&manifest).unwrap();
+            let plan = testing::make_install_plan(&manifest);
+            db.apply_plan_transaction(&plan).unwrap();
             let db = Arc::new(Mutex::new(db));
             let guard = begin_install(&cx, Arc::clone(&db), &manifest);
             {
@@ -197,7 +198,8 @@ mod tests {
 
         {
             let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            db.apply_install_transaction(&manifest).unwrap();
+            let plan = testing::make_install_plan(&manifest);
+            db.apply_plan_transaction(&plan).unwrap();
             let db = Arc::new(Mutex::new(db));
             let guard = begin_install(&cx, db, &manifest);
             drop(guard);
@@ -221,7 +223,8 @@ mod tests {
 
         {
             let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            db.apply_install_transaction(&manifest).unwrap();
+            let plan = testing::make_install_plan(&manifest);
+            db.apply_plan_transaction(&plan).unwrap();
             let db = Arc::new(Mutex::new(db));
             let guard = begin_install(&cx, db, &manifest);
             guard.complete_install().unwrap();

@@ -6,7 +6,6 @@ use crate::{
     cli::{
         args::InstallArgs,
         context::RootContext,
-        message::BulletList,
         reporter::{NeverReport, OperationError, ReportScope, RootReportScope},
     },
     engine,
@@ -72,18 +71,11 @@ pub(crate) async fn install_package(
         return Ok(());
     }
 
-    cx.reporter().report_info(format_args!(
-        "Installing the following packages:\n{}",
-        BulletList(
-            &targets
-                .iter()
-                .map(|target| format!("{} ({})", target.manifest.metadata.id(), target.reg_id))
-                .collect::<Vec<_>>(),
-        )
-    ));
+    let plan = engine::plan_install(&db, &targets);
+    engine::report_plan(&cx, &plan);
 
     let db = Arc::new(Mutex::new(db));
-    let executions = engine::prepare_install(&cx, &db, &targets)?;
+    let executions = engine::prepare(&cx, &db, &plan)?;
     for execution in executions {
         execution.execute(&cx).await?;
     }

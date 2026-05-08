@@ -15,7 +15,7 @@ use crate::{
             ScopeResultErrorExt as _, SubReportScope,
         },
     },
-    db::{Installability, PackageDatabase},
+    db::PackageDatabase,
     package::{
         PackageId, PackageManifest, PackageQualifiedName, PackageSpec, PackageState, PackageVersion,
     },
@@ -93,7 +93,6 @@ impl From<InstallResolveErrorReport> for ReportValue<'static> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedInstallTarget {
-    pub(crate) reg_id: RegistryId,
     pub(crate) manifest: Arc<PackageManifest>,
 }
 
@@ -116,15 +115,10 @@ where
 
     let indexes = super::registry::fetch_registries(&cx, registries)?;
 
-    let targets: Vec<_> = pkg_specs
+    let mut targets: Vec<_> = pkg_specs
         .iter()
         .map(|pkg_spec| resolve_spec(&cx, &indexes, pkg_spec))
         .collect_to_end()?;
-
-    let mut targets = targets
-        .into_iter()
-        .filter(|target| check_installability(&cx, db, target))
-        .collect();
 
     dedup_and_check_conflicts(&cx, &mut targets)?;
 
@@ -192,44 +186,15 @@ where
             .reporter()
             .report_error(MultipleMatchingPackagesSnafu { pkg_spec, pkg_ids }.build()));
     }
-    let Some((reg_id, manifest)) = manifests.into_iter().next() else {
+    let Some((_reg_id, manifest)) = manifests.into_iter().next() else {
         return Err(cx
             .reporter()
             .report_error(PackageNotFoundForSpecSnafu { pkg_spec }.build()));
     };
 
     Ok(ResolvedInstallTarget {
-        reg_id: reg_id.clone(),
         manifest: Arc::new(manifest),
     })
-}
-
-fn check_installability<S>(
-    cx: &ReportContext<InstallResolveScope<S>>,
-    db: &PackageDatabase<'_>,
-    target: &ResolvedInstallTarget,
-) -> bool
-where
-    S: ReportScope,
-{
-    let pkg_id = target.manifest.metadata.id();
-    match db.check_installability(&target.manifest) {
-        Installability::Installable => true,
-        Installability::AlreadyInstalled => {
-            cx.reporter().report_info(format_args!(
-                "package {pkg_id} is already installed, skipping"
-            ));
-            false
-        }
-        Installability::OtherVersionInstalled(package_version) => {
-            let pkg_name = &target.manifest.metadata.qualified_name;
-            let requested_version = &target.manifest.metadata.version;
-            cx.reporter().report_info(format_args!(
-                "another version of package {pkg_name} is already installed (installed: {package_version}, requested: {requested_version}), skipping"
-            ));
-            false
-        }
-    }
 }
 
 fn dedup_and_check_conflicts<S>(
@@ -418,7 +383,6 @@ mod tests {
                     .unwrap();
 
             assert_eq!(targets.len(), 1);
-            assert_eq!(targets[0].reg_id, reg_id);
             assert_eq!(
                 targets[0].manifest.metadata.id().to_string(),
                 "example-namespace/example-font@1.0.0"
@@ -493,14 +457,11 @@ mod tests {
         let cx = TestScope::start(&cx);
         let cx = InstallResolveScope::start(&cx);
 
-        let reg_id = RegistryId::new("example-registry").unwrap();
         let mut targets = vec![
             ResolvedInstallTarget {
-                reg_id: reg_id.clone(),
                 manifest: testing::make_manifest("example-namespace/example-font@0.1.0"),
             },
             ResolvedInstallTarget {
-                reg_id,
                 manifest: testing::make_manifest("example-namespace/example-font@0.2.0"),
             },
         ];
@@ -516,15 +477,13 @@ mod tests {
         let cx = TestScope::start(&cx);
         let cx = InstallResolveScope::start(&cx);
 
-        let reg_id = RegistryId::new("example-registry").unwrap();
         let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
         let expected_pkg_id = manifest.metadata.id();
         let mut targets = vec![
             ResolvedInstallTarget {
-                reg_id: reg_id.clone(),
                 manifest: Arc::clone(&manifest),
             },
-            ResolvedInstallTarget { reg_id, manifest },
+            ResolvedInstallTarget { manifest },
         ];
 
         dedup_and_check_conflicts(&cx, &mut targets).unwrap();
