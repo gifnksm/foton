@@ -15,7 +15,7 @@ pub(super) fn run(
     .ensure_stdout(str::is_empty)?;
 
     super::exec_foton(params, exec_results, |cmd| {
-        cmd.args(["install", PKG_SPEC]);
+        cmd.args(["install", PKG_SPEC, "--no-confirm"]);
     })?
     .ensure_success()?;
 
@@ -30,7 +30,7 @@ pub(super) fn run(
     })?;
 
     super::exec_foton(params, exec_results, |cmd| {
-        cmd.args(["uninstall", PKG_SPEC]);
+        cmd.args(["uninstall", PKG_SPEC, "--no-confirm"]);
     })?
     .ensure_success()?;
 

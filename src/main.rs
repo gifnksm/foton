@@ -10,7 +10,7 @@ use tokio::signal;
 
 use crate::{
     cli::{
-        args::{Args, Command},
+        args::{Args, Command, GlobalArgs},
         context::RootContext,
         message,
         reporter::RootReporter,
@@ -93,20 +93,24 @@ fn main() {
 fn run() -> Result<(), FotonError> {
     run_special_command()?;
 
-    let args = Args::parse();
-    let cx = init_context().context(InitializationSnafu)?;
-    start_task(&cx, async move |cx| run_command(cx, args).await)?;
+    let Args {
+        global_args,
+        command,
+    } = Args::parse();
+    let cx = init_context(global_args).context(InitializationSnafu)?;
+    start_task(&cx, async move |cx| run_command(cx, command).await)?;
 
     Ok(())
 }
 
-fn init_context() -> Result<RootContext, InitializationError> {
+fn init_context(global_args: GlobalArgs) -> Result<RootContext, InitializationError> {
     let app_dirs = AppDirs::from_directories()?;
     let reporter = RootReporter::message_reporter();
     let config = cli::config::load_config(&app_dirs).context(LoadConfigSnafu)?;
     let cx = RootContext::new(
         APP_ID.into(),
         Arc::new(app_dirs),
+        Arc::new(global_args),
         Arc::new(config),
         reporter,
     );
@@ -169,9 +173,7 @@ fn run_special_command() -> Result<(), SpecialCommandError> {
     Ok(())
 }
 
-async fn run_command(cx: &RootContext, args: Args) -> Result<(), CommandError> {
-    let Args { command } = args;
-
+async fn run_command(cx: &RootContext, command: Command) -> Result<(), CommandError> {
     match command {
         Command::Install(args) => command::install_package(cx, &args).await?,
         Command::Uninstall(args) => command::uninstall_package(cx, &args).await?,

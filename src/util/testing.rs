@@ -4,6 +4,7 @@ use tempfile::TempDir;
 
 use crate::{
     cli::{
+        args::GlobalArgs,
         config::FotonConfig,
         context::{ReportContext, RootContext},
         reporter::{NeverReport, OperationError, ReportScope, RootReportScope, RootReporter},
@@ -72,6 +73,7 @@ impl TempdirContext {
         let cx = RootContext::new(
             app_id.into(),
             Arc::new(app_dirs),
+            Arc::new(GlobalArgs::default()),
             Arc::new(config),
             reporter,
         );

@@ -3,8 +3,17 @@ use crate::{package::PackageSpec, registry::RegistryId};
 /// Install and uninstall fonts from package registries.
 #[derive(clap::Parser)]
 pub(crate) struct Args {
+    #[clap(flatten)]
+    pub(crate) global_args: GlobalArgs,
     #[clap(subcommand)]
     pub(crate) command: Command,
+}
+
+#[derive(Debug, clap::Args, Default)]
+pub(crate) struct GlobalArgs {
+    /// Bypass any and all interactive confirmation prompts.
+    #[clap(long, global = true)]
+    pub(crate) no_confirm: bool,
 }
 
 #[derive(Debug, clap::Subcommand)]
