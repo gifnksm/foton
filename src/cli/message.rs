@@ -30,17 +30,64 @@ pub(crate) use _message_scope as scope;
 pub(crate) use _message_warn as warn;
 use console::Style;
 
-const SCOPE_PREFIX_STYLE: Style = Style::new().blue().bold();
-const SCOPE_BODY_STYLE: Style = Style::new().bold();
-const ERROR_PREFIX_STYLE: Style = Style::new().red().bold();
-const WARNING_PREFIX_STYLE: Style = Style::new().yellow().bold();
+struct MessageStyle {
+    prefix_style: Style,
+    body_style: Style,
+    head_prefix: &'static str,
+    tail_prefix: &'static str,
+    head_separator: &'static str,
+    tail_separator: &'static str,
+}
+
+impl MessageStyle {
+    fn eprint(&self, message: fmt::Arguments<'_>) {
+        let message = message.to_string();
+        let mut message = message.lines();
+        let line = message.next().unwrap_or("");
+        eprintln!(
+            "{}{}{}",
+            self.prefix_style.apply_to(self.head_prefix),
+            self.head_separator,
+            self.body_style.apply_to(line),
+        );
+        for line in message {
+            eprintln!(
+                "{}{}{}",
+                self.prefix_style.apply_to(self.tail_prefix),
+                self.tail_separator,
+                self.body_style.apply_to(line),
+            );
+        }
+    }
+}
+
+const SCOPE_STYLE: MessageStyle = MessageStyle {
+    prefix_style: Style::new().blue().bold().bright(),
+    body_style: Style::new().bold().bright(),
+    head_prefix: "::",
+    tail_prefix: "  ",
+    head_separator: " ",
+    tail_separator: " ",
+};
+const ERROR_STYLE: MessageStyle = MessageStyle {
+    prefix_style: Style::new().red().bold().bright(),
+    body_style: Style::new().bold().bright(),
+    head_prefix: "error",
+    tail_prefix: "     ",
+    head_separator: ": ",
+    tail_separator: "  ",
+};
+const WARNING_STYLE: MessageStyle = MessageStyle {
+    prefix_style: Style::new().yellow().bold().bright(),
+    body_style: Style::new().bold().bright(),
+    head_prefix: "warning",
+    tail_prefix: "       ",
+    head_separator: ": ",
+    tail_separator: "  ",
+};
 
 pub(crate) fn eprintln_scope(message: fmt::Arguments<'_>) {
-    eprintln!(
-        "{} {}",
-        SCOPE_PREFIX_STYLE.apply_to("::"),
-        SCOPE_BODY_STYLE.apply_to(message)
-    );
+    SCOPE_STYLE.eprint(message);
 }
 
 pub(crate) fn eprintln_info(message: fmt::Arguments<'_>) {
@@ -48,11 +95,11 @@ pub(crate) fn eprintln_info(message: fmt::Arguments<'_>) {
 }
 
 pub(crate) fn eprintln_error(message: fmt::Arguments<'_>) {
-    eprintln!("{}: {message}", ERROR_PREFIX_STYLE.apply_to("error"));
+    ERROR_STYLE.eprint(message);
 }
 
 pub(crate) fn eprintln_warn(message: fmt::Arguments<'_>) {
-    eprintln!("{}: {message}", WARNING_PREFIX_STYLE.apply_to("warning"));
+    WARNING_STYLE.eprint(message);
 }
 
 #[derive(Debug)]

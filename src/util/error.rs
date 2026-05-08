@@ -28,9 +28,21 @@ where
         write!(f, "{}", self.error)?;
 
         let mut source = self.error.source();
+        if source.is_some() {
+            write!(f, "\ncaused by:")?;
+        }
         while let Some(err) = source {
-            write!(f, "\n  caused by: {err}")?;
             source = err.source();
+            let has_next = source.is_some();
+            let head_prefix = if has_next { "├─▶" } else { "╰─▶" };
+            let tail_prefix = if has_next { "│  " } else { "   " };
+            let message = err.to_string();
+            let mut lines = message.lines();
+            let line = lines.next().unwrap_or("");
+            write!(f, "\n  {head_prefix}{line}")?;
+            for line in lines {
+                write!(f, "\n  {tail_prefix}{line}")?;
+            }
         }
 
         Ok(())
