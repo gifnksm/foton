@@ -9,7 +9,7 @@ use crate::{
         reporter::{NeverReport, ReportScope, ReportValue, ResultIteratorExt as _, SubReportScope},
     },
     db::PackageDatabase,
-    package::{PackageId, PackageSpec, PackageState},
+    package::{PackageId, PackageSpec},
 };
 
 #[derive(Debug)]
@@ -62,7 +62,6 @@ impl From<UninstallResolveErrorReport> for ReportValue<'static> {
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedUninstallTarget {
     pub(crate) pkg_id: PackageId,
-    pub(crate) current_state: PackageState,
 }
 
 pub(crate) fn resolve_uninstall_targets<S>(
@@ -100,9 +99,8 @@ where
             ));
             Ok(None)
         }
-        [(state, manifest)] => Ok(Some(ResolvedUninstallTarget {
+        [(_state, manifest)] => Ok(Some(ResolvedUninstallTarget {
             pkg_id: manifest.metadata.id(),
-            current_state: *state,
         })),
         _ => Err(cx.reporter().report_error(
             MultipleMatchingPackagesSnafu {
@@ -166,7 +164,6 @@ mod tests {
             ] {
                 let resolved = resolve_spec(&cx, &db, &spec).unwrap().unwrap();
                 assert_eq!(resolved.pkg_id, expected);
-                assert_eq!(resolved.current_state, PackageState::Installed);
             }
         });
     }
@@ -229,7 +226,6 @@ mod tests {
 
             assert_eq!(targets.len(), 1);
             assert_eq!(targets[0].pkg_id, expected_pkg_id);
-            assert_eq!(targets[0].current_state, PackageState::Installed);
         });
     }
 
@@ -240,7 +236,7 @@ mod tests {
         let cx = UninstallResolveScope::start(&cx);
 
         let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
-        let expected = manifest.metadata.id();
+        let pkg_id = manifest.metadata.id();
 
         let spec = PackageSpec::from_str("example-namespace/example-font").unwrap();
 
@@ -248,14 +244,13 @@ mod tests {
             testing::mark_as_pending_installed(&mut db, &manifest);
 
             let resolved = resolve_spec(&cx, &db, &spec).unwrap().unwrap();
-            assert_eq!(resolved.pkg_id, expected);
-            assert_eq!(resolved.current_state, PackageState::PendingInstall);
+            assert_eq!(resolved.pkg_id, pkg_id);
 
-            db.apply_uninstall_transaction(&expected).unwrap();
+            let plan = testing::make_uninstall_plan(&pkg_id);
+            db.apply_plan_transaction(&plan).unwrap();
 
             let resolved = resolve_spec(&cx, &db, &spec).unwrap().unwrap();
-            assert_eq!(resolved.pkg_id, expected);
-            assert_eq!(resolved.current_state, PackageState::PendingUninstall);
+            assert_eq!(resolved.pkg_id, pkg_id);
         });
     }
 
