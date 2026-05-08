@@ -74,6 +74,8 @@ pub(crate) async fn install_package(
         return Ok(());
     }
 
+    engine::confirm(&cx, "Do you want to continue?").await?;
+
     let db = Arc::new(Mutex::new(db));
     let executions = engine::prepare(&cx, &db, &plan)?;
     for execution in executions {

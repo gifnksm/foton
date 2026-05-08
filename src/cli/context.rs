@@ -4,6 +4,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     cli::{
+        args::GlobalArgs,
         config::FotonConfig,
         reporter::{ReportScope, RootReporter, ScopedReporter},
     },
@@ -14,6 +15,7 @@ use crate::{
 pub(crate) struct Context<R> {
     app_id: Arc<str>,
     app_dirs: Arc<AppDirs>,
+    global_args: Arc<GlobalArgs>,
     config: Arc<FotonConfig>,
     reporter: R,
     cancel_token: CancellationToken,
@@ -26,6 +28,7 @@ impl<R> Context<R> {
     pub(crate) fn new(
         app_id: Arc<str>,
         app_dirs: Arc<AppDirs>,
+        global_args: Arc<GlobalArgs>,
         config: Arc<FotonConfig>,
         reporter: R,
     ) -> Self {
@@ -33,6 +36,7 @@ impl<R> Context<R> {
         Self {
             app_id,
             app_dirs,
+            global_args,
             config,
             reporter,
             cancel_token,
@@ -49,6 +53,10 @@ impl<R> Context<R> {
 
     pub(crate) fn reporter(&self) -> &R {
         &self.reporter
+    }
+
+    pub(crate) fn global_args(&self) -> &GlobalArgs {
+        &self.global_args
     }
 
     pub(crate) fn config(&self) -> &FotonConfig {
@@ -68,6 +76,7 @@ impl Context<RootReporter> {
         ReportContext {
             app_id: Arc::clone(&self.app_id),
             app_dirs: Arc::clone(&self.app_dirs),
+            global_args: Arc::clone(&self.global_args),
             config: Arc::clone(&self.config),
             reporter: self.reporter.with_scope(scope),
             cancel_token: self.cancel_token.clone(),
@@ -86,6 +95,7 @@ where
         ReportContext {
             app_id: Arc::clone(&self.app_id),
             app_dirs: Arc::clone(&self.app_dirs),
+            global_args: Arc::clone(&self.global_args),
             config: Arc::clone(&self.config),
             reporter: self.reporter.with_scope(scope),
             cancel_token: self.cancel_token.clone(),
