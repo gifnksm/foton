@@ -6,6 +6,7 @@ use crate::{
         ExecutionPlan, ExecutionPlanOp, InstallOp, InstallReason, ResolvedInstallTarget, SkipOp,
         UninstallOp, UninstallReason, plan::SkipReason,
     },
+    package::PackageManifest,
 };
 
 pub(crate) fn plan_install(
@@ -14,14 +15,15 @@ pub(crate) fn plan_install(
 ) -> ExecutionPlan {
     let mut ops = vec![];
     for target in targets {
-        let target_id = target.manifest.metadata.id();
-        match db.check_installability(&target.manifest) {
+        let manifest = &target.manifest;
+        let target_id = manifest.metadata.id();
+        match db.check_installability(manifest) {
             Installability::Installable {
                 installed_other_versions,
                 pending_installs,
                 pending_uninstalls,
             } => {
-                ops.push(install_target_op(target));
+                ops.push(install_target_op(manifest));
                 let mut uninstall_ops = vec![];
                 for pkg_id in installed_other_versions {
                     uninstall_ops.push(UninstallOp {
@@ -48,7 +50,7 @@ pub(crate) fn plan_install(
             }
             Installability::AlreadyInstalled => ops.push(
                 SkipOp {
-                    pkg_id: target.manifest.metadata.id(),
+                    pkg_spec: target_id.into(),
                     reason: SkipReason::AlreadyInstalled,
                 }
                 .into(),
@@ -58,9 +60,9 @@ pub(crate) fn plan_install(
     ExecutionPlan { ops }
 }
 
-fn install_target_op(target: &ResolvedInstallTarget) -> ExecutionPlanOp {
+fn install_target_op(manifest: &Arc<PackageManifest>) -> ExecutionPlanOp {
     InstallOp {
-        manifest: Arc::clone(&target.manifest),
+        manifest: Arc::clone(manifest),
         reason: InstallReason::RequestedByUser,
     }
     .into()
@@ -143,7 +145,7 @@ mod tests {
         testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([SkipOp {
-                pkg_id: manifest.metadata.id(),
+                pkg_spec: manifest.metadata.id().into(),
                 reason: SkipReason::AlreadyInstalled,
             }
             .into()]),

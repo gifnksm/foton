@@ -11,22 +11,33 @@ pub(crate) fn plan_uninstall(
 ) -> ExecutionPlan {
     let mut ops = vec![];
     for target in targets {
-        let pkg_id = &target.pkg_id;
-        match db.check_uninstallability(pkg_id) {
-            Uninstallability::Uninstallable => ops.push(
-                UninstallOp {
-                    pkg_id: pkg_id.clone(),
-                    reason: UninstallReason::RequestedByUser,
-                }
-                .into(),
-            ),
-            Uninstallability::AlreadyUninstalled => ops.push(
-                SkipOp {
-                    pkg_id: pkg_id.clone(),
-                    reason: SkipReason::AlreadyUninstalled,
-                }
-                .into(),
-            ),
+        match target {
+            ResolvedUninstallTarget::Resolved { pkg_id } => match db.check_uninstallability(pkg_id)
+            {
+                Uninstallability::Uninstallable => ops.push(
+                    UninstallOp {
+                        pkg_id: pkg_id.clone(),
+                        reason: UninstallReason::RequestedByUser,
+                    }
+                    .into(),
+                ),
+                Uninstallability::AlreadyUninstalled => ops.push(
+                    SkipOp {
+                        pkg_spec: pkg_id.clone().into(),
+                        reason: SkipReason::AlreadyUninstalled,
+                    }
+                    .into(),
+                ),
+            },
+            ResolvedUninstallTarget::Unresolved { pkg_spec } => {
+                ops.push(
+                    SkipOp {
+                        pkg_spec: pkg_spec.clone(),
+                        reason: SkipReason::AlreadyUninstalled,
+                    }
+                    .into(),
+                );
+            }
         }
     }
     ExecutionPlan { ops }
@@ -34,8 +45,11 @@ pub(crate) fn plan_uninstall(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr as _;
+
     use crate::{
         cli::reporter::RootReportScope as _,
+        package::PackageId,
         util::testing::{self, TempdirContext, TestScope},
     };
 
@@ -71,16 +85,15 @@ mod tests {
     fn plan_uninstall_skips_non_existing() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
-        let uninstall_target =
-            testing::make_resolved_uninstall_target("example-namespace/example-font@0.1.0");
-        let uninstall_pkg_id = uninstall_target.pkg_id.clone();
+        let uninstall_pkg_id = PackageId::from_str("example-namespace/example-font@0.1.0").unwrap();
+        let uninstall_target = testing::make_resolved_uninstall_target(&uninstall_pkg_id);
 
         let plan = testing::with_db(&cx, |db| plan_uninstall(&db, &[uninstall_target]));
 
         testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([SkipOp {
-                pkg_id: uninstall_pkg_id.clone(),
+                pkg_spec: uninstall_pkg_id.into(),
                 reason: SkipReason::AlreadyUninstalled,
             }
             .into()]),

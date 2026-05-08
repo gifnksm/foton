@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::package::{PackageId, PackageManifest};
+use crate::package::{PackageId, PackageManifest, PackageSpec};
 
 pub(crate) use self::{install::*, uninstall::*};
 
@@ -15,6 +15,10 @@ pub(crate) struct ExecutionPlan {
 impl ExecutionPlan {
     pub(crate) fn ops(&self) -> &[ExecutionPlanOp] {
         &self.ops
+    }
+
+    pub(crate) fn has_side_effects(&self) -> bool {
+        self.ops.iter().any(|op| !op.is_skip())
     }
 
     #[cfg(test)]
@@ -72,7 +76,7 @@ pub(crate) struct UninstallOp {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SkipOp {
-    pub(crate) pkg_id: PackageId,
+    pub(crate) pkg_spec: PackageSpec,
     pub(crate) reason: SkipReason,
 }
 

@@ -262,6 +262,10 @@ impl<'a> PackageDatabase<'a> {
         &mut self,
         plan: &ExecutionPlan,
     ) -> Result<(), PackageDatabaseError> {
+        if !plan.has_side_effects() {
+            return Ok(());
+        }
+
         for op in plan.ops() {
             match op {
                 ExecutionPlanOp::Install(InstallOp { manifest, .. }) => {

@@ -128,7 +128,7 @@ mod tests {
                 }
                 .into(),
                 SkipOp {
-                    pkg_id: skipped_pkg_id.clone(),
+                    pkg_spec: skipped_pkg_id.clone().into(),
                     reason: SkipReason::AlreadyInstalled,
                 }
                 .into(),
@@ -176,7 +176,7 @@ mod tests {
         testing::with_db(&cx, |db| {
             let db = Arc::new(Mutex::new(db));
             let plan = ExecutionPlan::new_for_test([SkipOp {
-                pkg_id: skipped_pkg_id.clone(),
+                pkg_spec: skipped_pkg_id.clone().into(),
                 reason: SkipReason::AlreadyInstalled,
             }
             .into()]);

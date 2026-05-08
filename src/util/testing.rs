@@ -150,7 +150,7 @@ pub(crate) fn make_resolved_uninstall_target<I>(pkg_id: I) -> ResolvedUninstallT
 where
     I: TryInto<PackageId, Error: Debug>,
 {
-    ResolvedUninstallTarget {
+    ResolvedUninstallTarget::Resolved {
         pkg_id: pkg_id.try_into().unwrap(),
     }
 }
@@ -259,15 +259,15 @@ pub(crate) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
             }
             (
                 ExecutionPlanOp::Skip(SkipOp {
-                    pkg_id: actual_pkg_id,
+                    pkg_spec: actual_pkg_spec,
                     reason: actual_reason,
                 }),
                 ExecutionPlanOp::Skip(SkipOp {
-                    pkg_id: expected_pkg_id,
+                    pkg_spec: expected_pkg_spec,
                     reason: expected_reason,
                 }),
             ) => {
-                assert_eq!(actual_pkg_id, expected_pkg_id);
+                assert_eq!(actual_pkg_spec, expected_pkg_spec);
                 assert_eq!(actual_reason, expected_reason);
             }
             (actual_op, expected_op) => {
