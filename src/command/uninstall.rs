@@ -59,15 +59,15 @@ pub(crate) async fn uninstall_package(
     let db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let targets = engine::resolve_uninstall_targets(&cx, &db, pkg_specs)?;
-    if targets.is_empty() {
+    let plan = engine::plan_uninstall(&db, &targets);
+    engine::report_plan(&cx, &plan);
+
+    if !plan.has_side_effects() {
         cx.reporter().report_info(format_args!(
-            "no packages need to be uninstalled, nothing to do"
+            "all specified packages are already uninstalled, nothing to do"
         ));
         return Ok(());
     }
-
-    let plan = engine::plan_uninstall(&db, &targets);
-    engine::report_plan(&cx, &plan);
 
     let db = Arc::new(Mutex::new(db));
     let executions = engine::prepare(&cx, &db, &plan)?;

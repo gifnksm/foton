@@ -64,15 +64,15 @@ pub(crate) async fn install_package(
     let db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let targets = engine::resolve_install_targets(&cx, &db, &registries, pkg_specs)?;
-    if targets.is_empty() {
+    let plan = engine::plan_install(&db, &targets);
+    engine::report_plan(&cx, &plan);
+
+    if !plan.has_side_effects() {
         cx.reporter().report_info(format_args!(
-            "no packages need to be installed, nothing to do"
+            "all specified packages are already installed, nothing to do"
         ));
         return Ok(());
     }
-
-    let plan = engine::plan_install(&db, &targets);
-    engine::report_plan(&cx, &plan);
 
     let db = Arc::new(Mutex::new(db));
     let executions = engine::prepare(&cx, &db, &plan)?;

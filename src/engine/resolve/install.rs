@@ -22,6 +22,8 @@ use crate::{
     registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySource},
 };
 
+use super::registry;
+
 #[derive(Debug)]
 struct InstallResolveScope<S> {
     _base_scope: PhantomData<S>,
@@ -96,6 +98,12 @@ pub(crate) struct ResolvedInstallTarget {
     pub(crate) manifest: Arc<PackageManifest>,
 }
 
+#[derive(Debug, Clone, derive_more::IsVariant)]
+enum ResolveState {
+    Resolved { manifest: Arc<PackageManifest> },
+    Unresolved { pkg_spec: PackageSpec },
+}
+
 pub(crate) fn resolve_install_targets<S>(
     cx: &ReportContext<S>,
     db: &PackageDatabase<'_>,
@@ -108,59 +116,61 @@ where
     let cx =
         InstallResolveScope::start_with_report(cx, format_args!("Resolving install target..."));
 
-    let pkg_specs = filter_installed_packages(&cx, db, pkg_specs);
-    if pkg_specs.is_empty() {
-        return Ok(vec![]);
-    }
-
-    let indexes = super::registry::fetch_registries(&cx, registries)?;
-
-    let mut targets: Vec<_> = pkg_specs
+    let targets: Vec<_> = pkg_specs
         .iter()
-        .map(|pkg_spec| resolve_spec(&cx, &indexes, pkg_spec))
-        .collect_to_end()?;
+        .map(|pkg_spec| resolve_installed_package(db, pkg_spec))
+        .collect();
+
+    let mut targets = if targets.iter().all(ResolveState::is_resolved) {
+        targets
+            .into_iter()
+            .map(|target| match target {
+                ResolveState::Resolved { manifest } => ResolvedInstallTarget { manifest },
+                ResolveState::Unresolved { .. } => unreachable!(),
+            })
+            .collect()
+    } else {
+        let indexes = registry::fetch_registries(&cx, registries)?;
+        targets
+            .into_iter()
+            .map(|target| resolve_from_registry(&cx, &indexes, target))
+            .collect_to_end()?
+    };
 
     dedup_and_check_conflicts(&cx, &mut targets)?;
 
     Ok(targets)
 }
 
-fn filter_installed_packages<S>(
+fn resolve_installed_package(db: &PackageDatabase<'_>, pkg_spec: &PackageSpec) -> ResolveState {
+    let installed_pkg = db
+        .entries_by_spec(pkg_spec)
+        .filter_map(|(state, manifest)| (state == PackageState::Installed).then_some(manifest))
+        .max_by(|a, b| a.metadata.version.cmp(&b.metadata.version));
+    if let Some(manifest) = installed_pkg {
+        ResolveState::Resolved { manifest }
+    } else {
+        ResolveState::Unresolved {
+            pkg_spec: pkg_spec.clone(),
+        }
+    }
+}
+
+fn resolve_from_registry<S>(
     cx: &ReportContext<InstallResolveScope<S>>,
-    db: &PackageDatabase<'_>,
-    pkg_specs: &[PackageSpec],
-) -> Vec<PackageSpec>
+    indexes: &[RegistryIndex],
+    target: ResolveState,
+) -> Result<ResolvedInstallTarget, S::Error>
 where
     S: ReportScope,
 {
-    pkg_specs
-        .iter()
-        .filter_map(|pkg_spec| {
-            let mut installed_pkgs = db
-                .entries_by_spec(pkg_spec)
-                .filter(|(state, _)| *state == PackageState::Installed)
-                .peekable();
-            if installed_pkgs.peek().is_none() {
-                Some(pkg_spec.clone())
-            } else {
-                let installed_pkgs = installed_pkgs
-                    .map(|(_, manifest)| manifest.metadata.id())
-                    .collect::<Vec<_>>();
-                cx.reporter().report_info(format_args!(
-                    concat!(
-                        "package {pkg_spec} matches already installed package(s), skipping\n",
-                        "{bl}"
-                    ),
-                    pkg_spec = pkg_spec,
-                    bl = BulletList(&installed_pkgs),
-                ));
-                None
-            }
-        })
-        .collect()
+    match target {
+        ResolveState::Resolved { manifest } => Ok(ResolvedInstallTarget { manifest }),
+        ResolveState::Unresolved { pkg_spec } => resolve_spec_from_registry(cx, indexes, &pkg_spec),
+    }
 }
 
-fn resolve_spec<S>(
+fn resolve_spec_from_registry<S>(
     cx: &ReportContext<InstallResolveScope<S>>,
     indexes: &[RegistryIndex],
     pkg_spec: &PackageSpec,
@@ -186,6 +196,7 @@ where
             .reporter()
             .report_error(MultipleMatchingPackagesSnafu { pkg_spec, pkg_ids }.build()));
     }
+
     let Some((_reg_id, manifest)) = manifests.into_iter().next() else {
         return Err(cx
             .reporter()
@@ -206,10 +217,11 @@ where
 {
     let mut versions_by_name: BTreeMap<PackageQualifiedName, BTreeSet<_>> = BTreeMap::new();
     targets.retain(|target| {
+        let metadata = &target.manifest.metadata;
         versions_by_name
-            .entry(target.manifest.metadata.qualified_name.clone())
+            .entry(metadata.qualified_name.clone())
             .or_default()
-            .insert(target.manifest.metadata.version.clone())
+            .insert(metadata.version.clone())
     });
     versions_by_name
         .iter()
@@ -232,7 +244,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::Path, slice, str::FromStr as _};
+    use std::{fs, path::Path, str::FromStr as _};
 
     use tempfile::TempDir;
 
@@ -272,7 +284,7 @@ mod tests {
             registry_path.to_path_buf(),
         )
         .unwrap();
-        resolve_spec(&cx, &[index], pkg_spec)
+        resolve_spec_from_registry(&cx, &[index], pkg_spec)
     }
 
     fn resolve_for_test_with_indexes(
@@ -282,11 +294,11 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         let cx = InstallResolveScope::start(&cx);
-        resolve_spec(&cx, indexes, pkg_spec)
+        resolve_spec_from_registry(&cx, indexes, pkg_spec)
     }
 
     #[test]
-    fn filter_installed_packages_skips_name_when_matching_package_is_installed() {
+    fn resolve_installed_package_returns_resolved_when_matching_package_is_installed() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         let cx = InstallResolveScope::start(&cx);
@@ -297,13 +309,15 @@ mod tests {
         testing::with_db(&cx, |mut db| {
             testing::mark_as_installed(&mut db, &manifest);
 
-            let filtered = filter_installed_packages(&cx, &db, &[spec]);
-            assert!(filtered.is_empty());
+            let target = resolve_installed_package(&db, &spec);
+            assert!(
+                matches!(target, ResolveState::Resolved { manifest: resolved_manifest } if Arc::ptr_eq(&resolved_manifest, &manifest))
+            );
         });
     }
 
     #[test]
-    fn filter_installed_packages_keeps_pending_install() {
+    fn resolve_installed_package_returns_unresolved_when_matching_package_is_pending_install() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         let cx = InstallResolveScope::start(&cx);
@@ -314,27 +328,30 @@ mod tests {
         testing::with_db(&cx, |mut db| {
             testing::mark_as_pending_installed(&mut db, &manifest);
 
-            let filtered = filter_installed_packages(&cx, &db, slice::from_ref(&spec));
-            assert_eq!(filtered, [spec]);
+            let target = resolve_installed_package(&db, &spec);
+            assert!(matches!(
+                target,
+                ResolveState::Unresolved { pkg_spec } if pkg_spec == spec
+            ));
         });
     }
 
     #[test]
-    fn filter_installed_packages_skips_only_installed_specs() {
+    fn resolve_installed_package_returns_unresolved_when_no_packages_match() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         let cx = InstallResolveScope::start(&cx);
 
         let installed_manifest = testing::make_manifest("example-namespace/installed-font@1.0.0");
-        let installed_spec = PackageSpec::from_str("installed-font").unwrap();
         let missing_spec = PackageSpec::from_str("missing-font").unwrap();
-        let specs = vec![installed_spec, missing_spec.clone()];
 
         testing::with_db(&cx, |mut db| {
             testing::mark_as_installed(&mut db, &installed_manifest);
 
-            let filtered = filter_installed_packages(&cx, &db, &specs);
-            assert_eq!(filtered, [missing_spec]);
+            let target = resolve_installed_package(&db, &missing_spec);
+            assert!(matches!(
+                target,
+                ResolveState::Unresolved { pkg_spec } if pkg_spec == missing_spec));
         });
     }
 
@@ -345,16 +362,15 @@ mod tests {
         write_manifest(tempdir.path(), "example-namespace/example-font@0.2.0");
 
         let spec = PackageSpec::from_str("example-font").unwrap();
-        let resolved = resolve_for_test(tempdir.path(), &spec).unwrap();
-
+        let target = resolve_for_test(tempdir.path(), &spec).unwrap();
         assert_eq!(
-            resolved.manifest.metadata.id().to_string(),
+            target.manifest.metadata.id().to_string(),
             "example-namespace/example-font@0.2.0"
         );
     }
 
     #[test]
-    fn resolve_install_targets_filters_installed_specs_and_collapses_duplicates() {
+    fn resolve_install_targets_resolves_installed_specs_and_collapses_duplicates() {
         let registry_dir = TempDir::new().unwrap();
         write_manifest(
             registry_dir.path(),
@@ -381,10 +397,13 @@ mod tests {
             let targets =
                 resolve_install_targets(&cx, &db, &[(reg_id.clone(), &reg_source)], &pkg_specs)
                     .unwrap();
-
-            assert_eq!(targets.len(), 1);
+            assert_eq!(targets.len(), 2);
             assert_eq!(
-                targets[0].manifest.metadata.id().to_string(),
+                targets[0].manifest.metadata.id(),
+                installed_manifest.metadata.id()
+            );
+            assert_eq!(
+                targets[1].manifest.metadata.id().to_string(),
                 "example-namespace/example-font@1.0.0"
             );
         });
@@ -416,16 +435,6 @@ mod tests {
         write_manifest(tempdir.path(), "other-namespace/example-font@1.0.0");
 
         let spec: PackageSpec = "example-font".parse().unwrap();
-        let err = resolve_for_test(tempdir.path(), &spec).unwrap_err();
-
-        assert!(matches!(err, TestError::Failed));
-    }
-
-    #[test]
-    fn resolve_package_reports_not_found_for_missing_spec() {
-        let tempdir = TempDir::new().unwrap();
-
-        let spec: PackageSpec = "example-namespace/example-font".parse().unwrap();
         let err = resolve_for_test(tempdir.path(), &spec).unwrap_err();
 
         assert!(matches!(err, TestError::Failed));
@@ -489,6 +498,8 @@ mod tests {
         dedup_and_check_conflicts(&cx, &mut targets).unwrap();
 
         assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].manifest.metadata.id(), expected_pkg_id);
+        assert!(
+            matches!(&targets[0], ResolvedInstallTarget { manifest } if manifest.metadata.id() == expected_pkg_id)
+        );
     }
 }

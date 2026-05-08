@@ -59,9 +59,10 @@ impl From<UninstallResolveErrorReport> for ReportValue<'static> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct ResolvedUninstallTarget {
-    pub(crate) pkg_id: PackageId,
+#[derive(Debug, Clone, derive_more::IsVariant)]
+pub(crate) enum ResolvedUninstallTarget {
+    Resolved { pkg_id: PackageId },
+    Unresolved { pkg_spec: PackageSpec },
 }
 
 pub(crate) fn resolve_uninstall_targets<S>(
@@ -76,10 +77,9 @@ where
         UninstallResolveScope::start_with_report(cx, format_args!("Resolving uninstall target..."));
     let mut targets = pkg_specs
         .iter()
-        .filter_map(|pkg_spec| resolve_spec(&cx, db, pkg_spec).transpose())
+        .map(|pkg_spec| resolve_spec(&cx, db, pkg_spec))
         .collect_to_end::<Vec<_>>()?;
-    let mut pkg_ids = BTreeSet::new();
-    targets.retain(|target| pkg_ids.insert(target.pkg_id.clone()));
+    dedup_targets(&mut targets);
     Ok(targets)
 }
 
@@ -87,21 +87,18 @@ fn resolve_spec<S>(
     cx: &ReportContext<UninstallResolveScope<S>>,
     db: &PackageDatabase<'_>,
     pkg_spec: &PackageSpec,
-) -> Result<Option<ResolvedUninstallTarget>, S::Error>
+) -> Result<ResolvedUninstallTarget, S::Error>
 where
     S: ReportScope,
 {
     let candidates = db.entries_by_spec(pkg_spec).collect::<Vec<_>>();
     match &candidates[..] {
-        [] => {
-            cx.reporter().report_info(format_args!(
-                "no package matches the specified package `{pkg_spec}`; nothing to do"
-            ));
-            Ok(None)
-        }
-        [(_state, manifest)] => Ok(Some(ResolvedUninstallTarget {
+        [] => Ok(ResolvedUninstallTarget::Unresolved {
+            pkg_spec: pkg_spec.clone(),
+        }),
+        [(_state, manifest)] => Ok(ResolvedUninstallTarget::Resolved {
             pkg_id: manifest.metadata.id(),
-        })),
+        }),
         _ => Err(cx.reporter().report_error(
             MultipleMatchingPackagesSnafu {
                 pkg_spec: pkg_spec.clone(),
@@ -115,6 +112,15 @@ where
     }
 }
 
+fn dedup_targets(targets: &mut Vec<ResolvedUninstallTarget>) {
+    let mut seen_pkg_id = BTreeSet::new();
+    let mut seen_pkg_spec = BTreeSet::new();
+    targets.retain(|target| match target {
+        ResolvedUninstallTarget::Resolved { pkg_id } => seen_pkg_id.insert(pkg_id.clone()),
+        ResolvedUninstallTarget::Unresolved { pkg_spec } => seen_pkg_spec.insert(pkg_spec.clone()),
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr as _;
@@ -126,7 +132,7 @@ mod tests {
     };
 
     #[test]
-    fn resolve_spec_returns_none_for_missing_specs() {
+    fn resolve_spec_returns_unresolved_for_missing_specs() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         let scope_cx = UninstallResolveScope::start(&cx);
@@ -138,12 +144,14 @@ mod tests {
                 PackageSpec::from_str("example-font").unwrap(),
             ];
             for spec in &pkg_specs {
-                let resolved = resolve_spec(&scope_cx, &db, spec).unwrap();
-                assert!(resolved.is_none());
+                let target = resolve_spec(&scope_cx, &db, spec).unwrap();
+                assert!(
+                    matches!(target, ResolvedUninstallTarget::Unresolved { pkg_spec } if pkg_spec == *spec)
+                );
             }
 
             let targets = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap();
-            assert!(targets.is_empty());
+            assert_eq!(targets.len(), 3);
         });
     }
 
@@ -162,8 +170,10 @@ mod tests {
                 PackageSpec::from_str("example-namespace/example-font@0.1.0").unwrap(),
                 PackageSpec::from_str("example-namespace/example-font").unwrap(),
             ] {
-                let resolved = resolve_spec(&cx, &db, &spec).unwrap().unwrap();
-                assert_eq!(resolved.pkg_id, expected);
+                let target = resolve_spec(&cx, &db, &spec).unwrap();
+                assert!(
+                    matches!(target, ResolvedUninstallTarget::Resolved  { pkg_id } if pkg_id == expected)
+                );
             }
         });
     }
@@ -225,7 +235,9 @@ mod tests {
             let targets = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap();
 
             assert_eq!(targets.len(), 1);
-            assert_eq!(targets[0].pkg_id, expected_pkg_id);
+            assert!(
+                matches!(&targets[0], ResolvedUninstallTarget::Resolved { pkg_id } if pkg_id == &expected_pkg_id)
+            );
         });
     }
 
@@ -243,14 +255,18 @@ mod tests {
         testing::with_db(&cx, |mut db| {
             testing::mark_as_pending_installed(&mut db, &manifest);
 
-            let resolved = resolve_spec(&cx, &db, &spec).unwrap().unwrap();
-            assert_eq!(resolved.pkg_id, pkg_id);
+            let target = resolve_spec(&cx, &db, &spec).unwrap();
+            assert!(
+                matches!(target, ResolvedUninstallTarget::Resolved { pkg_id: target_id } if target_id == pkg_id)
+            );
 
             let plan = testing::make_uninstall_plan(&pkg_id);
             db.apply_plan_transaction(&plan).unwrap();
 
-            let resolved = resolve_spec(&cx, &db, &spec).unwrap().unwrap();
-            assert_eq!(resolved.pkg_id, pkg_id);
+            let target = resolve_spec(&cx, &db, &spec).unwrap();
+            assert!(
+                matches!(target, ResolvedUninstallTarget::Resolved { pkg_id: target_id } if target_id == pkg_id)
+            );
         });
     }
 

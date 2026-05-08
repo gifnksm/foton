@@ -43,7 +43,7 @@ where
             "Skipping the following packages:\n{}",
             BulletList(
                 &skip_ops
-                    .map(|op| format!("{} ({})", op.pkg_id, op.reason))
+                    .map(|op| format!("{} ({})", op.pkg_spec, op.reason))
                     .collect::<Vec<_>>()
             )
         ));
