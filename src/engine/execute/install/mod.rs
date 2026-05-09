@@ -73,7 +73,7 @@ enum InstallExecutionErrorReport {
 }
 
 #[derive(Debug)]
-pub(crate) struct InstallExecution<'db, S>
+pub(in crate::engine) struct InstallExecution<'db, S>
 where
     S: ReportScope,
 {
@@ -85,7 +85,7 @@ impl<'db, S> InstallExecution<'db, S>
 where
     S: ReportScope,
 {
-    pub(crate) fn new(
+    pub(in crate::engine) fn new(
         cx: &ReportContext<S>,
         db: Arc<Mutex<PackageDatabase<'db>>>,
         manifest: Arc<PackageManifest>,
@@ -94,7 +94,7 @@ where
         Self { db_guard, manifest }
     }
 
-    pub(crate) async fn execute(self, cx: &ReportContext<S>) -> Result<(), S::Error> {
+    pub(in crate::engine) async fn execute(self, cx: &ReportContext<S>) -> Result<(), S::Error> {
         let pkg_id = self.manifest.metadata.id();
         let cx =
             InstallExecutionScope::start_with_report(cx, format_args!("Installing {pkg_id}..."));

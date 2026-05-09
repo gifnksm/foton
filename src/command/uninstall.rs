@@ -71,10 +71,8 @@ pub(crate) async fn uninstall_package(
     engine::confirm(&cx, "Do you want to continue?").await?;
 
     let db = Arc::new(Mutex::new(db));
-    let executions = engine::prepare(&cx, &db, &plan)?;
-    for execution in executions {
-        execution.execute(&cx).await?;
-    }
+    let prepared_plan = engine::prepare(&cx, &db, &plan)?;
+    engine::execute_plan(&cx, prepared_plan).await?;
 
     Ok(())
 }

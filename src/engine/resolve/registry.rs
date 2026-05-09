@@ -11,7 +11,7 @@ use crate::{
             ScopeResultErrorExt as _, SubReportScope,
         },
     },
-    registry::{self, FetchRegistryError, RegistryId, RegistryIndex, RegistrySource},
+    registry::{self, FetchRegistryError, RegistryId, RegistryIndex, RegistrySpec},
 };
 
 #[derive(Debug)]
@@ -70,10 +70,10 @@ impl From<RegistryErrorReport> for ReportValue<'static> {
     }
 }
 
-pub(crate) fn resolve_registries_by_id<'a, S>(
-    cx: &'a ReportContext<S>,
+pub(crate) fn resolve_registries_by_id<S>(
+    cx: &ReportContext<S>,
     registry_ids: Option<&[RegistryId]>,
-) -> Result<Vec<(RegistryId, &'a RegistrySource)>, S::Error>
+) -> Result<Vec<RegistrySpec>, S::Error>
 where
     S: ReportScope,
 {
@@ -88,7 +88,7 @@ where
                 .map(|reg_id| {
                     config_registries
                         .get(reg_id)
-                        .map(|registry| (reg_id.clone(), &registry.source))
+                        .map(|registry| RegistrySpec::new(reg_id.clone(), registry.source.clone()))
                         .with_context(|| {
                             let available_registry_ids =
                                 config_registries.keys().cloned().collect::<BTreeSet<_>>();
@@ -104,7 +104,7 @@ where
         None => config_registries
             .iter()
             .filter(|(_id, registry)| registry.enabled)
-            .map(|(id, registry)| (id.clone(), &registry.source))
+            .map(|(id, registry)| RegistrySpec::new(id.clone(), registry.source.clone()))
             .collect(),
     };
     if registries.is_empty() {
@@ -115,7 +115,7 @@ where
 
 pub(super) fn fetch_registries<S>(
     cx: &ReportContext<S>,
-    registries: &[(RegistryId, &RegistrySource)],
+    registries: &[RegistrySpec],
 ) -> Result<Vec<RegistryIndex>, S::Error>
 where
     S: ReportScope,
@@ -124,9 +124,9 @@ where
 
     registries
         .iter()
-        .map(|(id, source)| {
-            registry::fetch_registry(cx.app_dirs(), id, source)
-                .context(FetchRegistrySnafu { id })
+        .map(|registry| {
+            registry::fetch_registry(cx.app_dirs(), registry)
+                .context(FetchRegistrySnafu { id: registry.id() })
                 .report_error(cx.reporter())
         })
         .collect::<Result<Vec<_>, _>>()

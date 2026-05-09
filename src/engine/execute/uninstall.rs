@@ -74,17 +74,17 @@ impl From<UninstallExecutionErrorReport> for ReportValue<'static> {
 }
 
 #[derive(Debug)]
-pub(crate) struct UninstallExecution<'db> {
+pub(in crate::engine) struct UninstallExecution<'db> {
     db: Arc<Mutex<PackageDatabase<'db>>>,
     pkg_id: PackageId,
 }
 
 impl<'db> UninstallExecution<'db> {
-    pub(crate) fn new(db: Arc<Mutex<PackageDatabase<'db>>>, pkg_id: PackageId) -> Self {
+    pub(in crate::engine) fn new(db: Arc<Mutex<PackageDatabase<'db>>>, pkg_id: PackageId) -> Self {
         Self { db, pkg_id }
     }
 
-    pub(crate) fn execute<S>(self, cx: &ReportContext<S>) -> Result<(), S::Error>
+    pub(in crate::engine) fn execute<S>(self, cx: &ReportContext<S>) -> Result<(), S::Error>
     where
         S: ReportScope,
     {

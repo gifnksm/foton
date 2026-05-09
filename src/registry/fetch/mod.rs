@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use snafu::Snafu;
 
 use crate::{
-    registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySource},
+    registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySource, RegistrySpec},
     util::app_dirs::AppDirs,
 };
 
@@ -42,11 +42,10 @@ pub(crate) enum FetchRegistryError {
 
 pub(crate) fn fetch_registry(
     app_dirs: &AppDirs,
-    id: &RegistryId,
-    source: &RegistrySource,
+    registry: &RegistrySpec,
 ) -> Result<RegistryIndex, FetchRegistryError> {
-    match source {
-        RegistrySource::Git(url) => git::fetch_registry(app_dirs, id, url),
-        RegistrySource::Local(path) => local::fetch_registry(id, path),
+    match &registry.source {
+        RegistrySource::Git(url) => git::fetch_registry(app_dirs, registry.id(), url),
+        RegistrySource::Local(path) => local::fetch_registry(registry.id(), path),
     }
 }

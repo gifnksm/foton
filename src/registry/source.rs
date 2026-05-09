@@ -41,7 +41,7 @@ pub(crate) enum RegistrySourceError {
         url: String,
         source: url::ParseError,
     },
-    #[snafu(display("local path must be absolute path: {path}"))]
+    #[snafu(display("local registry path must be absolute path: {path}"))]
     RelativeLocalPath { path: String },
 }
 
@@ -150,7 +150,7 @@ mod tests {
             ("git+not a url", "invalid git URL: not a url"),
             (
                 "local+registry",
-                "local path must be absolute path: registry",
+                "local registry path must be absolute path: registry",
             ),
         ];
 

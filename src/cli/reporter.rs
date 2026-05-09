@@ -394,9 +394,7 @@ where
             .filter_map(|res| match res {
                 Ok(item) => Some(item),
                 Err(e) => {
-                    if err.is_none() {
-                        err = Some(e);
-                    }
+                    err.get_or_insert(e);
                     None
                 }
             })

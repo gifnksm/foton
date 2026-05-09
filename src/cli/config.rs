@@ -13,7 +13,7 @@ use crate::{
 pub(crate) struct FotonConfig {
     pub(crate) install: InstallConfig,
     #[serde(default)]
-    pub(crate) registries: BTreeMap<RegistryId, Registry>,
+    pub(crate) registries: BTreeMap<RegistryId, RegistryConfig>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -27,7 +27,7 @@ pub(crate) struct InstallConfig {
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Registry {
+pub(crate) struct RegistryConfig {
     pub(crate) source: RegistrySource,
     #[serde(default = "default_true")]
     pub(crate) enabled: bool,
@@ -46,10 +46,10 @@ impl Default for FotonConfig {
     }
 }
 
-fn default_registries() -> BTreeMap<RegistryId, Registry> {
+fn default_registries() -> BTreeMap<RegistryId, RegistryConfig> {
     [(
         RegistryId::foton(),
-        Registry {
+        RegistryConfig {
             source: RegistrySource::foton(),
             enabled: true,
         },

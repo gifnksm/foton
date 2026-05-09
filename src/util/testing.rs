@@ -1,4 +1,4 @@
-use std::{fmt::Debug, ops::Deref, sync::Arc};
+use std::{fmt::Debug, fs, ops::Deref, path::Path, sync::Arc};
 
 use tempfile::TempDir;
 
@@ -15,8 +15,8 @@ use crate::{
         ResolvedUninstallTarget, SkipOp, UninstallOp, UninstallReason,
     },
     package::{PackageDirs, PackageId, PackageManifest, PackageState},
-    registry::{RegistryId, RegistryIndex},
-    util::app_dirs::AppDirs,
+    registry::{RegistryId, RegistryIndex, RegistrySource, RegistrySpec},
+    util::{app_dirs::AppDirs, path::AbsolutePath},
 };
 
 const APP_ID: &str = "io.github.gifnksm.foton-test";
@@ -104,9 +104,32 @@ pub(crate) fn make_package_dirs(pkg_id: &PackageId) -> (TempDir, AppDirs, Packag
     (tempdir, app_dirs, pkg_dirs)
 }
 
-pub(crate) fn make_registry() -> (TempDir, RegistryIndex) {
+pub(crate) fn make_registry_spec<I>(id: I) -> (TempDir, RegistrySpec)
+where
+    I: TryInto<RegistryId, Error: Debug>,
+{
     let tempdir = TempDir::new().unwrap();
-    let id = RegistryId::new("test-registry").unwrap();
+    let registry = make_registry_spec_at(id, tempdir.path());
+    (tempdir, registry)
+}
+
+pub(crate) fn make_registry_spec_at<I, P>(id: I, path: P) -> RegistrySpec
+where
+    I: TryInto<RegistryId, Error: Debug>,
+    P: TryInto<AbsolutePath, Error: Debug>,
+{
+    let id = id.try_into().unwrap();
+    let path = path.try_into().unwrap();
+    let source = RegistrySource::Local(path);
+    RegistrySpec::new(id, source)
+}
+
+pub(crate) fn make_registry_index<I>(id: I) -> (TempDir, RegistryIndex)
+where
+    I: TryInto<RegistryId, Error: Debug>,
+{
+    let tempdir = TempDir::new().unwrap();
+    let id = id.try_into().unwrap();
     let registry = RegistryIndex::open(id, tempdir.path().to_path_buf()).unwrap();
     (tempdir, registry)
 }
@@ -138,6 +161,31 @@ where
 {
     let manifest_str = make_manifest_str(pkg_id);
     Arc::new(toml::from_str(&manifest_str).unwrap())
+}
+
+pub(crate) fn write_manifest<P, I>(registry_dir: P, pkg_id: I)
+where
+    P: AsRef<Path>,
+    I: TryInto<PackageId, Error: Debug>,
+{
+    let pkg_id = pkg_id.try_into().unwrap();
+    write_manifest_str(registry_dir, &pkg_id, make_manifest_str(&pkg_id));
+}
+
+pub(crate) fn write_manifest_str<P, I, C>(registry_dir: P, pkg_id: I, manifest_str: C)
+where
+    P: AsRef<Path>,
+    I: TryInto<PackageId, Error: Debug>,
+    C: AsRef<[u8]>,
+{
+    let registry_dir = registry_dir.as_ref();
+    let pkg_id = pkg_id.try_into().unwrap();
+    let dir = registry_dir
+        .join(pkg_id.namespace())
+        .join(pkg_id.name())
+        .join(pkg_id.version().to_string());
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("manifest.toml"), manifest_str).unwrap();
 }
 
 pub(crate) fn make_resolved_install_target(
