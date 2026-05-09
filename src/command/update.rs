@@ -4,7 +4,7 @@ use snafu::Snafu;
 
 use crate::{
     cli::{
-        args::UninstallArgs,
+        args::UpdateArgs,
         context::RootContext,
         reporter::{NeverReport, OperationError, ReportScope, RootReportScope},
     },
@@ -12,29 +12,29 @@ use crate::{
 };
 
 #[derive(Debug)]
-struct UninstallScope {}
+struct UpdateScope {}
 
-impl ReportScope for UninstallScope {
+impl ReportScope for UpdateScope {
     type WarnReportValue = NeverReport;
     type ErrorReportValue = NeverReport;
-    type Error = UninstallError;
+    type Error = UpdateError;
 }
 
-impl RootReportScope for UninstallScope {
+impl RootReportScope for UpdateScope {
     fn new() -> Self {
         Self {}
     }
 }
 
 #[derive(Debug, Snafu)]
-pub(crate) enum UninstallError {
-    #[snafu(display("failed to uninstall package(s); see previous messages for details"))]
+pub(crate) enum UpdateError {
+    #[snafu(display("failed to update package(s); see previous messages for details"))]
     Failed,
     #[snafu(display("operation cancelled"))]
     Cancelled,
 }
 
-impl OperationError for UninstallError {
+impl OperationError for UpdateError {
     fn failed() -> Self {
         Self::Failed
     }
@@ -44,27 +44,31 @@ impl OperationError for UninstallError {
     }
 }
 
-pub(crate) async fn uninstall_package(
-    cx: &RootContext,
-    args: &UninstallArgs,
-) -> Result<(), UninstallError> {
-    let UninstallArgs { pkg_specs } = args;
+pub(crate) async fn update_package(cx: &RootContext, args: &UpdateArgs) -> Result<(), UpdateError> {
+    let UpdateArgs {
+        registries,
+        pkg_specs,
+    } = args;
 
-    let cx = UninstallScope::start_with_report(
-        cx,
-        format_args!("Uninstalling {} package(s)...", pkg_specs.len()),
-    );
+    let report = if pkg_specs.is_empty() {
+        format_args!("Updating all packages...")
+    } else {
+        format_args!("Updating {} package(s)...", pkg_specs.len())
+    };
+    let cx = UpdateScope::start_with_report(cx, report);
+
+    let registries = engine::resolve_registries_by_id(&cx, registries.as_deref())?;
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
     let db = engine::load_database(&cx, &mut db_lock_file)?;
 
-    let targets = engine::resolve_uninstall_targets(&cx, &db, pkg_specs)?;
-    let plan = engine::plan_uninstall(&db, &targets);
+    let targets = engine::resolve_update_targets(&cx, &db, &registries, pkg_specs)?;
+    let plan = engine::plan_install(&db, &targets);
     engine::report_plan(&cx, &plan);
 
     if !plan.has_side_effects() {
         cx.reporter()
-            .report_info(format_args!("already uninstalled, nothing to do"));
+            .report_info(format_args!("already up to date, nothing to do"));
         return Ok(());
     }
 

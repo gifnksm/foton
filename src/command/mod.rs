@@ -1,5 +1,5 @@
 pub(crate) use self::{
-    generate_man::*, info::*, install::*, list::*, print_completion::*, uninstall::*,
+    generate_man::*, info::*, install::*, list::*, print_completion::*, uninstall::*, update::*,
 };
 
 mod generate_man;
@@ -8,3 +8,4 @@ mod install;
 mod list;
 mod print_completion;
 mod uninstall;
+mod update;

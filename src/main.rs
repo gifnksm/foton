@@ -17,6 +17,7 @@ use crate::{
     },
     command::{
         GenerateManError, InfoError, InstallError, ListError, PrintCompletionError, UninstallError,
+        UpdateError,
     },
     platform::windows::{
         self,
@@ -61,6 +62,8 @@ enum SpecialCommandError {
 enum CommandError {
     #[snafu(transparent)]
     Install { source: InstallError },
+    #[snafu(transparent)]
+    Update { source: UpdateError },
     #[snafu(transparent)]
     Uninstall { source: UninstallError },
     #[snafu(transparent)]
@@ -176,6 +179,7 @@ fn run_special_command() -> Result<(), SpecialCommandError> {
 async fn run_command(cx: &RootContext, command: Command) -> Result<(), CommandError> {
     match command {
         Command::Install(args) => command::install_package(cx, &args).await?,
+        Command::Update(args) => command::update_package(cx, &args).await?,
         Command::Uninstall(args) => command::uninstall_package(cx, &args).await?,
         Command::List(args) => command::list_package(cx, &args)?,
         Command::Info(args) => command::info_package(cx, &args)?,
