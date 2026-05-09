@@ -4,16 +4,34 @@ use std::{
     path::{self, Path, PathBuf},
 };
 
+use snafu::Snafu;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct AbsolutePath(PathBuf);
+
+#[derive(Debug, Snafu)]
+pub(crate) enum AbsolutePathError {
+    #[snafu(display("path is not absolute: {path}", path = path.display()))]
+    NotAbsolute { path: PathBuf },
+}
 
 impl AbsolutePath {
     pub(crate) fn new<P>(path: P) -> Option<Self>
     where
         P: Into<PathBuf>,
     {
+        Self::try_new(path).ok()
+    }
+
+    pub(crate) fn try_new<P>(path: P) -> Result<Self, AbsolutePathError>
+    where
+        P: Into<PathBuf>,
+    {
         let path = path.into();
-        path.is_absolute().then_some(Self(path))
+        if !path.is_absolute() {
+            return Err(NotAbsoluteSnafu { path }.build());
+        }
+        Ok(Self(path))
     }
 
     pub(crate) fn join<P>(&self, path: P) -> Self
@@ -57,6 +75,22 @@ impl From<&AbsolutePath> for PathBuf {
 impl From<AbsolutePath> for PathBuf {
     fn from(path: AbsolutePath) -> Self {
         path.0
+    }
+}
+
+impl TryFrom<&Path> for AbsolutePath {
+    type Error = AbsolutePathError;
+
+    fn try_from(path: &Path) -> Result<Self, Self::Error> {
+        AbsolutePath::try_new(path)
+    }
+}
+
+impl TryFrom<PathBuf> for AbsolutePath {
+    type Error = AbsolutePathError;
+
+    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
+        AbsolutePath::try_new(path)
     }
 }
 

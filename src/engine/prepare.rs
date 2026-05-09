@@ -56,11 +56,28 @@ impl From<PrepareErrorReport> for ReportValue<'static> {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct PreparedExecutions<'db, S>
+where
+    S: ReportScope,
+{
+    executions: Vec<Execution<'db, S>>,
+}
+
+impl<'db, S> PreparedExecutions<'db, S>
+where
+    S: ReportScope,
+{
+    pub(in crate::engine) fn into_executions(self) -> Vec<Execution<'db, S>> {
+        self.executions
+    }
+}
+
 pub(crate) fn prepare<'db, S>(
     cx: &ReportContext<S>,
     db: &Arc<Mutex<PackageDatabase<'db>>>,
     plan: &ExecutionPlan,
-) -> Result<Vec<Execution<'db, S>>, S::Error>
+) -> Result<PreparedExecutions<'db, S>, S::Error>
 where
     S: ReportScope,
 {
@@ -87,7 +104,7 @@ where
         executions.push(execution);
     }
 
-    Ok(executions)
+    Ok(PreparedExecutions { executions })
 }
 
 #[cfg(test)]
@@ -134,16 +151,18 @@ mod tests {
                 .into(),
             ]);
 
-            let executions = prepare(&cx, &db, &plan).unwrap();
+            let prepared_plan = prepare(&cx, &db, &plan).unwrap();
 
-            assert_eq!(executions.len(), 2);
+            assert_eq!(prepared_plan.executions.len(), 2);
             assert!(
-                executions
+                prepared_plan
+                    .executions
                     .iter()
                     .any(|execution| matches!(execution, Execution::Install(_)))
             );
             assert!(
-                executions
+                prepared_plan
+                    .executions
                     .iter()
                     .any(|execution| matches!(execution, Execution::Uninstall(_)))
             );
@@ -181,9 +200,9 @@ mod tests {
             }
             .into()]);
 
-            let executions = prepare(&cx, &db, &plan).unwrap();
+            let prepared_plan = prepare(&cx, &db, &plan).unwrap();
 
-            assert!(executions.is_empty());
+            assert!(prepared_plan.executions.is_empty());
             assert!(db.lock().unwrap().entry_by_id(&skipped_pkg_id).is_none());
         });
     }

@@ -19,7 +19,7 @@ use crate::{
     package::{
         PackageId, PackageManifest, PackageQualifiedName, PackageSpec, PackageState, PackageVersion,
     },
-    registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySource},
+    registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySpec},
 };
 
 use super::registry;
@@ -107,7 +107,7 @@ enum ResolveState {
 pub(crate) fn resolve_install_targets<S>(
     cx: &ReportContext<S>,
     db: &PackageDatabase<'_>,
-    registries: &[(RegistryId, &RegistrySource)],
+    registries: &[RegistrySpec],
     pkg_specs: &[PackageSpec],
 ) -> Result<Vec<ResolvedInstallTarget>, S::Error>
 where
@@ -244,58 +244,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::Path, str::FromStr as _};
+    use std::str::FromStr as _;
 
     use tempfile::TempDir;
 
     use super::*;
     use crate::{
         cli::reporter::RootReportScope as _,
-        registry::{RegistryId, RegistrySource},
-        util::{
-            path::AbsolutePath,
-            testing::{self, TempdirContext, TestError, TestScope},
-        },
+        util::testing::{self, TempdirContext, TestError, TestScope},
     };
-
-    fn write_manifest(root: &Path, pkg_id: &str) {
-        let pkg_id = PackageId::from_str(pkg_id).unwrap();
-        let dir = root
-            .join(pkg_id.namespace())
-            .join(pkg_id.name())
-            .join(pkg_id.version().to_string());
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(
-            dir.join("manifest.toml"),
-            testing::make_manifest_str(pkg_id),
-        )
-        .unwrap();
-    }
-
-    fn resolve_for_test(
-        registry_path: &Path,
-        pkg_spec: &PackageSpec,
-    ) -> Result<ResolvedInstallTarget, TestError> {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = InstallResolveScope::start(&cx);
-        let index = RegistryIndex::open(
-            "test-registry".parse().unwrap(),
-            registry_path.to_path_buf(),
-        )
-        .unwrap();
-        resolve_spec_from_registry(&cx, &[index], pkg_spec)
-    }
-
-    fn resolve_for_test_with_indexes(
-        indexes: &[RegistryIndex],
-        pkg_spec: &PackageSpec,
-    ) -> Result<ResolvedInstallTarget, TestError> {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = InstallResolveScope::start(&cx);
-        resolve_spec_from_registry(&cx, indexes, pkg_spec)
-    }
 
     #[test]
     fn resolve_installed_package_returns_resolved_when_matching_package_is_installed() {
@@ -356,35 +313,19 @@ mod tests {
     }
 
     #[test]
-    fn resolve_package_resolves_name_to_latest_manifest() {
-        let tempdir = TempDir::new().unwrap();
-        write_manifest(tempdir.path(), "example-namespace/example-font@0.1.0");
-        write_manifest(tempdir.path(), "example-namespace/example-font@0.2.0");
-
-        let spec = PackageSpec::from_str("example-font").unwrap();
-        let target = resolve_for_test(tempdir.path(), &spec).unwrap();
-        assert_eq!(
-            target.manifest.metadata.id().to_string(),
-            "example-namespace/example-font@0.2.0"
-        );
-    }
-
-    #[test]
     fn resolve_install_targets_resolves_installed_specs_and_collapses_duplicates() {
-        let registry_dir = TempDir::new().unwrap();
-        write_manifest(
+        let (registry_dir, registry) = testing::make_registry_spec("test-registry");
+        testing::write_manifest(
             registry_dir.path(),
             "example-namespace/installed-font@1.0.0",
         );
-        write_manifest(registry_dir.path(), "example-namespace/example-font@1.0.0");
+        testing::write_manifest(registry_dir.path(), "example-namespace/example-font@1.0.0");
 
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
         let installed_manifest = testing::make_manifest("example-namespace/installed-font@1.0.0");
 
-        let reg_id = RegistryId::new("test-registry").unwrap();
-        let reg_source = RegistrySource::Local(AbsolutePath::new(registry_dir.path()).unwrap());
         let pkg_specs = vec![
             PackageSpec::from_str("installed-font").unwrap(),
             PackageSpec::from_str("example-namespace/example-font@1.0.0").unwrap(),
@@ -394,9 +335,7 @@ mod tests {
         testing::with_db(&cx, |mut db| {
             testing::mark_as_installed(&mut db, &installed_manifest);
 
-            let targets =
-                resolve_install_targets(&cx, &db, &[(reg_id.clone(), &reg_source)], &pkg_specs)
-                    .unwrap();
+            let targets = resolve_install_targets(&cx, &db, &[registry], &pkg_specs).unwrap();
             assert_eq!(targets.len(), 2);
             assert_eq!(
                 targets[0].manifest.metadata.id(),
@@ -417,46 +356,64 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let reg_id = RegistryId::new("test-registry").unwrap();
-        let reg_source = RegistrySource::Local(AbsolutePath::new(&missing_registry_dir).unwrap());
+        let registry =
+            testing::make_registry_spec_at("test-registry", missing_registry_dir.as_path());
         let pkg_specs = vec![PackageSpec::from_str("example-font").unwrap()];
 
         testing::with_db(&cx, |db| {
-            let err = resolve_install_targets(&cx, &db, &[(reg_id, &reg_source)], &pkg_specs)
-                .unwrap_err();
+            let err = resolve_install_targets(&cx, &db, &[registry], &pkg_specs).unwrap_err();
             assert!(matches!(err, TestError::Failed));
         });
     }
 
     #[test]
-    fn resolve_package_reports_multiple_matching_packages_for_name() {
-        let tempdir = TempDir::new().unwrap();
-        write_manifest(tempdir.path(), "example-namespace/example-font@0.2.0");
-        write_manifest(tempdir.path(), "other-namespace/example-font@1.0.0");
+    fn resolve_spec_from_registry_resolves_name_to_latest_manifest() {
+        let (registry_dir, index) = testing::make_registry_index("test-registry");
+        testing::write_manifest(registry_dir.path(), "example-namespace/example-font@0.1.0");
+        testing::write_manifest(registry_dir.path(), "example-namespace/example-font@0.2.0");
+
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+        let cx = InstallResolveScope::start(&cx);
+
+        let spec = PackageSpec::from_str("example-font").unwrap();
+        let target = resolve_spec_from_registry(&cx, &[index], &spec).unwrap();
+        assert_eq!(
+            target.manifest.metadata.id().to_string(),
+            "example-namespace/example-font@0.2.0"
+        );
+    }
+
+    #[test]
+    fn resolve_spec_from_registry_reports_multiple_matching_packages_for_name() {
+        let (registry_dir, index) = testing::make_registry_index("test-registry");
+        testing::write_manifest(registry_dir.path(), "example-namespace/example-font@0.2.0");
+        testing::write_manifest(registry_dir.path(), "other-namespace/example-font@1.0.0");
+
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+        let cx = InstallResolveScope::start(&cx);
 
         let spec: PackageSpec = "example-font".parse().unwrap();
-        let err = resolve_for_test(tempdir.path(), &spec).unwrap_err();
-
+        let err = resolve_spec_from_registry(&cx, &[index], &spec).unwrap_err();
         assert!(matches!(err, TestError::Failed));
     }
 
     #[test]
-    fn resolve_package_reports_multiple_matching_packages_across_registries() {
-        let tempdir1 = TempDir::new().unwrap();
-        let tempdir2 = TempDir::new().unwrap();
-        write_manifest(tempdir1.path(), "example-namespace/example-font@0.2.0");
-        write_manifest(tempdir2.path(), "other-namespace/example-font@1.0.0");
+    fn resolve_spec_from_registry_reports_multiple_matching_packages_across_registries() {
+        let (registry_dir1, index1) = testing::make_registry_index("registry-a");
+        let (registry_dir2, index2) = testing::make_registry_index("registry-b");
+        testing::write_manifest(registry_dir1.path(), "example-namespace/example-font@0.2.0");
+        testing::write_manifest(registry_dir2.path(), "other-namespace/example-font@1.0.0");
 
-        let indexes = vec![
-            RegistryIndex::open("registry-a".parse().unwrap(), tempdir1.path().to_path_buf())
-                .unwrap(),
-            RegistryIndex::open("registry-b".parse().unwrap(), tempdir2.path().to_path_buf())
-                .unwrap(),
-        ];
+        let indexes = [index1, index2];
+
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+        let cx = InstallResolveScope::start(&cx);
 
         let spec: PackageSpec = "example-font".parse().unwrap();
-        let err = resolve_for_test_with_indexes(&indexes, &spec).unwrap_err();
-
+        let err = resolve_spec_from_registry(&cx, &indexes, &spec).unwrap_err();
         assert!(matches!(err, TestError::Failed));
     }
 
@@ -476,7 +433,6 @@ mod tests {
         ];
 
         let err = dedup_and_check_conflicts(&cx, &mut targets).unwrap_err();
-
         assert!(matches!(err, TestError::Failed));
     }
 
