@@ -20,6 +20,8 @@ pub(crate) struct GlobalArgs {
 pub(crate) enum Command {
     /// Install a package from the specified registry.
     Install(InstallArgs),
+    /// Update an installed package to the latest version available in the specified registry.
+    Update(UpdateArgs),
     /// Uninstall an installed package.
     Uninstall(UninstallArgs),
     /// List installed packages.
@@ -37,6 +39,20 @@ pub(crate) struct InstallArgs {
     pub(crate) registries: Option<Vec<RegistryId>>,
     /// Package specifiers: name, qualified name, or package ID.
     #[clap(value_name = "PKG_SPEC", required = true)]
+    pub(crate) pkg_specs: Vec<PackageSpec>,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct UpdateArgs {
+    /// Package registry IDs to resolve the package from.
+    ///
+    /// Use a comma-separated list such as `--registry local,foton`.
+    #[clap(long = "registry", value_name = "REGISTRY_ID", value_delimiter = ',')]
+    pub(crate) registries: Option<Vec<RegistryId>>,
+    /// Package specifiers: name, qualified name, or package ID.
+    ///
+    /// If not specified, all installed packages will be updated if possible.
+    #[clap(value_name = "PKG_SPEC")]
     pub(crate) pkg_specs: Vec<PackageSpec>,
 }
 

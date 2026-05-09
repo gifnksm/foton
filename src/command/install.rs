@@ -28,7 +28,7 @@ impl RootReportScope for InstallScope {
 
 #[derive(Debug, Snafu)]
 pub(crate) enum InstallError {
-    #[snafu(display("failed to install package; see previous messages for details"))]
+    #[snafu(display("failed to install package(s); see previous messages for details"))]
     Failed,
     #[snafu(display("operation cancelled"))]
     Cancelled,
@@ -68,9 +68,8 @@ pub(crate) async fn install_package(
     engine::report_plan(&cx, &plan);
 
     if !plan.has_side_effects() {
-        cx.reporter().report_info(format_args!(
-            "all specified packages are already installed, nothing to do"
-        ));
+        cx.reporter()
+            .report_info(format_args!("already installed, nothing to do"));
         return Ok(());
     }
 

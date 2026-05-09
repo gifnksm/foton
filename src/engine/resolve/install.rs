@@ -61,12 +61,12 @@ enum InstallResolveErrorReport {
         concat!(
             "multiple packages match the specified package `{pkg_spec}`:\n",
             "{pkg_ids}\n",
-            "specify one of the matching package IDs listed above explicitly to disambiguate",
+            "specify one of the matching package IDs or registry IDs listed above explicitly to disambiguate",
         ),
         pkg_spec = pkg_spec,
         pkg_ids = BulletList(&pkg_ids.iter().map(|(registry, id)| format!("{id} (in {registry})")).collect::<Vec<_>>()),
     ))]
-    MultipleMatchingPackages {
+    MultipleMatchingPackagesInRegistries {
         pkg_spec: PackageSpec,
         pkg_ids: Vec<(RegistryId, PackageId)>,
     },
@@ -192,9 +192,9 @@ where
             .into_iter()
             .map(|(registry, pkg)| (registry.clone(), pkg.metadata.id()))
             .collect::<Vec<_>>();
-        return Err(cx
-            .reporter()
-            .report_error(MultipleMatchingPackagesSnafu { pkg_spec, pkg_ids }.build()));
+        return Err(cx.reporter().report_error(
+            MultipleMatchingPackagesInRegistriesSnafu { pkg_spec, pkg_ids }.build(),
+        ));
     }
 
     let Some((_reg_id, manifest)) = manifests.into_iter().next() else {
