@@ -16,14 +16,28 @@ pub(crate) struct PackageManifest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct PackageMetadata {
-    #[serde(rename = "name")]
-    pub(crate) qualified_name: PackageQualifiedName,
+    pub(crate) name: PackageQualifiedName,
+    #[serde(
+        default,
+        deserialize_with = "option_nonempty_string_without_surrounding_whitespaces::deserialize"
+    )]
+    pub(crate) display_name: Option<String>,
     pub(crate) version: PackageVersion,
     #[serde(
         default,
         deserialize_with = "option_nonempty_string_without_surrounding_whitespaces::deserialize"
     )]
     pub(crate) description: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "vec_nonempty_strings_without_surrounding_whitespaces::deserialize"
+    )]
+    pub(crate) aliases: Vec<String>,
+    #[serde(
+        default,
+        deserialize_with = "vec_nonempty_strings_without_surrounding_whitespaces::deserialize"
+    )]
+    pub(crate) families: Vec<String>,
     #[serde(default, deserialize_with = "optional_http_url::deserialize")]
     pub(crate) homepage: Option<Url>,
     #[serde(default, deserialize_with = "optional_http_url::deserialize")]
@@ -43,7 +57,7 @@ pub(crate) struct PackageSource {
 
 impl PackageMetadata {
     pub(crate) fn id(&self) -> PackageId {
-        PackageId::new(self.qualified_name.clone(), self.version.clone())
+        PackageId::new(self.name.clone(), self.version.clone())
     }
 }
 
@@ -55,6 +69,20 @@ fn default_include() -> Vec<glob::Pattern> {
     ]
 }
 
+fn validate_nonempty_string_without_surrounding_whitespaces<E>(s: String) -> Result<String, E>
+where
+    E: serde::de::Error,
+{
+    let t = s.trim();
+    if t.is_empty() || t != s {
+        return Err(E::invalid_value(
+            serde::de::Unexpected::Str(&s),
+            &"a non-empty string without leading or trailing whitespace",
+        ));
+    }
+    Ok(s)
+}
+
 mod option_nonempty_string_without_surrounding_whitespaces {
     use serde::Deserialize as _;
 
@@ -62,17 +90,23 @@ mod option_nonempty_string_without_surrounding_whitespaces {
     where
         D: serde::Deserializer<'de>,
     {
-        let opt_str: Option<String> = Option::deserialize(deserializer)?;
-        if let Some(ref s) = opt_str
-            && let t = s.trim()
-            && (t.is_empty() || t != s)
-        {
-            return Err(serde::de::Error::invalid_value(
-                serde::de::Unexpected::Str(s),
-                &"a non-empty string without leading or trailing whitespace",
-            ));
-        }
-        Ok(opt_str)
+        Option::deserialize(deserializer)?
+            .map(super::validate_nonempty_string_without_surrounding_whitespaces)
+            .transpose()
+    }
+}
+
+mod vec_nonempty_strings_without_surrounding_whitespaces {
+    use serde::Deserialize as _;
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Vec::<String>::deserialize(deserializer)?
+            .into_iter()
+            .map(super::validate_nonempty_string_without_surrounding_whitespaces)
+            .collect()
     }
 }
 
@@ -201,15 +235,11 @@ mod tests {
         toml::from_str(input)
     }
 
-    fn valid_manifest_toml() -> &'static str {
+    fn minimal_manifest_toml() -> &'static str {
         r#"
 [package]
 name = "example-namespace/example-font"
 version = "0.1.0"
-description = "example-font"
-homepage = "https://example.com/homepage"
-repository = "https://example.com/repository"
-license = "OFL-1.1"
 
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
@@ -219,25 +249,92 @@ include = ["*/*.ttf"]
     }
 
     #[test]
-    fn package_manifest_deserializes_valid_manifest() {
-        let manifest = parse_manifest(valid_manifest_toml()).unwrap();
+    fn package_manifest_deserializes_minimal_manifest() {
+        let manifest = parse_manifest(minimal_manifest_toml()).unwrap();
 
-        assert_eq!(
-            manifest.metadata.qualified_name.namespace(),
-            "example-namespace"
-        );
-        assert_eq!(manifest.metadata.qualified_name.name(), "example-font");
+        assert_eq!(manifest.metadata.name.namespace(), "example-namespace");
+        assert_eq!(manifest.metadata.name.name(), "example-font");
+        assert_eq!(manifest.metadata.display_name, None);
         assert_eq!(manifest.metadata.version, Version::new(0, 1, 0));
-        assert_eq!(manifest.metadata.description.unwrap(), "example-font");
+        assert_eq!(manifest.metadata.description, None);
+        assert!(manifest.metadata.aliases.is_empty());
+        assert!(manifest.metadata.families.is_empty());
+        assert_eq!(manifest.metadata.homepage, None);
+        assert_eq!(manifest.metadata.repository, None);
+        assert_eq!(manifest.metadata.license, None);
+        assert_eq!(manifest.sources.len(), 1);
         assert_eq!(
-            manifest.metadata.homepage.unwrap().as_str(),
-            "https://example.com/homepage"
+            manifest.sources[0].url.as_str(),
+            "https://example.com/example-font-0.1.0.zip"
         );
         assert_eq!(
-            manifest.metadata.repository.unwrap().as_str(),
-            "https://example.com/repository"
+            manifest.sources[0].hash.to_string(),
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
-        assert_eq!(manifest.metadata.license.unwrap().to_string(), "OFL-1.1");
+        assert_eq!(
+            manifest.sources[0]
+                .include
+                .iter()
+                .map(glob::Pattern::as_str)
+                .collect::<Vec<_>>(),
+            vec!["*/*.ttf"]
+        );
+    }
+
+    #[test]
+    fn package_manifest_deserializes_manifest_with_all_metadata_fields() {
+        let manifest = parse_manifest(
+            r#"
+[package]
+name = "example-namespace/example-font"
+display_name = "Example Font"
+version = "0.1.0"
+description = "example-font"
+aliases = ["ExampleFont", "Example Font Pro"]
+families = ["Example Font", "Example Font UI"]
+homepage = "https://example.com/homepage"
+repository = "https://example.com/repository"
+license = "OFL-1.1"
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+include = ["*/*.ttf"]
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(manifest.metadata.name.namespace(), "example-namespace");
+        assert_eq!(manifest.metadata.name.name(), "example-font");
+        assert_eq!(
+            manifest.metadata.display_name.as_deref(),
+            Some("Example Font")
+        );
+        assert_eq!(manifest.metadata.version, Version::new(0, 1, 0));
+        assert_eq!(
+            manifest.metadata.description.as_deref(),
+            Some("example-font")
+        );
+        assert_eq!(
+            manifest.metadata.aliases,
+            vec!["ExampleFont", "Example Font Pro"]
+        );
+        assert_eq!(
+            manifest.metadata.families,
+            vec!["Example Font", "Example Font UI"]
+        );
+        assert_eq!(
+            manifest.metadata.homepage.as_ref().map(Url::as_str),
+            Some("https://example.com/homepage")
+        );
+        assert_eq!(
+            manifest.metadata.repository.as_ref().map(Url::as_str),
+            Some("https://example.com/repository")
+        );
+        assert_eq!(
+            manifest.metadata.license.as_ref().map(ToString::to_string),
+            Some("OFL-1.1".to_string())
+        );
         assert_eq!(manifest.sources.len(), 1);
         assert_eq!(
             manifest.sources[0].url.as_str(),
@@ -361,6 +458,28 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     }
 
     #[test]
+    fn package_manifest_rejects_empty_display_name() {
+        let err = parse_manifest(
+            r#"
+[package]
+name = "example-namespace/example-font"
+version = "0.1.0"
+display_name = ""
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+"#,
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("a non-empty string without leading or trailing whitespace")
+        );
+    }
+
+    #[test]
     fn package_manifest_rejects_description_with_surrounding_whitespace() {
         let err = parse_manifest(
             r#"
@@ -368,6 +487,50 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 name = "example-namespace/example-font"
 version = "0.1.0"
 description = " example-font "
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+"#,
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("a non-empty string without leading or trailing whitespace")
+        );
+    }
+
+    #[test]
+    fn package_manifest_rejects_aliases_with_surrounding_whitespace() {
+        let err = parse_manifest(
+            r#"
+[package]
+name = "example-namespace/example-font"
+version = "0.1.0"
+aliases = [" Example Font "]
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+"#,
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("a non-empty string without leading or trailing whitespace")
+        );
+    }
+
+    #[test]
+    fn package_manifest_rejects_empty_family() {
+        let err = parse_manifest(
+            r#"
+[package]
+name = "example-namespace/example-font"
+version = "0.1.0"
+families = [""]
 
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
