@@ -74,6 +74,9 @@ foton uninstall <package-specifier>...
 # List installed packages:
 foton list
 
+# Search registries for packages:
+foton search <query>...
+
 # Show details for one or more installed packages:
 foton info <package-specifier>...
 ```
