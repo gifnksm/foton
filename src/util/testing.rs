@@ -11,8 +11,8 @@ use crate::{
     },
     db::PackageDatabase,
     engine::{
-        self, ExecutionPlan, ExecutionPlanOp, InstallOp, InstallReason, ResolvedInstallTarget,
-        ResolvedUninstallTarget, SkipOp, UninstallOp, UninstallReason,
+        self, ExecutionPlan, ExecutionPlanOp, InstallOp, InstallReason, InstallTargetSource,
+        ResolvedInstallTarget, ResolvedUninstallTarget, SkipOp, UninstallOp, UninstallReason,
     },
     package::{PackageDirs, PackageId, PackageManifest, PackageState},
     registry::{RegistryId, RegistryIndex, RegistrySource, RegistrySpec},
@@ -190,6 +190,7 @@ pub(crate) fn make_resolved_install_target(
     manifest: &Arc<PackageManifest>,
 ) -> ResolvedInstallTarget {
     ResolvedInstallTarget {
+        source: InstallTargetSource::Installed,
         manifest: Arc::clone(manifest),
     }
 }

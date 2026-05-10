@@ -21,6 +21,8 @@ use crate::{
     registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySpec},
 };
 
+use super::InstallTargetSource;
+
 #[derive(Debug)]
 struct UpdateResolveScope<S> {
     _base_scope: PhantomData<S>,
@@ -118,7 +120,12 @@ where
     let targets = pkg_ids
         .into_iter()
         .filter_map(|pkg_id| find_update_target(&cx, &indexes, &pkg_id).transpose())
-        .map(|res| res.map(|manifest| ResolvedInstallTarget { manifest }))
+        .map(|res| {
+            res.map(|(reg_id, manifest)| ResolvedInstallTarget {
+                source: InstallTargetSource::Registry(reg_id),
+                manifest,
+            })
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(targets)
@@ -192,7 +199,7 @@ fn find_update_target<S>(
     cx: &ReportContext<UpdateResolveScope<S>>,
     indexes: &[RegistryIndex],
     pkg_id: &PackageId,
-) -> Result<Option<Arc<PackageManifest>>, S::Error>
+) -> Result<Option<(RegistryId, Arc<PackageManifest>)>, S::Error>
 where
     S: ReportScope,
 {
@@ -207,7 +214,7 @@ where
             .report_error(cx.reporter())?
             .filter(|manifest| &manifest.metadata.version > pkg_id.version());
         if let Some(manifest) = manifest {
-            manifests.push((index.id().clone(), Arc::new(manifest)));
+            manifests.push((index.id().clone(), manifest));
         }
     }
     if manifests.len() > 1 {
@@ -223,10 +230,7 @@ where
             .build(),
         ));
     }
-    Ok(manifests
-        .into_iter()
-        .next()
-        .map(|(_registry, manifest)| manifest))
+    Ok(manifests.into_iter().next())
 }
 
 #[cfg(test)]

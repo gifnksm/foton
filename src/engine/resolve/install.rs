@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -16,7 +17,7 @@ use crate::{
         },
     },
     db::PackageDatabase,
-    package::{PackageId, PackageManifest, PackageName, PackageSpec, PackageState, PackageVersion},
+    package::{PackageId, PackageManifest, PackageName, PackageSpec, PackageState},
     registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySpec},
 };
 
@@ -72,16 +73,14 @@ enum InstallResolveErrorReport {
     PackageNotFoundForSpec { pkg_spec: PackageSpec },
     #[snafu(display(
         concat!(
-            "multiple versions of package `{pkg_name}` are being installed:\n",
-            "{versions}\n",
+            "conflicting packages are being installed:\n",
+            "{pkg_ids}\n",
             "this may cause unexpected behavior; consider installing only one version of the package\n",
         ),
-        pkg_name = pkg_name,
-        versions = BulletList(versions),
+        pkg_ids = BulletList(&pkg_ids.iter().map(|(source, pkg_id)| format!("{pkg_id} (from {source})")).collect::<Vec<_>>()),
     ))]
     ConflictingRequirements {
-        pkg_name: PackageName,
-        versions: BTreeSet<PackageVersion>,
+        pkg_ids: Vec<(InstallTargetSource, PackageId)>,
     },
 }
 
@@ -91,18 +90,34 @@ impl From<InstallResolveErrorReport> for ReportValue<'static> {
     }
 }
 
+#[derive(Debug, Clone, derive_more::Display)]
+pub(crate) enum InstallTargetSource {
+    #[display("package registry {_0}")]
+    Registry(RegistryId),
+    #[display("installed package")]
+    Installed,
+    #[display("manifest file: {}", _0.display())]
+    File(PathBuf),
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedInstallTarget {
+    pub(crate) source: InstallTargetSource,
     pub(crate) manifest: Arc<PackageManifest>,
 }
 
 #[derive(Debug, Clone, derive_more::IsVariant)]
 enum ResolveState {
-    Resolved { manifest: Arc<PackageManifest> },
-    Unresolved { pkg_spec: PackageSpec },
+    Resolved {
+        source: InstallTargetSource,
+        manifest: Arc<PackageManifest>,
+    },
+    Unresolved {
+        pkg_spec: PackageSpec,
+    },
 }
 
-pub(crate) fn resolve_install_targets<S>(
+pub(crate) fn resolve_install_targets_by_spec<S>(
     cx: &ReportContext<S>,
     db: &PackageDatabase<'_>,
     registries: &[RegistrySpec],
@@ -123,7 +138,9 @@ where
         targets
             .into_iter()
             .map(|target| match target {
-                ResolveState::Resolved { manifest } => ResolvedInstallTarget { manifest },
+                ResolveState::Resolved { source, manifest } => {
+                    ResolvedInstallTarget { source, manifest }
+                }
                 ResolveState::Unresolved { .. } => unreachable!(),
             })
             .collect()
@@ -135,7 +152,31 @@ where
             .collect_to_end()?
     };
 
-    dedup_and_check_conflicts(&cx, &mut targets)?;
+    dedup_by_id(&mut targets);
+    check_conflicts(&cx, &targets)?;
+
+    Ok(targets)
+}
+
+pub(crate) fn resolve_install_targets_by_manifest<S>(
+    cx: &ReportContext<S>,
+    manifests: &[(PathBuf, Arc<PackageManifest>)],
+) -> Result<Vec<ResolvedInstallTarget>, S::Error>
+where
+    S: ReportScope,
+{
+    let cx =
+        InstallResolveScope::start_with_report(cx, format_args!("Resolving install target..."));
+
+    let targets = manifests
+        .iter()
+        .map(|(path, manifest)| ResolvedInstallTarget {
+            source: InstallTargetSource::File(path.clone()),
+            manifest: Arc::clone(manifest),
+        })
+        .collect::<Vec<_>>();
+
+    check_conflicts(&cx, &targets)?;
 
     Ok(targets)
 }
@@ -146,7 +187,10 @@ fn resolve_installed_package(db: &PackageDatabase<'_>, pkg_spec: &PackageSpec) -
         .filter_map(|(state, manifest)| (state == PackageState::Installed).then_some(manifest))
         .max_by(|a, b| a.metadata.version.cmp(&b.metadata.version));
     if let Some(manifest) = installed_pkg {
-        ResolveState::Resolved { manifest }
+        ResolveState::Resolved {
+            source: InstallTargetSource::Installed,
+            manifest,
+        }
     } else {
         ResolveState::Unresolved {
             pkg_spec: pkg_spec.clone(),
@@ -163,7 +207,9 @@ where
     S: ReportScope,
 {
     match target {
-        ResolveState::Resolved { manifest } => Ok(ResolvedInstallTarget { manifest }),
+        ResolveState::Resolved { source, manifest } => {
+            Ok(ResolvedInstallTarget { source, manifest })
+        }
         ResolveState::Unresolved { pkg_spec } => resolve_spec_from_registry(cx, indexes, &pkg_spec),
     }
 }
@@ -197,43 +243,45 @@ where
         ));
     }
 
-    let Some((_reg_id, manifest)) = manifests.into_iter().next() else {
+    let Some((reg_id, manifest)) = manifests.into_iter().next() else {
         return Err(cx
             .reporter()
             .report_error(PackageNotFoundForSpecSnafu { pkg_spec }.build()));
     };
 
     Ok(ResolvedInstallTarget {
-        manifest: Arc::new(manifest),
+        source: InstallTargetSource::Registry(reg_id.clone()),
+        manifest,
     })
 }
 
-fn dedup_and_check_conflicts<S>(
+fn dedup_by_id(targets: &mut Vec<ResolvedInstallTarget>) {
+    let mut seen = BTreeSet::new();
+    targets.retain(|target| seen.insert(target.manifest.metadata.id()));
+}
+
+fn check_conflicts<S>(
     cx: &ReportContext<InstallResolveScope<S>>,
-    targets: &mut Vec<ResolvedInstallTarget>,
+    targets: &[ResolvedInstallTarget],
 ) -> Result<(), S::Error>
 where
     S: ReportScope,
 {
-    let mut versions_by_name: BTreeMap<PackageName, BTreeSet<_>> = BTreeMap::new();
-    targets.retain(|target| {
+    let mut versions_by_name: BTreeMap<PackageName, Vec<_>> = BTreeMap::new();
+    for target in targets {
         let metadata = &target.manifest.metadata;
         versions_by_name
             .entry(metadata.name.clone())
             .or_default()
-            .insert(metadata.version.clone())
-    });
+            .push((target.source.clone(), metadata.id()));
+    }
     versions_by_name
-        .iter()
-        .map(|(pkg_name, versions)| {
-            if versions.len() > 1 {
-                Err(cx.reporter().report_error(
-                    ConflictingRequirementsSnafu {
-                        pkg_name,
-                        versions: versions.clone(),
-                    }
-                    .build(),
-                ))
+        .into_values()
+        .map(|pkg_ids| {
+            if pkg_ids.len() > 1 {
+                Err(cx
+                    .reporter()
+                    .report_error(ConflictingRequirementsSnafu { pkg_ids }.build()))
             } else {
                 Ok(())
             }
@@ -268,7 +316,7 @@ mod tests {
 
             let target = resolve_installed_package(&db, &spec);
             assert!(
-                matches!(target, ResolveState::Resolved { manifest: resolved_manifest } if Arc::ptr_eq(&resolved_manifest, &manifest))
+                matches!(target, ResolveState::Resolved { manifest: resolved_manifest, .. } if Arc::ptr_eq(&resolved_manifest, &manifest))
             );
         });
     }
@@ -313,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_install_targets_resolves_installed_specs_and_collapses_duplicates() {
+    fn resolve_install_targets_by_spec_resolves_installed_specs_and_collapses_duplicates() {
         let (registry_dir, registry) = testing::make_registry_spec("test-registry");
         testing::write_manifest(registry_dir.path(), "installed-font@1.0.0");
         testing::write_manifest(registry_dir.path(), "example-font@1.0.0");
@@ -332,7 +380,8 @@ mod tests {
         testing::with_db(&cx, |mut db| {
             testing::mark_as_installed(&mut db, &installed_manifest);
 
-            let targets = resolve_install_targets(&cx, &db, &[registry], &pkg_specs).unwrap();
+            let targets =
+                resolve_install_targets_by_spec(&cx, &db, &[registry], &pkg_specs).unwrap();
             assert_eq!(targets.len(), 2);
             assert_eq!(
                 targets[0].manifest.metadata.id(),
@@ -346,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_install_targets_reports_fetch_failure() {
+    fn resolve_install_targets_by_spec_reports_fetch_failure() {
         let registry_dir = TempDir::new().unwrap();
         let missing_registry_dir = registry_dir.path().join("missing");
 
@@ -358,9 +407,52 @@ mod tests {
         let pkg_specs = vec![PackageSpec::from_str("example-font").unwrap()];
 
         testing::with_db(&cx, |db| {
-            let err = resolve_install_targets(&cx, &db, &[registry], &pkg_specs).unwrap_err();
+            let err =
+                resolve_install_targets_by_spec(&cx, &db, &[registry], &pkg_specs).unwrap_err();
             assert!(matches!(err, TestError::Failed));
         });
+    }
+
+    #[test]
+    fn resolve_install_targets_by_manifest_sets_file_source() {
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+
+        let path = PathBuf::from("example-font.toml");
+        let manifest = testing::make_manifest("example-font@0.1.0");
+        let targets =
+            resolve_install_targets_by_manifest(&cx, &[(path.clone(), Arc::clone(&manifest))])
+                .unwrap();
+
+        assert_eq!(targets.len(), 1);
+        assert!(matches!(
+            &targets[0],
+            ResolvedInstallTarget {
+                source: InstallTargetSource::File(source_path),
+                manifest: resolved_manifest,
+            } if source_path == &path && Arc::ptr_eq(resolved_manifest, &manifest)
+        ));
+    }
+
+    #[test]
+    fn resolve_install_targets_by_manifest_reports_conflicting_package_ids() {
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+
+        let manifests = vec![
+            (
+                PathBuf::from("manifest-a.toml"),
+                testing::make_manifest("example-font@0.1.0"),
+            ),
+            (
+                PathBuf::from("manifest-b.toml"),
+                testing::make_manifest("example-font@0.1.0"),
+            ),
+        ];
+
+        let err = resolve_install_targets_by_manifest(&cx, &manifests).unwrap_err();
+
+        assert!(matches!(err, TestError::Failed));
     }
 
     #[test]
@@ -400,44 +492,46 @@ mod tests {
     }
 
     #[test]
-    fn dedup_and_check_conflicts_reports_multiple_versions_of_same_package() {
+    fn check_conflicts_reports_multiple_versions_of_same_package() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         let cx = InstallResolveScope::start(&cx);
 
-        let mut targets = vec![
+        let targets = vec![
             ResolvedInstallTarget {
+                source: InstallTargetSource::Installed,
                 manifest: testing::make_manifest("example-font@0.1.0"),
             },
             ResolvedInstallTarget {
+                source: InstallTargetSource::Installed,
                 manifest: testing::make_manifest("example-font@0.2.0"),
             },
         ];
 
-        let err = dedup_and_check_conflicts(&cx, &mut targets).unwrap_err();
+        let err = check_conflicts(&cx, &targets).unwrap_err();
         assert!(matches!(err, TestError::Failed));
     }
 
     #[test]
-    fn dedup_and_check_conflicts_collapses_duplicate_targets() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = InstallResolveScope::start(&cx);
-
+    fn dedup_by_id_collapses_duplicate_targets() {
         let manifest = testing::make_manifest("example-font@0.1.0");
         let expected_pkg_id = manifest.metadata.id();
         let mut targets = vec![
             ResolvedInstallTarget {
+                source: InstallTargetSource::Installed,
                 manifest: Arc::clone(&manifest),
             },
-            ResolvedInstallTarget { manifest },
+            ResolvedInstallTarget {
+                source: InstallTargetSource::Installed,
+                manifest,
+            },
         ];
 
-        dedup_and_check_conflicts(&cx, &mut targets).unwrap();
+        dedup_by_id(&mut targets);
 
         assert_eq!(targets.len(), 1);
         assert!(
-            matches!(&targets[0], ResolvedInstallTarget { manifest } if manifest.metadata.id() == expected_pkg_id)
+            matches!(&targets[0], ResolvedInstallTarget { manifest, .. } if manifest.metadata.id() == expected_pkg_id)
         );
     }
 }

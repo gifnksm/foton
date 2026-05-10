@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::{package::PackageSpec, registry::RegistryId};
 
 /// Install and uninstall fonts from package registries.
@@ -18,28 +20,90 @@ pub(crate) struct GlobalArgs {
 
 #[derive(Debug, clap::Subcommand)]
 pub(crate) enum Command {
-    /// Install a package from the specified registry.
+    /// Install packages.
     Install(InstallArgs),
-    /// Update an installed package to the latest version available in the specified registry.
+    /// Update installed packages.
     Update(UpdateArgs),
-    /// Uninstall an installed package.
+    /// Uninstall installed packages.
     Uninstall(UninstallArgs),
     /// List installed packages.
     List(ListArgs),
-    /// Show detailed information about a package in the local database.
+    /// Show detailed information about packages.
     Info(InfoArgs),
 }
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct InstallArgs {
+    #[clap(flatten)]
+    pub(crate) target: InstallTargetArgs,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct InstallTargetArgs {
+    /// Install packages defined in the specified manifest files.
+    ///
+    /// This option can be specified multiple times. It cannot be used together
+    /// with `--registry` or `PKG_SPEC`.
+    #[clap(long = "manifest", value_name = "MANIFEST", conflicts_with_all = ["registries", "pkg_specs"])]
+    pub(crate) manifests: Vec<PathBuf>,
     /// Package registry IDs to resolve the package from.
     ///
     /// Use a comma-separated list such as `--registry local,foton`.
-    #[clap(long = "registry", value_name = "REGISTRY_ID", value_delimiter = ',')]
+    /// This option is only available when installing by `PKG_SPEC`.
+    #[clap(
+        long = "registry",
+        value_name = "REGISTRY_ID",
+        value_delimiter = ',',
+        group = "by-spec",
+        requires = "pkg_specs"
+    )]
     pub(crate) registries: Option<Vec<RegistryId>>,
     /// Package specifiers: name or package ID.
-    #[clap(value_name = "PKG_SPEC", required = true)]
+    ///
+    /// Required unless `--manifest` is specified. This cannot be used together
+    /// with `--manifest`.
+    #[clap(value_name = "PKG_SPEC", required_unless_present_any = ["manifests"])]
     pub(crate) pkg_specs: Vec<PackageSpec>,
+}
+
+#[derive(Debug)]
+pub(crate) enum InstallTargets {
+    Manifest {
+        manifests: Vec<PathBuf>,
+    },
+    PackageSpec {
+        registries: Option<Vec<RegistryId>>,
+        pkg_specs: Vec<PackageSpec>,
+    },
+}
+
+impl InstallTargetArgs {
+    pub(crate) fn to_targets(&self) -> InstallTargets {
+        let InstallTargetArgs {
+            manifests,
+            registries,
+            pkg_specs,
+        } = self;
+        if pkg_specs.is_empty() {
+            InstallTargets::Manifest {
+                manifests: manifests.clone(),
+            }
+        } else {
+            InstallTargets::PackageSpec {
+                registries: registries.clone(),
+                pkg_specs: pkg_specs.clone(),
+            }
+        }
+    }
+}
+
+impl InstallTargets {
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            InstallTargets::Manifest { manifests } => manifests.len(),
+            InstallTargets::PackageSpec { pkg_specs, .. } => pkg_specs.len(),
+        }
+    }
 }
 
 #[derive(Debug, clap::Args)]
@@ -75,4 +139,71 @@ pub(crate) struct InfoArgs {
     /// Package specifiers: name or package ID.
     #[clap(value_name = "PKG_SPEC", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsString;
+
+    use clap::Parser as _;
+
+    use super::*;
+
+    fn parse_install<I, T>(args: I) -> Result<InstallTargetArgs, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        let args = Args::try_parse_from(args)?;
+        let Command::Install(install_args) = args.command else {
+            unreachable!("test helper only parses install commands");
+        };
+        Ok(install_args.target)
+    }
+
+    #[test]
+    fn install_accepts_valid_argument_combinations() {
+        let cases = [
+            &["foton", "install", "package1", "package2"][..],
+            &[
+                "foton",
+                "install",
+                "--registry",
+                "local,foton",
+                "package1",
+                "package2",
+            ][..],
+            &[
+                "foton",
+                "install",
+                "--manifest",
+                "fonts.toml",
+                "--manifest",
+                "extras.toml",
+            ],
+        ];
+        for case in cases {
+            parse_install(case).unwrap();
+        }
+    }
+
+    #[test]
+    fn install_rejects_invalid_argument_combinations() {
+        let cases = [
+            &["foton", "install"][..],
+            &["foton", "install", "--manifest", "fonts.toml", "package"][..],
+            &[
+                "foton",
+                "install",
+                "--manifest",
+                "fonts.toml",
+                "--registry",
+                "local",
+            ],
+            &["foton", "install", "--registry", "local"],
+        ];
+        for case in cases {
+            parse_install(case).unwrap_err();
+        }
+    }
 }
