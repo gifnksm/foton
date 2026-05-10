@@ -16,8 +16,8 @@ use crate::{
         reporter::RootReporter,
     },
     command::{
-        GenerateManError, InfoError, InstallError, ListError, PrintCompletionError, UninstallError,
-        UpdateError,
+        GenerateManError, InfoError, InstallError, ListError, PrintCompletionError, SearchError,
+        UninstallError, UpdateError,
     },
     platform::windows::{
         self,
@@ -70,6 +70,8 @@ enum CommandError {
     List { source: ListError },
     #[snafu(transparent)]
     Info { source: InfoError },
+    #[snafu(transparent)]
+    Search { source: SearchError },
 }
 
 #[derive(Debug, Snafu)]
@@ -183,6 +185,7 @@ async fn run_command(cx: &RootContext, command: Command) -> Result<(), CommandEr
         Command::Uninstall(args) => command::uninstall_package(cx, &args).await?,
         Command::List(args) => command::list_package(cx, &args)?,
         Command::Info(args) => command::info_package(cx, &args)?,
+        Command::Search(args) => command::search_packages(cx, &args)?,
     }
     Ok(())
 }

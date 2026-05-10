@@ -11,6 +11,7 @@ use snafu::{IntoError, OptionExt as _, ResultExt as _, Snafu};
 use crate::{
     package::{
         PackageId, PackageManifest, PackageManifestError, PackageName, PackageSpec, PackageVersion,
+        ParsePackageNameError,
     },
     registry::RegistryId,
 };
@@ -42,10 +43,15 @@ pub(crate) enum RegistryIndexError {
     NonUtf8DirectoryEntryName { name: OsString, path: PathBuf },
     #[snafu(display("failed to read metadata: {path}", path = path.display()))]
     ReadMetadata { path: PathBuf, source: io::Error },
-    #[snafu(display("invalid version in directory entry: {path}", path = path.display()))]
+    #[snafu(display("invalid package version in directory entry: {path}", path = path.display()))]
     InvalidVersionInDirectoryEntry {
         path: PathBuf,
         source: semver::Error,
+    },
+    #[snafu(display("invalid package name in directory entry: {path}", path = path.display()))]
+    InvalidPackageNameInDirectoryEntry {
+        path: PathBuf,
+        source: ParsePackageNameError,
     },
 }
 
@@ -122,6 +128,24 @@ impl RegistryIndex {
         let pkg_id = PackageId::new(name.clone(), version.clone());
         self.find_package_by_id(&pkg_id)
     }
+
+    pub(crate) fn all_latest_packages(
+        &self,
+    ) -> Result<
+        Option<impl Iterator<Item = Result<Arc<PackageManifest>, RegistryIndexError>>>,
+        RegistryIndexError,
+    > {
+        let Some(names) = read_child_directories::<PackageName, _, _>(&self.path, |path| {
+            InvalidPackageNameInDirectoryEntrySnafu { path }
+        })?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(names.filter_map(|res| {
+            res.and_then(|name| self.find_latest_package_by_name(&name))
+                .transpose()
+        })))
+    }
 }
 
 fn read_child_directories<T, F, C>(
@@ -190,6 +214,8 @@ fn check_dir_presence(path: &Path) -> Result<DirPresence, RegistryIndexError> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
     use crate::util::testing;
 
@@ -231,5 +257,28 @@ mod tests {
         let pkg_id: PackageId = "example-font@0.1.0".parse().unwrap();
         let err = registry.find_package_by_id(&pkg_id).unwrap_err();
         assert!(matches!(err, RegistryIndexError::PackageIdMismatch { .. }));
+    }
+
+    #[test]
+    fn all_latest_packages_returns_latest_manifest_per_package_name() {
+        let (registry_dir, registry) = testing::make_registry_index("test-registry");
+        testing::write_manifest(registry_dir.path(), "example-font@0.1.0");
+        testing::write_manifest(registry_dir.path(), "example-font@0.2.0");
+        testing::write_manifest(registry_dir.path(), "other-font@1.0.0");
+        fs::create_dir_all(registry_dir.path().join("empty-font")).unwrap();
+
+        let manifests = registry
+            .all_latest_packages()
+            .unwrap()
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let mut ids = manifests
+            .into_iter()
+            .map(|manifest| manifest.metadata.id().to_string())
+            .collect::<Vec<_>>();
+        ids.sort();
+
+        assert_eq!(ids, ["example-font@0.2.0", "other-font@1.0.0"]);
     }
 }
