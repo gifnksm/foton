@@ -104,7 +104,7 @@ where
         version,
         description,
         aliases,
-        families,
+        faces,
         homepage,
         repository,
         license,
@@ -119,10 +119,16 @@ where
         writeln!(writer, "Description: {description}")?;
     }
     if !aliases.is_empty() {
-        writeln!(writer, "Aliases: {}", aliases.join(", "))?;
+        writeln!(writer, "Aliases:")?;
+        for alias in aliases {
+            writeln!(writer, "  - {alias}")?;
+        }
     }
-    if !families.is_empty() {
-        writeln!(writer, "Families: {}", families.join(", "))?;
+    if !faces.is_empty() {
+        writeln!(writer, "Faces:")?;
+        for font_name in faces {
+            writeln!(writer, "  - {font_name}")?;
+        }
     }
     if let Some(homepage) = homepage {
         writeln!(writer, "Homepage: {homepage}")?;
@@ -186,11 +192,11 @@ mod tests {
             r#"
 [package]
 name = "example-font"
-display_name = "Example Font"
+display-name = "Example Font"
 version = "0.1.0"
 description = "Example font"
-aliases = ["ExampleFont", "Example Font Pro"]
-families = ["Example Font", "Example Font UI"]
+aliases = ["Example Font UI"]
+faces = ["Example Font Regular", "Example Font Bold", "Example Font UI Regular", "Example Font UI Bold"]
 homepage = "https://example.com/home"
 repository = "https://example.com/repo"
 license = "MIT"
@@ -215,8 +221,13 @@ include = ["fonts/*.ttf"]
                 "Version: 0.1.0\n",
                 "State: pending-install\n",
                 "Description: Example font\n",
-                "Aliases: ExampleFont, Example Font Pro\n",
-                "Families: Example Font, Example Font UI\n",
+                "Aliases:\n",
+                "  - Example Font UI\n",
+                "Faces:\n",
+                "  - Example Font Regular\n",
+                "  - Example Font Bold\n",
+                "  - Example Font UI Regular\n",
+                "  - Example Font UI Bold\n",
                 "Homepage: https://example.com/home\n",
                 "Repository: https://example.com/repo\n",
                 "License: MIT\n",
