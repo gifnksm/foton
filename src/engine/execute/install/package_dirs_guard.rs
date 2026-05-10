@@ -149,8 +149,7 @@ mod tests {
         util::testing::{TempdirContext, TestScope},
     };
 
-    static PKG_ID: LazyLock<PackageId> =
-        LazyLock::new(|| "example-namespace/example-font@0.1.0".parse().unwrap());
+    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| "example-font@0.1.0".parse().unwrap());
 
     #[test]
     fn create_new_package_dirs_does_not_remove_existing_package_on_failure() {
@@ -184,6 +183,5 @@ mod tests {
         assert!(!pkg_dirs.fonts_dir().exists());
         assert!(!pkg_dirs.version_dir().exists());
         assert!(!pkg_dirs.name_dir().exists());
-        assert!(!pkg_dirs.namespace_dir().exists());
     }
 }

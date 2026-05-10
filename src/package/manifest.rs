@@ -2,7 +2,7 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    package::{PackageId, PackageQualifiedName, PackageVersion},
+    package::{PackageId, PackageName, PackageVersion},
     util::hash::GenericDigest,
 };
 
@@ -16,7 +16,7 @@ pub(crate) struct PackageManifest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct PackageMetadata {
-    pub(crate) name: PackageQualifiedName,
+    pub(crate) name: PackageName,
     #[serde(
         default,
         deserialize_with = "option_nonempty_string_without_surrounding_whitespaces::deserialize"
@@ -238,7 +238,7 @@ mod tests {
     fn minimal_manifest_toml() -> &'static str {
         r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 version = "0.1.0"
 
 [[sources]]
@@ -252,8 +252,7 @@ include = ["*/*.ttf"]
     fn package_manifest_deserializes_minimal_manifest() {
         let manifest = parse_manifest(minimal_manifest_toml()).unwrap();
 
-        assert_eq!(manifest.metadata.name.namespace(), "example-namespace");
-        assert_eq!(manifest.metadata.name.name(), "example-font");
+        assert_eq!(manifest.metadata.name, "example-font");
         assert_eq!(manifest.metadata.display_name, None);
         assert_eq!(manifest.metadata.version, Version::new(0, 1, 0));
         assert_eq!(manifest.metadata.description, None);
@@ -286,7 +285,7 @@ include = ["*/*.ttf"]
         let manifest = parse_manifest(
             r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 display_name = "Example Font"
 version = "0.1.0"
 description = "example-font"
@@ -304,8 +303,7 @@ include = ["*/*.ttf"]
         )
         .unwrap();
 
-        assert_eq!(manifest.metadata.name.namespace(), "example-namespace");
-        assert_eq!(manifest.metadata.name.name(), "example-font");
+        assert_eq!(manifest.metadata.name, "example-font");
         assert_eq!(
             manifest.metadata.display_name.as_deref(),
             Some("Example Font")
@@ -359,7 +357,7 @@ include = ["*/*.ttf"]
         let err = parse_manifest(
             r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 version = "0.1.0"
 license = "not-a-valid-spdx"
 
@@ -405,7 +403,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         let err = parse_manifest(
             r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 version = "0.1.0"
 
 sources = []
@@ -421,7 +419,7 @@ sources = []
         let err = parse_manifest(
             r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 version = "0.1.0"
 
 [[sources]]
@@ -440,7 +438,7 @@ include = []
         let err = parse_manifest(
             r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 version = "0.1.0"
 description = ""
 
@@ -462,7 +460,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         let err = parse_manifest(
             r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 version = "0.1.0"
 display_name = ""
 
@@ -484,7 +482,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         let err = parse_manifest(
             r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 version = "0.1.0"
 description = " example-font "
 
@@ -506,7 +504,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         let err = parse_manifest(
             r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 version = "0.1.0"
 aliases = [" Example Font "]
 
@@ -528,7 +526,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         let err = parse_manifest(
             r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 version = "0.1.0"
 families = [""]
 
@@ -550,7 +548,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         let err = parse_manifest(
             r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 version = "0.1.0"
 
 [[sources]]
@@ -568,7 +566,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         let err = parse_manifest(
             r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 version = "0.1.0"
 homepage = "file:///tmp/project"
 
@@ -587,7 +585,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         let manifest = parse_manifest(
             r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 version = "0.1.0"
 
 [[sources]]

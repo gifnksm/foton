@@ -84,13 +84,10 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let pending_install_manifest =
-            testing::make_manifest("example-namespace/example-font@0.1.0");
-        let pending_uninstall_manifest =
-            testing::make_manifest("example-namespace/example-font@0.2.0");
-        let installed_manifest = testing::make_manifest("example-namespace/example-font@0.3.0");
-        let install_target_manifest =
-            testing::make_manifest("example-namespace/example-font@0.4.0");
+        let pending_install_manifest = testing::make_manifest("example-font@0.1.0");
+        let pending_uninstall_manifest = testing::make_manifest("example-font@0.2.0");
+        let installed_manifest = testing::make_manifest("example-font@0.3.0");
+        let install_target_manifest = testing::make_manifest("example-font@0.4.0");
         let install_target = testing::make_resolved_install_target(&install_target_manifest);
 
         let plan = testing::with_db(&cx, |mut db| {
@@ -134,7 +131,7 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let install_target = testing::make_resolved_install_target(&manifest);
 
         let plan = testing::with_db(&cx, |mut db| {
@@ -158,14 +155,8 @@ mod tests {
         let cx = TestScope::start(&cx);
 
         let pairs = [
-            (
-                PackageState::PendingUninstall,
-                "example-namespace/example-font-pu@0.1.0",
-            ),
-            (
-                PackageState::PendingInstall,
-                "example-namespace/example-font-pi@0.1.0",
-            ),
+            (PackageState::PendingUninstall, "example-font-pu@0.1.0"),
+            (PackageState::PendingInstall, "example-font-pi@0.1.0"),
         ];
         for (state, pkg_id) in pairs {
             let manifest = testing::make_manifest(pkg_id);

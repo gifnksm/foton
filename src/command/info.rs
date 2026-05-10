@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn render_package_info_prints_all_present_fields() {
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let mut output = Vec::new();
 
         render_package_info(&mut output, PackageState::Installed, &manifest).unwrap();
@@ -168,7 +168,7 @@ mod tests {
         assert_eq!(
             output,
             concat!(
-                "Name: example-namespace/example-font\n",
+                "Name: example-font\n",
                 "Version: 0.1.0\n",
                 "State: installed\n",
                 "Sources:\n",
@@ -185,7 +185,7 @@ mod tests {
         let manifest: PackageManifest = toml::from_str(
             r#"
 [package]
-name = "example-namespace/example-font"
+name = "example-font"
 display_name = "Example Font"
 version = "0.1.0"
 description = "Example font"
@@ -210,7 +210,7 @@ include = ["fonts/*.ttf"]
         assert_eq!(
             output,
             concat!(
-                "Name: example-namespace/example-font\n",
+                "Name: example-font\n",
                 "Display Name: Example Font\n",
                 "Version: 0.1.0\n",
                 "State: pending-install\n",

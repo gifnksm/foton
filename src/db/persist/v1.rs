@@ -27,11 +27,11 @@ pub(in crate::db) mod types {
 
     use serde::{Deserialize, Serialize};
 
-    use crate::package::{PackageManifest, PackageQualifiedName, PackageState, PackageVersion};
+    use crate::package::{PackageManifest, PackageName, PackageState, PackageVersion};
 
     #[derive(Debug, Default, Clone, Serialize, Deserialize)]
     pub(in crate::db) struct PersistedPackageDb {
-        pub(in crate::db) packages: BTreeMap<PackageQualifiedName, PersistedPackageVersionMap>,
+        pub(in crate::db) packages: BTreeMap<PackageName, PersistedPackageVersionMap>,
     }
 
     #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -16,9 +16,7 @@ use crate::{
         },
     },
     db::PackageDatabase,
-    package::{
-        PackageId, PackageManifest, PackageQualifiedName, PackageSpec, PackageState, PackageVersion,
-    },
+    package::{PackageId, PackageManifest, PackageName, PackageSpec, PackageState, PackageVersion},
     registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySpec},
 };
 
@@ -52,7 +50,7 @@ where
 #[derive(Debug, Snafu)]
 enum InstallResolveErrorReport {
     #[snafu(display("failed to find package by {pkg_spec}"))]
-    FindLatestPackagesBySpec {
+    FindLatestPackageBySpec {
         pkg_spec: PackageSpec,
         #[snafu(source(from(RegistryIndexError, Box::new)))]
         source: Box<RegistryIndexError>,
@@ -82,7 +80,7 @@ enum InstallResolveErrorReport {
         versions = BulletList(versions),
     ))]
     ConflictingRequirements {
-        pkg_name: PackageQualifiedName,
+        pkg_name: PackageName,
         versions: BTreeSet<PackageVersion>,
     },
 }
@@ -180,11 +178,13 @@ where
 {
     let mut manifests = vec![];
     for index in indexes {
-        let pkgs = index
-            .find_latest_packages_by_spec(pkg_spec)
-            .context(FindLatestPackagesBySpecSnafu { pkg_spec })
+        let manifest = index
+            .find_latest_package_by_spec(pkg_spec)
+            .context(FindLatestPackageBySpecSnafu { pkg_spec })
             .report_error(cx.reporter())?;
-        manifests.extend(pkgs.into_values().map(|manifest| (index.id(), manifest)));
+        if let Some(manifest) = manifest {
+            manifests.push((index.id(), manifest));
+        }
     }
 
     if manifests.len() > 1 {
@@ -215,7 +215,7 @@ fn dedup_and_check_conflicts<S>(
 where
     S: ReportScope,
 {
-    let mut versions_by_name: BTreeMap<PackageQualifiedName, BTreeSet<_>> = BTreeMap::new();
+    let mut versions_by_name: BTreeMap<PackageName, BTreeSet<_>> = BTreeMap::new();
     targets.retain(|target| {
         let metadata = &target.manifest.metadata;
         versions_by_name
@@ -260,7 +260,7 @@ mod tests {
         let cx = TestScope::start(&cx);
         let cx = InstallResolveScope::start(&cx);
 
-        let manifest = testing::make_manifest("other-namespace/example-font@1.0.0");
+        let manifest = testing::make_manifest("example-font@1.0.0");
         let spec = PackageSpec::from_str("example-font").unwrap();
 
         testing::with_db(&cx, |mut db| {
@@ -279,7 +279,7 @@ mod tests {
         let cx = TestScope::start(&cx);
         let cx = InstallResolveScope::start(&cx);
 
-        let manifest = testing::make_manifest("example-namespace/example-font@1.0.0");
+        let manifest = testing::make_manifest("example-font@1.0.0");
         let spec = PackageSpec::from_str("example-font").unwrap();
 
         testing::with_db(&cx, |mut db| {
@@ -299,7 +299,7 @@ mod tests {
         let cx = TestScope::start(&cx);
         let cx = InstallResolveScope::start(&cx);
 
-        let installed_manifest = testing::make_manifest("example-namespace/installed-font@1.0.0");
+        let installed_manifest = testing::make_manifest("installed-font@1.0.0");
         let missing_spec = PackageSpec::from_str("missing-font").unwrap();
 
         testing::with_db(&cx, |mut db| {
@@ -315,21 +315,18 @@ mod tests {
     #[test]
     fn resolve_install_targets_resolves_installed_specs_and_collapses_duplicates() {
         let (registry_dir, registry) = testing::make_registry_spec("test-registry");
-        testing::write_manifest(
-            registry_dir.path(),
-            "example-namespace/installed-font@1.0.0",
-        );
-        testing::write_manifest(registry_dir.path(), "example-namespace/example-font@1.0.0");
+        testing::write_manifest(registry_dir.path(), "installed-font@1.0.0");
+        testing::write_manifest(registry_dir.path(), "example-font@1.0.0");
 
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let installed_manifest = testing::make_manifest("example-namespace/installed-font@1.0.0");
+        let installed_manifest = testing::make_manifest("installed-font@1.0.0");
 
         let pkg_specs = vec![
             PackageSpec::from_str("installed-font").unwrap(),
-            PackageSpec::from_str("example-namespace/example-font@1.0.0").unwrap(),
-            PackageSpec::from_str("example-namespace/example-font").unwrap(),
+            PackageSpec::from_str("example-font@1.0.0").unwrap(),
+            PackageSpec::from_str("example-font").unwrap(),
         ];
 
         testing::with_db(&cx, |mut db| {
@@ -343,7 +340,7 @@ mod tests {
             );
             assert_eq!(
                 targets[1].manifest.metadata.id().to_string(),
-                "example-namespace/example-font@1.0.0"
+                "example-font@1.0.0"
             );
         });
     }
@@ -369,8 +366,8 @@ mod tests {
     #[test]
     fn resolve_spec_from_registry_resolves_name_to_latest_manifest() {
         let (registry_dir, index) = testing::make_registry_index("test-registry");
-        testing::write_manifest(registry_dir.path(), "example-namespace/example-font@0.1.0");
-        testing::write_manifest(registry_dir.path(), "example-namespace/example-font@0.2.0");
+        testing::write_manifest(registry_dir.path(), "example-font@0.1.0");
+        testing::write_manifest(registry_dir.path(), "example-font@0.2.0");
 
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
@@ -380,31 +377,16 @@ mod tests {
         let target = resolve_spec_from_registry(&cx, &[index], &spec).unwrap();
         assert_eq!(
             target.manifest.metadata.id().to_string(),
-            "example-namespace/example-font@0.2.0"
+            "example-font@0.2.0"
         );
-    }
-
-    #[test]
-    fn resolve_spec_from_registry_reports_multiple_matching_packages_for_name() {
-        let (registry_dir, index) = testing::make_registry_index("test-registry");
-        testing::write_manifest(registry_dir.path(), "example-namespace/example-font@0.2.0");
-        testing::write_manifest(registry_dir.path(), "other-namespace/example-font@1.0.0");
-
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = InstallResolveScope::start(&cx);
-
-        let spec: PackageSpec = "example-font".parse().unwrap();
-        let err = resolve_spec_from_registry(&cx, &[index], &spec).unwrap_err();
-        assert!(matches!(err, TestError::Failed));
     }
 
     #[test]
     fn resolve_spec_from_registry_reports_multiple_matching_packages_across_registries() {
         let (registry_dir1, index1) = testing::make_registry_index("registry-a");
         let (registry_dir2, index2) = testing::make_registry_index("registry-b");
-        testing::write_manifest(registry_dir1.path(), "example-namespace/example-font@0.2.0");
-        testing::write_manifest(registry_dir2.path(), "other-namespace/example-font@1.0.0");
+        testing::write_manifest(registry_dir1.path(), "example-font@0.2.0");
+        testing::write_manifest(registry_dir2.path(), "example-font@1.0.0");
 
         let indexes = [index1, index2];
 
@@ -425,10 +407,10 @@ mod tests {
 
         let mut targets = vec![
             ResolvedInstallTarget {
-                manifest: testing::make_manifest("example-namespace/example-font@0.1.0"),
+                manifest: testing::make_manifest("example-font@0.1.0"),
             },
             ResolvedInstallTarget {
-                manifest: testing::make_manifest("example-namespace/example-font@0.2.0"),
+                manifest: testing::make_manifest("example-font@0.2.0"),
             },
         ];
 
@@ -442,7 +424,7 @@ mod tests {
         let cx = TestScope::start(&cx);
         let cx = InstallResolveScope::start(&cx);
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let expected_pkg_id = manifest.metadata.id();
         let mut targets = vec![
             ResolvedInstallTarget {

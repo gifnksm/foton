@@ -139,8 +139,7 @@ mod tests {
 
         testing::with_db(&cx, |db| {
             let pkg_specs = vec![
-                PackageSpec::from_str("example-namespace/example-font@0.1.0").unwrap(),
-                PackageSpec::from_str("example-namespace/example-font").unwrap(),
+                PackageSpec::from_str("example-font@0.1.0").unwrap(),
                 PackageSpec::from_str("example-font").unwrap(),
             ];
             for spec in &pkg_specs {
@@ -151,24 +150,24 @@ mod tests {
             }
 
             let targets = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap();
-            assert_eq!(targets.len(), 3);
+            assert_eq!(targets.len(), 2);
         });
     }
 
     #[test]
-    fn resolve_spec_resolves_installed_entry_from_id_and_qualified_name() {
+    fn resolve_spec_resolves_installed_entry_from_id_and_name() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         let cx = UninstallResolveScope::start(&cx);
 
         testing::with_db(&cx, |mut db| {
-            let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+            let manifest = testing::make_manifest("example-font@0.1.0");
             let expected = manifest.metadata.id();
             testing::mark_as_installed(&mut db, &manifest);
 
             for spec in [
-                PackageSpec::from_str("example-namespace/example-font@0.1.0").unwrap(),
-                PackageSpec::from_str("example-namespace/example-font").unwrap(),
+                PackageSpec::from_str("example-font@0.1.0").unwrap(),
+                PackageSpec::from_str("example-font").unwrap(),
             ] {
                 let target = resolve_spec(&cx, &db, &spec).unwrap();
                 assert!(
@@ -184,8 +183,8 @@ mod tests {
         let cx = TestScope::start(&cx);
         let cx = UninstallResolveScope::start(&cx);
 
-        let manifest1 = testing::make_manifest("example-namespace/example-font@0.1.0");
-        let manifest2 = testing::make_manifest("other-namespace/example-font@1.0.0");
+        let manifest1 = testing::make_manifest("example-font@0.1.0");
+        let manifest2 = testing::make_manifest("example-font@1.0.0");
         let spec = PackageSpec::from_str("example-font").unwrap();
 
         testing::with_db(&cx, |mut db| {
@@ -202,10 +201,10 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let manifest1 = testing::make_manifest("example-namespace/example-font@0.1.0");
-        let manifest2 = testing::make_manifest("other-namespace/example-font@1.0.0");
+        let manifest1 = testing::make_manifest("example-font@0.1.0");
+        let manifest2 = testing::make_manifest("example-font@1.0.0");
         let pkg_specs = vec![
-            PackageSpec::from_str("example-namespace/example-font@0.1.0").unwrap(),
+            PackageSpec::from_str("example-font@0.1.0").unwrap(),
             PackageSpec::from_str("example-font").unwrap(),
         ];
 
@@ -223,11 +222,11 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let expected_pkg_id = manifest.metadata.id();
         let pkg_specs = vec![
-            PackageSpec::from_str("example-namespace/example-font@0.1.0").unwrap(),
-            PackageSpec::from_str("example-namespace/example-font").unwrap(),
+            PackageSpec::from_str("example-font@0.1.0").unwrap(),
+            PackageSpec::from_str("example-font").unwrap(),
         ];
 
         testing::with_db(&cx, |mut db| {
@@ -247,10 +246,10 @@ mod tests {
         let cx = TestScope::start(&cx);
         let cx = UninstallResolveScope::start(&cx);
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
-        let spec = PackageSpec::from_str("example-namespace/example-font").unwrap();
+        let spec = PackageSpec::from_str("example-font").unwrap();
 
         testing::with_db(&cx, |mut db| {
             testing::mark_as_pending_installed(&mut db, &manifest);
@@ -276,8 +275,8 @@ mod tests {
         let cx = TestScope::start(&cx);
         let cx = UninstallResolveScope::start(&cx);
 
-        let manifest1 = testing::make_manifest("example-namespace/example-font@0.1.0");
-        let manifest2 = testing::make_manifest("other-namespace/example-font@1.0.0");
+        let manifest1 = testing::make_manifest("example-font@0.1.0");
+        let manifest2 = testing::make_manifest("example-font@1.0.0");
         let spec = PackageSpec::from_str("example-font").unwrap();
 
         testing::with_db(&cx, |mut db| {

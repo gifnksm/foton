@@ -2,7 +2,7 @@ use color_eyre::eyre;
 
 use crate::{report::ExecResult, scenario::ScenarioParameters};
 
-const PKG_SPEC: &str = "yuru7/hackgen";
+const PKG_SPEC: &str = "hackgen";
 
 pub(super) fn run(
     params: &ScenarioParameters,
@@ -23,11 +23,7 @@ pub(super) fn run(
         cmd.args(["list"]);
     })?
     .ensure_success()?
-    .ensure_stdout(|stdout| {
-        stdout
-            .lines()
-            .any(|line| line.starts_with("yuru7/hackgen@"))
-    })?;
+    .ensure_stdout(|stdout| stdout.lines().any(|line| line.starts_with("hackgen@")))?;
 
     super::exec_foton(params, exec_results, |cmd| {
         cmd.args(["uninstall", PKG_SPEC, "--no-confirm"]);
