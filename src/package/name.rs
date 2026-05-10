@@ -36,7 +36,6 @@ impl PackageName {
         Ok(Self(name.into()))
     }
 
-    #[cfg(test)]
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }

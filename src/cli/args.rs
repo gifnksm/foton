@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::{package::PackageSpec, registry::RegistryId};
+use crate::{package::PackageSpec, registry::RegistryId, util::text::QueryString};
 
 /// Install and uninstall fonts from package registries.
 #[derive(clap::Parser)]
@@ -30,6 +30,8 @@ pub(crate) enum Command {
     List(ListArgs),
     /// Show detailed information about packages.
     Info(InfoArgs),
+    /// Search packages from registries.
+    Search(SearchArgs),
 }
 
 #[derive(Debug, clap::Args)]
@@ -139,6 +141,31 @@ pub(crate) struct InfoArgs {
     /// Package specifiers: name or package ID.
     #[clap(value_name = "PKG_SPEC", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct SearchArgs {
+    /// Package registry IDs to search.
+    ///
+    /// Use a comma-separated list such as `--registry local,foton`.
+    #[clap(long = "registry", value_name = "REGISTRY_ID", value_delimiter = ',')]
+    pub(crate) registries: Option<Vec<RegistryId>>,
+    /// Maximum number of matching packages to show.
+    #[clap(long, default_value_t = 10, value_parser = parse_positive_usize)]
+    pub(crate) limit: usize,
+    /// Search query terms.
+    ///
+    /// All specified query terms must match within the same package metadata field.
+    #[clap(value_name = "QUERY", required = true)]
+    pub(crate) queries: Vec<QueryString>,
+}
+
+fn parse_positive_usize(s: &str) -> Result<usize, String> {
+    let value = s.parse::<usize>().map_err(|e| e.to_string())?;
+    if value == 0 {
+        return Err("value must be at least 1".to_owned());
+    }
+    Ok(value)
 }
 
 #[cfg(test)]

@@ -113,7 +113,7 @@ where
     Ok(registries)
 }
 
-pub(super) fn fetch_registries<S>(
+pub(crate) fn fetch_registries<S>(
     cx: &ReportContext<S>,
     registries: &[RegistrySpec],
 ) -> Result<Vec<RegistryIndex>, S::Error>
