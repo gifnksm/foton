@@ -1,5 +1,12 @@
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use snafu::{IntoError as _, ResultExt as _, Snafu};
 
 use crate::{
     package::{PackageId, PackageName, PackageVersion},
@@ -288,9 +295,48 @@ mod glob_pattern {
     }
 }
 
+#[derive(Debug, Snafu)]
+pub(crate) enum PackageManifestError {
+    #[snafu(display("manifest file not found: {path}", path = path.display()))]
+    NotFound { path: PathBuf },
+    #[snafu(display(
+        "failed to read manifest file: {path}", path = path.display()
+    ))]
+    ReadManifest { path: PathBuf, source: io::Error },
+    #[snafu(display(
+        "failed to deserialize manifest: {path}", path = path.display()
+    ))]
+    DeserializeManifest {
+        path: PathBuf,
+        #[snafu(source(from(toml::de::Error, Box::new)))]
+        source: Box<toml::de::Error>,
+    },
+}
+
+impl PackageManifest {
+    pub(crate) fn read<P>(path: P) -> Result<Arc<Self>, PackageManifestError>
+    where
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref();
+        let manifest_str = fs::read_to_string(path).map_err(|source| {
+            if source.kind() == io::ErrorKind::NotFound {
+                NotFoundSnafu { path }.build()
+            } else {
+                ReadManifestSnafu { path }.into_error(source)
+            }
+        })?;
+        let manifest = toml::from_str(&manifest_str).context(DeserializeManifestSnafu { path })?;
+        Ok(Arc::new(manifest))
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use semver::Version;
+    use tempfile::TempDir;
 
     use super::*;
 
@@ -641,5 +687,49 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                 .collect::<Vec<_>>(),
             ["**/*.ttf", "**/*.otf", "**/*.ttc"]
         );
+    }
+
+    #[test]
+    fn package_manifest_read_reads_manifest_file() {
+        let tempdir = TempDir::new().unwrap();
+        let path = tempdir.path().join("manifest.toml");
+        fs::write(&path, minimal_manifest_toml()).unwrap();
+
+        let manifest = PackageManifest::read(&path).unwrap();
+
+        assert_eq!(manifest.metadata.id().to_string(), "example-font@0.1.0");
+    }
+
+    #[test]
+    fn package_manifest_read_returns_not_found_for_missing_file() {
+        let tempdir = TempDir::new().unwrap();
+        let path = tempdir.path().join("missing.toml");
+
+        let err = PackageManifest::read(&path).unwrap_err();
+
+        assert!(matches!(err, PackageManifestError::NotFound { .. }));
+    }
+
+    #[test]
+    fn package_manifest_read_returns_read_error_for_directory() {
+        let tempdir = TempDir::new().unwrap();
+
+        let err = PackageManifest::read(tempdir.path()).unwrap_err();
+
+        assert!(matches!(err, PackageManifestError::ReadManifest { .. }));
+    }
+
+    #[test]
+    fn package_manifest_read_returns_deserialize_error_for_invalid_toml() {
+        let tempdir = TempDir::new().unwrap();
+        let path = tempdir.path().join("manifest.toml");
+        fs::write(&path, "not valid toml").unwrap();
+
+        let err = PackageManifest::read(&path).unwrap_err();
+
+        assert!(matches!(
+            err,
+            PackageManifestError::DeserializeManifest { .. }
+        ));
     }
 }

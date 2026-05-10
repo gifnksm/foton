@@ -3,38 +3,24 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
     str::FromStr,
+    sync::Arc,
 };
 
 use snafu::{IntoError, OptionExt as _, ResultExt as _, Snafu};
 
 use crate::{
-    package::{PackageId, PackageManifest, PackageName, PackageSpec, PackageVersion},
+    package::{
+        PackageId, PackageManifest, PackageManifestError, PackageName, PackageSpec, PackageVersion,
+    },
     registry::RegistryId,
 };
 
 #[derive(Debug, Snafu)]
 pub(crate) enum RegistryIndexError {
-    #[snafu(display("manifest file not found for package {pkg_id}: {manifest_path}", manifest_path = manifest_path.display()))]
-    MissingManifest {
-        pkg_id: PackageId,
-        manifest_path: PathBuf,
-    },
-    #[snafu(display(
-        "failed to read manifest file for package {pkg_id}: {manifest_path}", manifest_path = manifest_path.display()
-    ))]
+    #[snafu(display("failed to read manifest for package {pkg_id}"))]
     ReadManifest {
         pkg_id: PackageId,
-        manifest_path: PathBuf,
-        source: io::Error,
-    },
-    #[snafu(display(
-        "failed to deserialize manifest for package {pkg_id}: {manifest_path}", manifest_path = manifest_path.display()
-    ))]
-    DeserializeManifest {
-        pkg_id: PackageId,
-        manifest_path: PathBuf,
-        #[snafu(source(from(toml::de::Error, Box::new)))]
-        source: Box<toml::de::Error>,
+        source: PackageManifestError,
     },
     #[snafu(display(
         "package ID mismatch in manifest for package: expected {expected}, got {got}: {manifest_path}", manifest_path = manifest_path.display()
@@ -86,7 +72,7 @@ impl RegistryIndex {
     pub(crate) fn find_latest_package_by_spec(
         &self,
         pkg_spec: &PackageSpec,
-    ) -> Result<Option<PackageManifest>, RegistryIndexError> {
+    ) -> Result<Option<Arc<PackageManifest>>, RegistryIndexError> {
         match pkg_spec {
             PackageSpec::Name(name) => self.find_latest_package_by_name(name),
             PackageSpec::Id(pkg_id) => self.find_package_by_id(pkg_id),
@@ -96,7 +82,7 @@ impl RegistryIndex {
     pub(crate) fn find_package_by_id(
         &self,
         pkg_id: &PackageId,
-    ) -> Result<Option<PackageManifest>, RegistryIndexError> {
+    ) -> Result<Option<Arc<PackageManifest>>, RegistryIndexError> {
         let package_dir = self
             .path
             .join(pkg_id.name())
@@ -105,26 +91,8 @@ impl RegistryIndex {
             return Ok(None);
         }
         let manifest_path = package_dir.join("manifest.toml");
-        let manifest_str = fs::read_to_string(&manifest_path).map_err(|source| {
-            if source.kind() == io::ErrorKind::NotFound {
-                MissingManifestSnafu {
-                    pkg_id,
-                    manifest_path: &manifest_path,
-                }
-                .build()
-            } else {
-                ReadManifestSnafu {
-                    pkg_id,
-                    manifest_path: &manifest_path,
-                }
-                .into_error(source)
-            }
-        })?;
-        let manifest: PackageManifest =
-            toml::from_str(&manifest_str).context(DeserializeManifestSnafu {
-                pkg_id,
-                manifest_path: &manifest_path,
-            })?;
+        let manifest =
+            PackageManifest::read(&manifest_path).context(ReadManifestSnafu { pkg_id })?;
         let manifest_id = manifest.metadata.id();
         snafu::ensure!(
             manifest_id == *pkg_id,
@@ -140,7 +108,7 @@ impl RegistryIndex {
     pub(crate) fn find_latest_package_by_name(
         &self,
         name: &PackageName,
-    ) -> Result<Option<PackageManifest>, RegistryIndexError> {
+    ) -> Result<Option<Arc<PackageManifest>>, RegistryIndexError> {
         let base_path = self.path.join(name);
         let Some(versions) = read_child_directories::<PackageVersion, _, _>(&base_path, |path| {
             InvalidVersionInDirectoryEntrySnafu { path }

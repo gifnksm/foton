@@ -1,14 +1,20 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use snafu::Snafu;
 
 use crate::{
     cli::{
-        args::InstallArgs,
-        context::RootContext,
+        args::{InstallArgs, InstallTargets},
+        context::{ReportContext, RootContext},
         reporter::{NeverReport, OperationError, ReportScope, RootReportScope},
     },
-    engine,
+    db::PackageDatabase,
+    engine::{self, ResolvedInstallTarget},
+    package::{PackageManifest, PackageSpec},
+    registry::RegistrySpec,
 };
 
 #[derive(Debug)]
@@ -48,22 +54,20 @@ pub(crate) async fn install_package(
     cx: &RootContext,
     args: &InstallArgs,
 ) -> Result<(), InstallError> {
-    let InstallArgs {
-        registries,
-        pkg_specs,
-    } = args;
+    let InstallArgs { target } = args;
+    let targets = target.to_targets();
 
     let cx = InstallScope::start_with_report(
         cx,
-        format_args!("Installing {} package(s)...", pkg_specs.len()),
+        format_args!("Installing {} package(s)...", targets.len()),
     );
 
-    let registries = engine::resolve_registries_by_id(&cx, registries.as_deref())?;
+    let targets = CheckedInstallTargets::try_from_args(&cx, targets)?;
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
     let db = engine::load_database(&cx, &mut db_lock_file)?;
 
-    let targets = engine::resolve_install_targets(&cx, &db, &registries, pkg_specs)?;
+    let targets = targets.resolve_target(&cx, &db)?;
     let plan = engine::plan_install(&db, &targets);
     engine::report_plan(&cx, &plan);
 
@@ -80,4 +84,54 @@ pub(crate) async fn install_package(
     engine::execute_plan(&cx, prepared_plan).await?;
 
     Ok(())
+}
+
+enum CheckedInstallTargets {
+    Manifest {
+        manifests: Vec<(PathBuf, Arc<PackageManifest>)>,
+    },
+    PackageSpec {
+        registries: Vec<RegistrySpec>,
+        pkg_specs: Vec<PackageSpec>,
+    },
+}
+
+impl CheckedInstallTargets {
+    fn try_from_args(
+        cx: &ReportContext<InstallScope>,
+        target: InstallTargets,
+    ) -> Result<Self, InstallError> {
+        match target {
+            InstallTargets::Manifest { manifests } => {
+                let manifests = engine::resolve_manifests(cx, &manifests)?;
+                Ok(Self::Manifest { manifests })
+            }
+            InstallTargets::PackageSpec {
+                registries,
+                pkg_specs,
+            } => {
+                let registries = engine::resolve_registries_by_id(cx, registries.as_deref())?;
+                Ok(Self::PackageSpec {
+                    registries,
+                    pkg_specs,
+                })
+            }
+        }
+    }
+
+    fn resolve_target(
+        &self,
+        cx: &ReportContext<InstallScope>,
+        db: &PackageDatabase<'_>,
+    ) -> Result<Vec<ResolvedInstallTarget>, InstallError> {
+        match self {
+            CheckedInstallTargets::Manifest { manifests } => {
+                engine::resolve_install_targets_by_manifest(cx, manifests)
+            }
+            CheckedInstallTargets::PackageSpec {
+                registries,
+                pkg_specs,
+            } => engine::resolve_install_targets_by_spec(cx, db, registries, pkg_specs),
+        }
+    }
 }
