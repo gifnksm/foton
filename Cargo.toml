@@ -59,7 +59,7 @@ sha2 = "0.11.0"
 snafu = "0.9.0"
 spdx = "0.13.4"
 tempfile = "3.27.0"
-tokio = { version = "1.52.2", features = ["fs", "rt-multi-thread", "signal"] }
+tokio = { version = "1.52.3", features = ["fs", "rt-multi-thread", "signal"] }
 tokio-util = "0.7.18"
 toml = "1.1.2"
 url = { version = "2.5.8", features = ["serde"] }
@@ -76,7 +76,7 @@ strip = true
 maintenance = { status = "actively-developed" }
 
 [dev-dependencies]
-tokio = { version = "1.52.2", features = ["macros"] }
+tokio = { version = "1.52.3", features = ["macros"] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
