@@ -81,10 +81,9 @@ foton info <package-specifier>...
 A package specifier can be written in one of the following forms:
 
 * `<name>` - package name
-* `<namespace>/<name>` - qualified package name
-* `<namespace>/<name>@<version>` - package ID with an explicit version
+* `<name>@<version>` - package ID with an explicit version
 
-For example: `hackgen`, `yuru7/hackgen`, or `yuru7/hackgen@2.10.0`.
+For example: `hackgen` or `hackgen@2.10.0`.
 
 Use `--registry` to choose which package registries to search, for example:
 `foton install --registry local,foton hackgen`

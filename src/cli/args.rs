@@ -37,7 +37,7 @@ pub(crate) struct InstallArgs {
     /// Use a comma-separated list such as `--registry local,foton`.
     #[clap(long = "registry", value_name = "REGISTRY_ID", value_delimiter = ',')]
     pub(crate) registries: Option<Vec<RegistryId>>,
-    /// Package specifiers: name, qualified name, or package ID.
+    /// Package specifiers: name or package ID.
     #[clap(value_name = "PKG_SPEC", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
 }
@@ -49,7 +49,7 @@ pub(crate) struct UpdateArgs {
     /// Use a comma-separated list such as `--registry local,foton`.
     #[clap(long = "registry", value_name = "REGISTRY_ID", value_delimiter = ',')]
     pub(crate) registries: Option<Vec<RegistryId>>,
-    /// Package specifiers: name, qualified name, or package ID.
+    /// Package specifiers: name or package ID.
     ///
     /// If not specified, all installed packages will be updated if possible.
     #[clap(value_name = "PKG_SPEC")]
@@ -58,7 +58,7 @@ pub(crate) struct UpdateArgs {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct UninstallArgs {
-    /// Package specifiers: name, qualified name, or package ID.
+    /// Package specifiers: name or package ID.
     #[clap(value_name = "PKG_SPEC", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
 }
@@ -72,7 +72,7 @@ pub(crate) struct ListArgs {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct InfoArgs {
-    /// Package specifiers: name, qualified name, or package ID.
+    /// Package specifiers: name or package ID.
     #[clap(value_name = "PKG_SPEC", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
 }

@@ -14,9 +14,7 @@ use crate::{
         persist::{self, PersistError, PersistedPackageDb, PersistedPackageEntry},
     },
     engine::{ExecutionPlan, ExecutionPlanOp, InstallOp, UninstallOp},
-    package::{
-        PackageId, PackageManifest, PackageName, PackageQualifiedName, PackageSpec, PackageState,
-    },
+    package::{PackageId, PackageManifest, PackageName, PackageSpec, PackageState},
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
 
@@ -147,9 +145,6 @@ impl<'a> PackageDatabase<'a> {
     ) -> Box<dyn Iterator<Item = (PackageState, Arc<PackageManifest>)> + 'a> {
         match pkg_spec {
             PackageSpec::Id(id) => Box::new(self.entry_by_id(id).into_iter()),
-            PackageSpec::QualifiedName(qualified_name) => {
-                Box::new(self.entries_by_qualified_name(qualified_name))
-            }
             PackageSpec::Name(name) => Box::new(self.entries_by_name(name)),
         }
     }
@@ -160,14 +155,14 @@ impl<'a> PackageDatabase<'a> {
     ) -> Option<(PackageState, Arc<PackageManifest>)> {
         self.persist_db
             .packages
-            .get(pkg_id.qualified_name())
+            .get(pkg_id.name())
             .and_then(|version_map| version_map.versions.get(pkg_id.version()))
             .map(|entry| (entry.state, Arc::clone(&entry.manifest)))
     }
 
-    pub(crate) fn entries_by_qualified_name(
+    pub(crate) fn entries_by_name(
         &'a self,
-        pkg_name: &PackageQualifiedName,
+        pkg_name: &PackageName,
     ) -> impl Iterator<Item = (PackageState, Arc<PackageManifest>)> + 'a {
         self.persist_db
             .packages
@@ -181,25 +176,8 @@ impl<'a> PackageDatabase<'a> {
             })
     }
 
-    pub(crate) fn entries_by_name(
-        &'a self,
-        pkg_name: &PackageName,
-    ) -> impl Iterator<Item = (PackageState, Arc<PackageManifest>)> + 'a {
-        let pkg_name = pkg_name.clone();
-        self.persist_db
-            .packages
-            .iter()
-            .filter(move |(qualified_name, _)| qualified_name.name() == pkg_name)
-            .flat_map(|(_, version_map)| {
-                version_map
-                    .versions
-                    .values()
-                    .map(|packages| (packages.state, Arc::clone(&packages.manifest)))
-            })
-    }
-
     fn entry_mut(&mut self, pkg_id: &PackageId) -> Option<&mut PersistedPackageEntry> {
-        let version_map = self.persist_db.packages.get_mut(pkg_id.qualified_name())?;
+        let version_map = self.persist_db.packages.get_mut(pkg_id.name())?;
         version_map.versions.get_mut(pkg_id.version())
     }
 
@@ -215,10 +193,10 @@ impl<'a> PackageDatabase<'a> {
     }
 
     fn remove_entry(&mut self, pkg_id: &PackageId) -> Option<PersistedPackageEntry> {
-        let version_map = self.persist_db.packages.get_mut(pkg_id.qualified_name())?;
+        let version_map = self.persist_db.packages.get_mut(pkg_id.name())?;
         let entry = version_map.versions.remove(pkg_id.version())?;
         if version_map.versions.is_empty() {
-            self.persist_db.packages.remove(pkg_id.qualified_name());
+            self.persist_db.packages.remove(pkg_id.name());
         }
         Some(entry)
     }
@@ -229,7 +207,7 @@ impl<'a> PackageDatabase<'a> {
         let mut installed_other_versions = vec![];
         let mut pending_installs = vec![];
         let mut pending_uninstalls = vec![];
-        for (state, m) in self.entries_by_qualified_name(&pkg_name) {
+        for (state, m) in self.entries_by_name(&pkg_name) {
             if m.metadata.version == pkg_version {
                 match state {
                     PackageState::Installed => return Installability::AlreadyInstalled,
@@ -291,7 +269,7 @@ impl<'a> PackageDatabase<'a> {
         let entry = self
             .persist_db
             .packages
-            .get_mut(pkg_id.qualified_name())
+            .get_mut(pkg_id.name())
             .and_then(|version_map| version_map.versions.get_mut(pkg_id.version()))
             .context(EntryNotFoundSnafu { pkg_id })?;
         snafu::ensure!(
@@ -314,7 +292,7 @@ impl<'a> PackageDatabase<'a> {
         let version_map = self
             .persist_db
             .packages
-            .get_mut(pkg_id.qualified_name())
+            .get_mut(pkg_id.name())
             .context(EntryNotFoundSnafu { pkg_id })?;
         let entry = version_map
             .versions
@@ -330,7 +308,7 @@ impl<'a> PackageDatabase<'a> {
         );
         version_map.versions.remove(pkg_id.version()).unwrap();
         if version_map.versions.is_empty() {
-            self.persist_db.packages.remove(pkg_id.qualified_name());
+            self.persist_db.packages.remove(pkg_id.name());
         }
         self.save()?;
         Ok(())
@@ -452,7 +430,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         assert_status_change(
@@ -474,7 +452,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
@@ -498,11 +476,9 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let installed_manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
-        let pending_install_manifest =
-            testing::make_manifest("example-namespace/example-font@0.2.0");
-        let pending_uninstall_manifest =
-            testing::make_manifest("example-namespace/example-font@0.3.0");
+        let installed_manifest = testing::make_manifest("example-font@0.1.0");
+        let pending_install_manifest = testing::make_manifest("example-font@0.2.0");
+        let pending_uninstall_manifest = testing::make_manifest("example-font@0.3.0");
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_installed(db, &installed_manifest);
@@ -559,7 +535,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
@@ -582,7 +558,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
@@ -607,7 +583,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
@@ -632,7 +608,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
@@ -657,7 +633,7 @@ mod tests {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {

@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     ffi::OsString,
     fs, io,
     path::{Path, PathBuf},
@@ -9,10 +8,7 @@ use std::{
 use snafu::{IntoError, OptionExt as _, ResultExt as _, Snafu};
 
 use crate::{
-    package::{
-        PackageId, PackageManifest, PackageName, PackageNamespace, PackageQualifiedName,
-        PackageSpec, PackageVersion, ParsePackageNamespaceError,
-    },
+    package::{PackageId, PackageManifest, PackageName, PackageSpec, PackageVersion},
     registry::RegistryId,
 };
 
@@ -60,11 +56,6 @@ pub(crate) enum RegistryIndexError {
     NonUtf8DirectoryEntryName { name: OsString, path: PathBuf },
     #[snafu(display("failed to read metadata: {path}", path = path.display()))]
     ReadMetadata { path: PathBuf, source: io::Error },
-    #[snafu(display("invalid namespace in directory entry: {path}", path = path.display()))]
-    InvalidNamespaceInDirectoryEntry {
-        path: PathBuf,
-        source: ParsePackageNamespaceError,
-    },
     #[snafu(display("invalid version in directory entry: {path}", path = path.display()))]
     InvalidVersionInDirectoryEntry {
         path: PathBuf,
@@ -92,28 +83,13 @@ impl RegistryIndex {
         &self.id
     }
 
-    pub(crate) fn find_latest_packages_by_spec(
+    pub(crate) fn find_latest_package_by_spec(
         &self,
         pkg_spec: &PackageSpec,
-    ) -> Result<BTreeMap<PackageQualifiedName, PackageManifest>, RegistryIndexError> {
+    ) -> Result<Option<PackageManifest>, RegistryIndexError> {
         match pkg_spec {
-            PackageSpec::Name(name) => self.find_latest_packages_by_name(name),
-            PackageSpec::QualifiedName(qualified_name) => {
-                let pkg = self
-                    .find_latest_package_by_qualified_name(qualified_name)?
-                    .into_iter()
-                    .map(|manifest| (qualified_name.clone(), manifest))
-                    .collect();
-                Ok(pkg)
-            }
-            PackageSpec::Id(pkg_id) => {
-                let pkg = self
-                    .find_package_by_id(pkg_id)?
-                    .into_iter()
-                    .map(|manifest| (pkg_id.qualified_name().clone(), manifest))
-                    .collect();
-                Ok(pkg)
-            }
+            PackageSpec::Name(name) => self.find_latest_package_by_name(name),
+            PackageSpec::Id(pkg_id) => self.find_package_by_id(pkg_id),
         }
     }
 
@@ -123,7 +99,6 @@ impl RegistryIndex {
     ) -> Result<Option<PackageManifest>, RegistryIndexError> {
         let package_dir = self
             .path
-            .join(pkg_id.namespace())
             .join(pkg_id.name())
             .join(pkg_id.version().to_string());
         if check_dir_presence(&package_dir)?.is_not_found() {
@@ -162,14 +137,11 @@ impl RegistryIndex {
         Ok(Some(manifest))
     }
 
-    pub(crate) fn find_latest_package_by_qualified_name(
+    pub(crate) fn find_latest_package_by_name(
         &self,
-        qualified_name: &PackageQualifiedName,
+        name: &PackageName,
     ) -> Result<Option<PackageManifest>, RegistryIndexError> {
-        let base_path = self
-            .path
-            .join(qualified_name.namespace())
-            .join(qualified_name.name());
+        let base_path = self.path.join(name);
         let Some(versions) = read_child_directories::<PackageVersion, _, _>(&base_path, |path| {
             InvalidVersionInDirectoryEntrySnafu { path }
         })?
@@ -179,36 +151,8 @@ impl RegistryIndex {
         let Some(version) = versions.collect::<Result<Vec<_>, _>>()?.into_iter().max() else {
             return Ok(None);
         };
-        let pkg_id = PackageId::new(qualified_name.clone(), version.clone());
+        let pkg_id = PackageId::new(name.clone(), version.clone());
         self.find_package_by_id(&pkg_id)
-    }
-
-    pub(crate) fn find_latest_packages_by_name(
-        &self,
-        name: &PackageName,
-    ) -> Result<BTreeMap<PackageQualifiedName, PackageManifest>, RegistryIndexError> {
-        let Some(namespaces) =
-            read_child_directories::<PackageNamespace, _, _>(&self.path, |path| {
-                InvalidNamespaceInDirectoryEntrySnafu { path }
-            })?
-        else {
-            return Ok(BTreeMap::new());
-        };
-        namespaces
-            .filter_map(|namespace| {
-                (|| {
-                    let namespace = namespace?;
-                    let versions_dir = self.path.join(&namespace).join(name);
-                    if check_dir_presence(&versions_dir)?.is_not_found() {
-                        return Ok(None);
-                    }
-                    let qualified_name = PackageQualifiedName::new(namespace.clone(), name.clone());
-                    let manifest = self.find_latest_package_by_qualified_name(&qualified_name)?;
-                    Ok(manifest.map(|manifest| (qualified_name, manifest)))
-                })()
-                .transpose()
-            })
-            .collect()
     }
 }
 
@@ -284,58 +228,27 @@ mod tests {
     #[test]
     fn find_package_by_id_reads_manifest() {
         let (registry_dir, registry) = testing::make_registry_index("test-registry");
-        testing::write_manifest(registry_dir.path(), "example-namespace/example-font@0.1.0");
+        testing::write_manifest(registry_dir.path(), "example-font@0.1.0");
 
-        let pkg_id: PackageId = "example-namespace/example-font@0.1.0".parse().unwrap();
+        let pkg_id: PackageId = "example-font@0.1.0".parse().unwrap();
         let manifest = registry.find_package_by_id(&pkg_id).unwrap().unwrap();
 
         assert_eq!(manifest.metadata.id(), pkg_id);
     }
 
     #[test]
-    fn find_latest_package_by_qualified_name_picks_latest_version() {
+    fn find_latest_package_by_name_picks_latest_version() {
         let (registry_dir, registry) = testing::make_registry_index("test-registry");
-        testing::write_manifest(registry_dir.path(), "example-namespace/example-font@0.1.0");
-        testing::write_manifest(registry_dir.path(), "example-namespace/example-font@0.2.0");
+        testing::write_manifest(registry_dir.path(), "example-font@0.1.0");
+        testing::write_manifest(registry_dir.path(), "example-font@0.2.0");
 
-        let qualified_name: PackageQualifiedName =
-            "example-namespace/example-font".parse().unwrap();
+        let name: PackageName = "example-font".parse().unwrap();
         let manifest = registry
-            .find_latest_package_by_qualified_name(&qualified_name)
+            .find_latest_package_by_name(&name)
             .unwrap()
             .unwrap();
 
-        assert_eq!(
-            manifest.metadata.id().to_string(),
-            "example-namespace/example-font@0.2.0"
-        );
-    }
-
-    #[test]
-    fn find_latest_packages_by_name_returns_latest_manifest_per_package() {
-        let (registry_dir, registry) = testing::make_registry_index("test-registry");
-        testing::write_manifest(registry_dir.path(), "example-namespace/example-font@0.1.0");
-        testing::write_manifest(registry_dir.path(), "example-namespace/example-font@0.2.0");
-        testing::write_manifest(registry_dir.path(), "other-namespace/example-font@1.0.0");
-
-        let name: PackageName = "example-font".parse().unwrap();
-        let manifests = registry.find_latest_packages_by_name(&name).unwrap();
-
-        assert_eq!(manifests.len(), 2);
-        assert_eq!(
-            manifests[&"other-namespace/example-font".parse().unwrap()]
-                .metadata
-                .id()
-                .to_string(),
-            "other-namespace/example-font@1.0.0"
-        );
-        assert_eq!(
-            manifests[&"example-namespace/example-font".parse().unwrap()]
-                .metadata
-                .id()
-                .to_string(),
-            "example-namespace/example-font@0.2.0"
-        );
+        assert_eq!(manifest.metadata.id().to_string(), "example-font@0.2.0");
     }
 
     #[test]
@@ -343,11 +256,11 @@ mod tests {
         let (registry_dir, registry) = testing::make_registry_index("test-registry");
         testing::write_manifest_str(
             registry_dir.path(),
-            "example-namespace/example-font@0.1.0",
-            &testing::make_manifest_str("example-namespace/example-font@0.1.1"),
+            "example-font@0.1.0",
+            &testing::make_manifest_str("example-font@0.1.1"),
         );
 
-        let pkg_id: PackageId = "example-namespace/example-font@0.1.0".parse().unwrap();
+        let pkg_id: PackageId = "example-font@0.1.0".parse().unwrap();
         let err = registry.find_package_by_id(&pkg_id).unwrap_err();
         assert!(matches!(err, RegistryIndexError::PackageIdMismatch { .. }));
     }

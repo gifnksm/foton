@@ -10,7 +10,6 @@ use crate::{
 #[derive(Debug, Clone)]
 #[expect(clippy::struct_field_names)]
 pub(crate) struct PackageDirs {
-    namespace_dir: AbsolutePath,
     name_dir: AbsolutePath,
     version_dir: AbsolutePath,
     fonts_dir: AbsolutePath,
@@ -19,20 +18,14 @@ pub(crate) struct PackageDirs {
 impl PackageDirs {
     pub(crate) fn new(app_dirs: &AppDirs, pkg_id: &PackageId) -> Self {
         let package_base_dir = app_dirs.data_local_dir().join("packages");
-        let namespace_dir = package_base_dir.join(pkg_id.namespace());
-        let name_dir = namespace_dir.join(pkg_id.name());
+        let name_dir = package_base_dir.join(pkg_id.name());
         let version_dir = name_dir.join(pkg_id.version().to_string());
         let fonts_dir = version_dir.join("fonts");
         Self {
-            namespace_dir,
             name_dir,
             version_dir,
             fonts_dir,
         }
-    }
-
-    pub(crate) fn namespace_dir(&self) -> &AbsolutePath {
-        &self.namespace_dir
     }
 
     pub(crate) fn name_dir(&self) -> &AbsolutePath {
@@ -59,11 +52,7 @@ pub(crate) fn create_new_package_dirs(pkg_dirs: &PackageDirs) -> Result<(), FsEr
 pub(crate) fn remove_package_dirs(pkg_dirs: &PackageDirs) -> Result<(), FsError> {
     fs_util::remove_dir_all_if_exists(pkg_dirs.fonts_dir())?;
 
-    let ancestors = [
-        pkg_dirs.version_dir(),
-        pkg_dirs.name_dir(),
-        pkg_dirs.namespace_dir(),
-    ];
+    let ancestors = [pkg_dirs.version_dir(), pkg_dirs.name_dir()];
     for ancestor in ancestors {
         let res = fs_util::remove_dir_if_empty(ancestor)?;
         if res.is_not_empty() {
@@ -81,26 +70,17 @@ mod tests {
     use super::*;
     use crate::util::testing;
 
-    static PKG_ID: LazyLock<PackageId> =
-        LazyLock::new(|| "example-namespace/example-font@0.1.0".parse().unwrap());
+    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| "example-font@0.1.0".parse().unwrap());
 
     #[test]
     fn package_dirs_new_uses_app_dirs_data_local_dir() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let pkg_dirs = PackageDirs::new(&app_dirs, &PKG_ID);
         assert_eq!(
-            pkg_dirs.namespace_dir(),
-            &app_dirs
-                .data_local_dir()
-                .join("packages")
-                .join("example-namespace"),
-        );
-        assert_eq!(
             pkg_dirs.name_dir(),
             &app_dirs
                 .data_local_dir()
                 .join("packages")
-                .join("example-namespace")
                 .join("example-font"),
         );
         assert_eq!(
@@ -108,7 +88,6 @@ mod tests {
             &app_dirs
                 .data_local_dir()
                 .join("packages")
-                .join("example-namespace")
                 .join("example-font")
                 .join("0.1.0")
         );
@@ -117,7 +96,6 @@ mod tests {
             &app_dirs
                 .data_local_dir()
                 .join("packages")
-                .join("example-namespace")
                 .join("example-font")
                 .join("0.1.0")
                 .join("fonts")
@@ -134,7 +112,6 @@ mod tests {
         assert!(!pkg_dirs.fonts_dir().exists());
         assert!(!pkg_dirs.version_dir().exists());
         assert!(!pkg_dirs.name_dir().exists());
-        assert!(!pkg_dirs.namespace_dir().exists());
     }
 
     #[test]
@@ -149,7 +126,6 @@ mod tests {
         assert!(!pkg_dirs.fonts_dir().exists());
         assert!(!pkg_dirs.version_dir().exists());
         assert!(pkg_dirs.name_dir().exists());
-        assert!(pkg_dirs.namespace_dir().exists());
         assert!(sibling.exists());
     }
 
@@ -162,6 +138,5 @@ mod tests {
         assert!(!pkg_dirs.fonts_dir().exists());
         assert!(!pkg_dirs.version_dir().exists());
         assert!(!pkg_dirs.name_dir().exists());
-        assert!(!pkg_dirs.namespace_dir().exists());
     }
 }

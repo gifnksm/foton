@@ -144,15 +144,15 @@ mod tests {
         vec![
             (
                 PackageState::Installed,
-                testing::make_manifest("example-namespace/installed-font@1.0.0"),
+                testing::make_manifest("installed-font@1.0.0"),
             ),
             (
                 PackageState::PendingInstall,
-                testing::make_manifest("example-namespace/pending-install-font@1.1.0"),
+                testing::make_manifest("pending-install-font@1.1.0"),
             ),
             (
                 PackageState::PendingUninstall,
-                testing::make_manifest("example-namespace/pending-uninstall-font@1.2.0"),
+                testing::make_manifest("pending-uninstall-font@1.2.0"),
             ),
         ]
     }
@@ -165,7 +165,7 @@ mod tests {
         render_entries(&mut output, entries, &InstalledEntryRender {}).unwrap();
 
         let output = String::from_utf8(output).unwrap();
-        assert_eq!(output, "example-namespace/installed-font@1.0.0\n");
+        assert_eq!(output, "installed-font@1.0.0\n");
     }
 
     #[test]
@@ -179,9 +179,9 @@ mod tests {
         assert_eq!(
             output,
             concat!(
-                "example-namespace/installed-font@1.0.0 (installed)\n",
-                "example-namespace/pending-install-font@1.1.0 (pending-install)\n",
-                "example-namespace/pending-uninstall-font@1.2.0 (pending-uninstall)\n",
+                "installed-font@1.0.0 (installed)\n",
+                "pending-install-font@1.1.0 (pending-install)\n",
+                "pending-uninstall-font@1.2.0 (pending-uninstall)\n",
             )
         );
     }

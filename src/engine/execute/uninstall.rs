@@ -157,8 +157,7 @@ mod tests {
         )
     }
 
-    static PKG_ID: LazyLock<PackageId> =
-        LazyLock::new(|| "example-namespace/example-font@0.1.0".parse().unwrap());
+    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| "example-font@0.1.0".parse().unwrap());
 
     fn get_entry_state(db: &PackageDatabase<'_>, pkg_id: &PackageId) -> Option<PackageState> {
         db.entry_by_id(pkg_id).map(|(state, _manifest)| state)
@@ -202,7 +201,6 @@ mod tests {
             assert!(!pkg_dirs.fonts_dir().exists());
             assert!(!pkg_dirs.version_dir().exists());
             assert!(!pkg_dirs.name_dir().exists());
-            assert!(!pkg_dirs.namespace_dir().exists());
         }
     }
 }

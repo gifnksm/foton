@@ -163,7 +163,7 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         testing::with_db(&cx, |mut db| {
@@ -191,7 +191,7 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         let mut db_lock_file = engine::open_db_lock_file(&cx).unwrap();
@@ -216,7 +216,7 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
+        let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.metadata.id();
 
         let mut db_lock_file = engine::open_db_lock_file(&cx).unwrap();

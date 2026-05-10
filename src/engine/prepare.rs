@@ -122,13 +122,11 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let install_manifest = testing::make_manifest("example-namespace/install-font@0.1.0");
+        let install_manifest = testing::make_manifest("install-font@0.1.0");
         let install_pkg_id = install_manifest.metadata.id();
-        let uninstall_manifest = testing::make_manifest("example-namespace/uninstall-font@0.1.0");
+        let uninstall_manifest = testing::make_manifest("uninstall-font@0.1.0");
         let uninstall_pkg_id = uninstall_manifest.metadata.id();
-        let skipped_pkg_id = "example-namespace/skipped-font@0.1.0"
-            .parse::<PackageId>()
-            .unwrap();
+        let skipped_pkg_id = "skipped-font@0.1.0".parse::<PackageId>().unwrap();
 
         testing::with_db(&cx, |mut db| {
             testing::mark_as_installed(&mut db, &uninstall_manifest);
@@ -188,9 +186,7 @@ mod tests {
     fn prepare_returns_no_executions_for_skip_only_plan() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
-        let skipped_pkg_id = "example-namespace/skipped-font@0.1.0"
-            .parse::<PackageId>()
-            .unwrap();
+        let skipped_pkg_id = "skipped-font@0.1.0".parse::<PackageId>().unwrap();
 
         testing::with_db(&cx, |db| {
             let db = Arc::new(Mutex::new(db));

@@ -139,13 +139,12 @@ where
     I: TryInto<PackageId, Error: Debug>,
 {
     let pkg_id = pkg_id.try_into().unwrap();
-    let namespace = pkg_id.namespace();
     let name = pkg_id.name();
     let version = pkg_id.version();
     format!(
         r#"
 [package]
-name = "{namespace}/{name}"
+name = "{name}"
 version = "{version}"
 
 [[sources]]
@@ -181,7 +180,6 @@ where
     let registry_dir = registry_dir.as_ref();
     let pkg_id = pkg_id.try_into().unwrap();
     let dir = registry_dir
-        .join(pkg_id.namespace())
         .join(pkg_id.name())
         .join(pkg_id.version().to_string());
     fs::create_dir_all(&dir).unwrap();

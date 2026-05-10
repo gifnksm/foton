@@ -47,14 +47,9 @@ mod key {
         format!(r"{USER_FONTS_REGISTRY_BASE_KEY}\{app_id}")
     }
 
-    pub(super) fn package_namespace(app_id: &str, pkg_id: &PackageId) -> String {
-        assert_registry_path_segment("package namespace", pkg_id.namespace());
-        format!(r"{}\{}", app(app_id), pkg_id.namespace())
-    }
-
     pub(super) fn package_name(app_id: &str, pkg_id: &PackageId) -> String {
         assert_registry_path_segment("package name", pkg_id.name());
-        format!(r"{}\{}", package_namespace(app_id, pkg_id), pkg_id.name())
+        format!(r"{}\{}", app(app_id), pkg_id.name())
     }
 
     pub(super) fn package_version(app_id: &str, pkg_id: &PackageId) -> String {
@@ -189,11 +184,7 @@ pub(crate) fn unregister_package_fonts(
         return Err(RemoveRegistryKeySnafu { path }.into_error(source));
     }
 
-    for parent_path in [
-        key::package_name(app_id, pkg_id),
-        key::package_namespace(app_id, pkg_id),
-        key::app(app_id),
-    ] {
+    for parent_path in [key::package_name(app_id, pkg_id), key::app(app_id)] {
         remove_key_if_empty(&parent_path).context(PruneEmptyKeySnafu { path: &parent_path })?;
     }
 
@@ -336,12 +327,9 @@ mod tests {
     }
 
     fn test_package_id(name: &str) -> PackageId {
-        format!(
-            "example-namespace/registry-test-{name}@0.1.0+pid-{pid}",
-            pid = process::id()
-        )
-        .parse()
-        .unwrap()
+        format!("registry-test-{name}@0.1.0+pid-{pid}", pid = process::id())
+            .parse()
+            .unwrap()
     }
 
     fn cleanup_app_root(app_id: &str) {
@@ -492,14 +480,7 @@ mod tests {
             )
             .unwrap();
 
-            assert_eq!(
-                list_key_names(&key::app(app_id)),
-                [pkg_id.namespace().as_str()]
-            );
-            assert_eq!(
-                list_key_names(&key::package_namespace(app_id, &pkg_id)),
-                [pkg_id.name().as_str()]
-            );
+            assert_eq!(list_key_names(&key::app(app_id)), [pkg_id.name().as_str()]);
             assert_eq!(
                 list_key_names(&key::package_name(app_id, &pkg_id)),
                 [pkg_id.version().to_string()]
@@ -522,11 +503,11 @@ mod tests {
         with_registry_test(|app_id| {
             let pid = process::id();
             let pkg_id_v1 = PackageId::from_str(&format!(
-                "example-namespace/registry-test-cleanup-keep-parents@0.1.0+pid-{pid}"
+                "registry-test-cleanup-keep-parents@0.1.0+pid-{pid}"
             ))
             .unwrap();
             let pkg_id_v2 = PackageId::from_str(&format!(
-                "example-namespace/registry-test-cleanup-keep-parents@0.2.0+pid-{pid}-other",
+                "registry-test-cleanup-keep-parents@0.2.0+pid-{pid}-other",
             ))
             .unwrap();
 
@@ -542,10 +523,6 @@ mod tests {
 
             assert_eq!(
                 list_key_names(&key::app(app_id)),
-                [pkg_id_v1.namespace().as_str()]
-            );
-            assert_eq!(
-                list_key_names(&key::package_namespace(app_id, &pkg_id_v1)),
                 [pkg_id_v1.name().as_str()]
             );
             assert_eq!(

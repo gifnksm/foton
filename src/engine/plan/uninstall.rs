@@ -60,8 +60,8 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let other_manifest = testing::make_manifest("example-namespace/example-font@0.1.0");
-        let uninstall_manifest = testing::make_manifest("example-namespace/example-font@0.2.0");
+        let other_manifest = testing::make_manifest("example-font@0.1.0");
+        let uninstall_manifest = testing::make_manifest("example-font@0.2.0");
         let uninstall_pkg_id = uninstall_manifest.metadata.id();
         let uninstall_target = testing::make_resolved_uninstall_target(&uninstall_pkg_id);
 
@@ -85,7 +85,7 @@ mod tests {
     fn plan_uninstall_skips_non_existing() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
-        let uninstall_pkg_id = PackageId::from_str("example-namespace/example-font@0.1.0").unwrap();
+        let uninstall_pkg_id = PackageId::from_str("example-font@0.1.0").unwrap();
         let uninstall_target = testing::make_resolved_uninstall_target(&uninstall_pkg_id);
 
         let plan = testing::with_db(&cx, |db| plan_uninstall(&db, &[uninstall_target]));
