@@ -204,7 +204,7 @@ impl<'a> PackageDatabase<'a> {
     }
 
     fn insert_entry(&mut self, state: PackageState, manifest: Arc<PackageManifest>) {
-        let pkg_name = manifest.metadata.qualified_name.clone();
+        let pkg_name = manifest.metadata.name.clone();
         let pkg_version = manifest.metadata.version.clone();
         self.persist_db
             .packages
@@ -224,7 +224,7 @@ impl<'a> PackageDatabase<'a> {
     }
 
     pub(crate) fn check_installability(&self, manifest: &PackageManifest) -> Installability {
-        let pkg_name = manifest.metadata.qualified_name.clone();
+        let pkg_name = manifest.metadata.name.clone();
         let pkg_version = manifest.metadata.version.clone();
         let mut installed_other_versions = vec![];
         let mut pending_installs = vec![];

@@ -219,7 +219,7 @@ where
     targets.retain(|target| {
         let metadata = &target.manifest.metadata;
         versions_by_name
-            .entry(metadata.qualified_name.clone())
+            .entry(metadata.name.clone())
             .or_default()
             .insert(metadata.version.clone())
     });

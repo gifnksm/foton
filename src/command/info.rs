@@ -99,18 +99,30 @@ where
 {
     let PackageManifest { metadata, sources } = manifest;
     let PackageMetadata {
-        qualified_name,
+        name,
+        display_name,
         version,
         description,
+        aliases,
+        families,
         homepage,
         repository,
         license,
     } = metadata;
-    writeln!(writer, "Name: {qualified_name}")?;
+    writeln!(writer, "Name: {name}")?;
+    if let Some(display_name) = display_name {
+        writeln!(writer, "Display Name: {display_name}")?;
+    }
     writeln!(writer, "Version: {version}")?;
     writeln!(writer, "State: {state}")?;
     if let Some(description) = description {
         writeln!(writer, "Description: {description}")?;
+    }
+    if !aliases.is_empty() {
+        writeln!(writer, "Aliases: {}", aliases.join(", "))?;
+    }
+    if !families.is_empty() {
+        writeln!(writer, "Families: {}", families.join(", "))?;
     }
     if let Some(homepage) = homepage {
         writeln!(writer, "Homepage: {homepage}")?;
@@ -174,8 +186,11 @@ mod tests {
             r#"
 [package]
 name = "example-namespace/example-font"
+display_name = "Example Font"
 version = "0.1.0"
 description = "Example font"
+aliases = ["ExampleFont", "Example Font Pro"]
+families = ["Example Font", "Example Font UI"]
 homepage = "https://example.com/home"
 repository = "https://example.com/repo"
 license = "MIT"
@@ -196,9 +211,12 @@ include = ["fonts/*.ttf"]
             output,
             concat!(
                 "Name: example-namespace/example-font\n",
+                "Display Name: Example Font\n",
                 "Version: 0.1.0\n",
                 "State: pending-install\n",
                 "Description: Example font\n",
+                "Aliases: ExampleFont, Example Font Pro\n",
+                "Families: Example Font, Example Font UI\n",
                 "Homepage: https://example.com/home\n",
                 "Repository: https://example.com/repo\n",
                 "License: MIT\n",
