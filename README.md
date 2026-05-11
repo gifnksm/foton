@@ -91,14 +91,6 @@ For example: `hackgen` or `hackgen@2.10.0`.
 Use `--registry` to choose which package registries to search, for example:
 `foton install --registry local,foton hackgen`
 
-## Minimum supported Rust version (MSRV)
-
-The minimum supported Rust version is **Rust 1.95.0**.
-At least the last 3 versions of stable Rust are supported at any given time.
-
-While the crate is in a pre-release state (`0.x.x`), its MSRV may be bumped in a patch release.
-Once a crate has reached 1.x, any MSRV bump will be accompanied by a new minor version.
-
 ## License
 
 This project is licensed under either of
