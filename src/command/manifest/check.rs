@@ -107,6 +107,21 @@ enum CheckManifestWarnReport {
         source_index: usize,
         pattern: Pattern,
     },
+    #[snafu(display(
+        concat!(
+            "`package.sources[{source_index}].include` contains multiple patterns that match the same installable font path: {path}\n",
+            "{patterns}\n",
+            "consider removing redundant patterns",
+        ),
+        source_index = source_index,
+        path = path.display(),
+        patterns = BulletList(patterns),
+    ))]
+    MultiplePatternsMatchSamePath {
+        source_index: usize,
+        path: PathBuf,
+        patterns: Vec<Pattern>,
+    },
 }
 
 #[derive(Debug, derive_more::Display)]
@@ -211,7 +226,7 @@ fn check_manifest_fields(
     check_display_name_duplication(manifest, &mut reports);
     check_face_duplication(manifest, &mut reports);
     check_face_completeness(manifest, package, &mut reports);
-    check_includes(manifest, package, &mut reports);
+    check_include_extraction(manifest, package, &mut reports);
 
     let mut err = None;
     for report in reports {
@@ -312,14 +327,21 @@ fn find_match_paths(
         .collect()
 }
 
-fn check_includes(
+fn check_include_extraction(
     manifest: &PackageManifest,
     package: &Package,
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
     for (source_index, source) in manifest.sources.iter().enumerate() {
+        let mut source_patterns: BTreeMap<PathBuf, Vec<_>> = BTreeMap::new();
         for pattern in &source.include {
             let extracted = find_match_paths(package, source_index, pattern);
+            for path in &extracted {
+                source_patterns
+                    .entry(path.clone())
+                    .or_default()
+                    .push(pattern.clone());
+            }
             if extracted.is_empty() {
                 reports.push(
                     IncludePatternMatchesNothingSnafu {
@@ -334,6 +356,18 @@ fn check_includes(
                         source_index,
                         pattern: pattern.clone(),
                         extracted,
+                    }
+                    .build(),
+                );
+            }
+        }
+        for (path, patterns) in source_patterns {
+            if patterns.len() > 1 {
+                reports.push(
+                    MultiplePatternsMatchSamePathSnafu {
+                        source_index,
+                        path,
+                        patterns,
                     }
                     .build(),
                 );
@@ -450,7 +484,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     }
 
     #[test]
-    fn check_includes_reports_patterns_matching_no_installable_font_paths() {
+    fn check_include_extraction_reports_patterns_matching_no_installable_font_paths() {
         let manifest = parse_manifest(
             r#"
 [package]
@@ -466,7 +500,7 @@ include = ["fonts/missing.ttf"]
         let package = make_package(&[("Actual Face", "actual.ttf", 0, "fonts/actual.ttf")]);
         let mut reports = vec![];
 
-        check_includes(&manifest, &package, &mut reports);
+        check_include_extraction(&manifest, &package, &mut reports);
 
         assert!(matches!(
             reports.as_slice(),
@@ -476,7 +510,7 @@ include = ["fonts/missing.ttf"]
     }
 
     #[test]
-    fn check_includes_reports_wildcard_patterns_with_matching_installable_font_paths() {
+    fn check_include_extraction_reports_wildcard_patterns_with_matching_installable_font_paths() {
         let manifest = parse_manifest(
             r#"
 [package]
@@ -496,7 +530,7 @@ include = ["fonts/*.ttf"]
         ]);
         let mut reports = vec![];
 
-        check_includes(&manifest, &package, &mut reports);
+        check_include_extraction(&manifest, &package, &mut reports);
 
         assert!(matches!(
             reports.as_slice(),
@@ -506,5 +540,79 @@ include = ["fonts/*.ttf"]
                     && extracted
                         == &BTreeSet::from([PathBuf::from("fonts/a.ttf"), PathBuf::from("fonts/b.ttf")])
         ));
+    }
+
+    #[test]
+    fn check_include_extraction_reports_multiple_patterns_matching_same_path() {
+        let manifest = parse_manifest(
+            r#"
+[package]
+name = "example-font"
+version = "0.1.0"
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+include = ["fonts/a.ttf", "fonts/a.ttf"]
+"#,
+        );
+        let package = make_package(&[("Font A", "a.ttf", 0, "fonts/a.ttf")]);
+        let mut reports = vec![];
+
+        check_include_extraction(&manifest, &package, &mut reports);
+
+        assert!(matches!(
+            reports.as_slice(),
+            [CheckManifestWarnReport::MultiplePatternsMatchSamePath {
+                source_index,
+                path,
+                patterns,
+            }] if *source_index == 0
+                && path == &PathBuf::from("fonts/a.ttf")
+                && patterns.iter().map(Pattern::as_str).collect::<Vec<_>>()
+                    == vec!["fonts/a.ttf", "fonts/a.ttf"]
+        ));
+    }
+
+    #[test]
+    fn check_include_extraction_reports_wildcard_and_duplicate_match_independently() {
+        let manifest = parse_manifest(
+            r#"
+[package]
+name = "example-font"
+version = "0.1.0"
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+include = ["fonts/*.ttf", "fonts/a.ttf"]
+"#,
+        );
+        let package = make_package(&[("Font A", "a.ttf", 0, "fonts/a.ttf")]);
+        let mut reports = vec![];
+
+        check_include_extraction(&manifest, &package, &mut reports);
+
+        assert!(reports.iter().any(|report| matches!(
+            report,
+            CheckManifestWarnReport::WildcardPattern {
+                source_index,
+                pattern,
+                extracted,
+            } if *source_index == 0
+                && pattern.as_str() == "fonts/*.ttf"
+                && extracted == &BTreeSet::from([PathBuf::from("fonts/a.ttf")])
+        )));
+        assert!(reports.iter().any(|report| matches!(
+            report,
+            CheckManifestWarnReport::MultiplePatternsMatchSamePath {
+                source_index,
+                path,
+                patterns,
+            } if *source_index == 0
+                && path == &PathBuf::from("fonts/a.ttf")
+                && patterns.iter().map(Pattern::as_str).collect::<Vec<_>>()
+                    == vec!["fonts/*.ttf", "fonts/a.ttf"]
+        )));
     }
 }
