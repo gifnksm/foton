@@ -92,7 +92,7 @@ where
     I: IntoIterator<Item = (PackageState, Arc<PackageManifest>)>,
 {
     for (state, manifest) in entries {
-        let id = manifest.metadata.id();
+        let id = manifest.id();
         render.render(writer, &id, state)?;
     }
     Ok(())

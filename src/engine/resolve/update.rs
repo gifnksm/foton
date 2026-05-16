@@ -153,7 +153,7 @@ where
 fn all_installed_packages(db: &PackageDatabase<'_>) -> Vec<PackageId> {
     collect_latest_packages(
         db.entries()
-            .filter_map(|(state, manifest)| state.is_installed().then(|| manifest.metadata.id())),
+            .filter_map(|(state, manifest)| state.is_installed().then(|| manifest.id())),
     )
     .into_values()
     .collect()
@@ -169,7 +169,7 @@ where
 {
     let latest_packages = collect_latest_packages(
         db.entries_by_spec(pkg_spec)
-            .filter_map(|(state, manifest)| state.is_installed().then(|| manifest.metadata.id())),
+            .filter_map(|(state, manifest)| state.is_installed().then(|| manifest.id())),
     );
     if latest_packages.len() > 1 {
         return Err(cx.reporter().report_error(
@@ -213,7 +213,7 @@ where
                 name: pkg_id.name(),
             })
             .report_error(cx.reporter())?
-            .filter(|manifest| &manifest.metadata.version > pkg_id.version());
+            .filter(|manifest| &manifest.version > pkg_id.version());
         if let Some(manifest) = manifest {
             manifests.push((index.id().clone(), manifest));
         }
@@ -221,7 +221,7 @@ where
     if manifests.len() > 1 {
         let pkg_ids = manifests
             .into_iter()
-            .map(|(reg_id, manifest)| (reg_id, manifest.metadata.id()))
+            .map(|(reg_id, manifest)| (reg_id, manifest.id()))
             .collect::<Vec<_>>();
         return Err(cx.reporter().report_error(
             MultipleMatchingPackagesInRegistriesSnafu {
@@ -266,7 +266,7 @@ mod tests {
             let targets = resolve_update_targets(&cx, &db, &[registry], &[]).unwrap();
             let target_ids = targets
                 .iter()
-                .map(|target| target.manifest.metadata.id().to_string())
+                .map(|target| target.manifest.id().to_string())
                 .collect::<Vec<_>>();
 
             assert_eq!(target_ids, vec!["update-font@2.0.0"]);
@@ -292,10 +292,7 @@ mod tests {
             let targets = resolve_update_targets(&cx, &db, &[registry], &pkg_specs).unwrap();
 
             assert_eq!(targets.len(), 1);
-            assert_eq!(
-                targets[0].manifest.metadata.id().to_string(),
-                "example-font@2.0.0"
-            );
+            assert_eq!(targets[0].manifest.id().to_string(), "example-font@2.0.0");
         });
     }
 

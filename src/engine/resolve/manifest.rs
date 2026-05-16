@@ -95,10 +95,7 @@ mod tests {
 
         assert_eq!(manifests.len(), 1);
         assert_eq!(manifests[0].0, path);
-        assert_eq!(
-            manifests[0].1.metadata.id().to_string(),
-            "example-font@0.1.0"
-        );
+        assert_eq!(manifests[0].1.id().to_string(), "example-font@0.1.0");
     }
 
     #[test]

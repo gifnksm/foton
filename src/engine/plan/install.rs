@@ -16,7 +16,7 @@ pub(crate) fn plan_install(
     let mut ops = vec![];
     for target in targets {
         let manifest = &target.manifest;
-        let target_id = manifest.metadata.id();
+        let target_id = manifest.id();
         match db.check_installability(manifest) {
             Installability::Installable {
                 installed_other_versions,
@@ -106,19 +106,19 @@ mod tests {
                 }
                 .into(),
                 UninstallOp {
-                    pkg_id: pending_install_manifest.metadata.id(),
+                    pkg_id: pending_install_manifest.id(),
                     reason: UninstallReason::CleanupPendingInstall,
                 }
                 .into(),
                 UninstallOp {
-                    pkg_id: pending_uninstall_manifest.metadata.id(),
+                    pkg_id: pending_uninstall_manifest.id(),
                     reason: UninstallReason::CleanupPendingUninstall,
                 }
                 .into(),
                 UninstallOp {
-                    pkg_id: installed_manifest.metadata.id(),
+                    pkg_id: installed_manifest.id(),
                     reason: UninstallReason::ConflictWithInstall {
-                        pkg_id: install_target_manifest.metadata.id(),
+                        pkg_id: install_target_manifest.id(),
                     },
                 }
                 .into(),
@@ -142,7 +142,7 @@ mod tests {
         testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([SkipOp {
-                pkg_spec: manifest.metadata.id().into(),
+                pkg_spec: manifest.id().into(),
                 reason: SkipReason::AlreadyInstalled,
             }
             .into()]),

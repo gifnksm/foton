@@ -35,12 +35,12 @@ impl RootReportScope for SearchScope {
 
 #[derive(Debug, Snafu)]
 enum SearchErrorReport {
-    #[snafu(display("failed to iterate all latest packages from registry {reg_id}"))]
+    #[snafu(display("failed to iterate latest packages from registry {reg_id}"))]
     AllLatestPackages {
         reg_id: RegistryId,
         source: RegistryIndexError,
     },
-    #[snafu(display("failed to read a latest package from registry {reg_id}"))]
+    #[snafu(display("failed to read a latest package entry from registry {reg_id}"))]
     ReadLatestPackage {
         reg_id: RegistryId,
         #[snafu(source(from(RegistryIndexError, Box::new)))]
@@ -107,7 +107,7 @@ pub(crate) fn search_packages(cx: &RootContext, args: &SearchArgs) -> Result<(),
                     reg_id: index.id().clone(),
                 })
                 .report_error(cx.reporter())?;
-            if let Some(score) = manifest.metadata.match_manifest(&matcher) {
+            if let Some(score) = manifest.match_manifest(&matcher) {
                 let reg_id = index.id().clone();
                 heap.push(Reverse(ScoredManifest {
                     score,
@@ -143,9 +143,9 @@ where
     I: IntoIterator<Item = ScoredManifest>,
 {
     for manifest in manifests {
-        let metadata = &manifest.manifest.metadata;
-        writeln!(writer, "{} [{}]", metadata.id(), manifest.reg_id)?;
-        if let Some(description) = metadata.description.as_deref() {
+        let m = &manifest.manifest;
+        writeln!(writer, "{} [{}]", m.id(), manifest.reg_id)?;
+        if let Some(description) = m.description.as_deref() {
             writeln!(writer, "  {description}")?;
         }
     }
@@ -163,7 +163,7 @@ impl PartialEq for ScoredManifest {
     fn eq(&self, other: &Self) -> bool {
         self.score == other.score
             && self.reg_id == other.reg_id
-            && self.manifest.metadata.id() == other.manifest.metadata.id()
+            && self.manifest.id() == other.manifest.id()
     }
 }
 
@@ -180,12 +180,7 @@ impl Ord for ScoredManifest {
         self.score
             .cmp(&other.score)
             .then_with(|| self.reg_id.cmp(&other.reg_id))
-            .then_with(|| {
-                self.manifest
-                    .metadata
-                    .id()
-                    .cmp(&other.manifest.metadata.id())
-            })
+            .then_with(|| self.manifest.id().cmp(&other.manifest.id()))
     }
 }
 
@@ -226,7 +221,6 @@ mod tests {
         let manifest = Arc::new(
             toml::from_str::<PackageManifest>(
                 r#"
-[package]
 name = "example-font"
 version = "1.0.0"
 description = "Example package description"

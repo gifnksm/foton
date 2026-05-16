@@ -21,19 +21,6 @@ use crate::{
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct PackageManifest {
-    /// Package metadata that identifies the package and describes how it should be presented to
-    /// users.
-    #[serde(rename = "package")]
-    pub(crate) metadata: PackageMetadata,
-    /// Download sources from which the package's font files can be installed.
-    #[serde(deserialize_with = "non_empty_vec::deserialize")]
-    pub(crate) sources: Vec<PackageSource>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct PackageMetadata {
     /// Canonical package name used in package specifiers such as `hackgen`.
     ///
     /// This is the stable identifier for the package and is not intended to match every
@@ -111,6 +98,9 @@ pub(crate) struct PackageMetadata {
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) license: Option<spdx::Expression>,
+    /// Download sources from which the package's font files can be installed.
+    #[serde(deserialize_with = "non_empty_vec::deserialize")]
+    pub(crate) sources: Vec<PackageSource>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,7 +126,7 @@ pub(crate) struct PackageSource {
     pub(crate) exclude: Vec<PathPattern>,
 }
 
-impl PackageMetadata {
+impl PackageManifest {
     pub(crate) fn id(&self) -> PackageId {
         PackageId::new(self.name.clone(), self.version.clone())
     }
@@ -310,9 +300,7 @@ impl PackageManifest {
         let manifest = toml::from_str(&manifest_str).context(DeserializeManifestSnafu { path })?;
         Ok(Arc::new(manifest))
     }
-}
 
-impl PackageMetadata {
     pub(crate) fn match_manifest(&self, matcher: &TextMatcher) -> Option<ManifestMatchResult> {
         let mut max_res = None;
 
@@ -420,7 +408,6 @@ mod tests {
 
     fn minimal_manifest_toml() -> &'static str {
         r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 
@@ -435,15 +422,15 @@ include = ["*/*.ttf"]
     fn package_manifest_deserializes_minimal_manifest() {
         let manifest = parse_manifest(minimal_manifest_toml()).unwrap();
 
-        assert_eq!(manifest.metadata.name, "example-font");
-        assert_eq!(manifest.metadata.display_name, None);
-        assert_eq!(manifest.metadata.version, Version::new(0, 1, 0));
-        assert_eq!(manifest.metadata.description, None);
-        assert!(manifest.metadata.aliases.is_empty());
-        assert!(manifest.metadata.faces.is_empty());
-        assert_eq!(manifest.metadata.homepage, None);
-        assert_eq!(manifest.metadata.repository, None);
-        assert_eq!(manifest.metadata.license, None);
+        assert_eq!(manifest.name, "example-font");
+        assert_eq!(manifest.display_name, None);
+        assert_eq!(manifest.version, Version::new(0, 1, 0));
+        assert_eq!(manifest.description, None);
+        assert!(manifest.aliases.is_empty());
+        assert!(manifest.faces.is_empty());
+        assert_eq!(manifest.homepage, None);
+        assert_eq!(manifest.repository, None);
+        assert_eq!(manifest.license, None);
         assert_eq!(manifest.sources.len(), 1);
         assert_eq!(
             manifest.sources[0].url.as_str(),
@@ -468,7 +455,6 @@ include = ["*/*.ttf"]
     fn package_manifest_deserializes_manifest_with_all_metadata_fields() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font"
 display-name = "Example Font"
 version = "0.1.0"
@@ -487,19 +473,13 @@ include = ["*/*.ttf"]
         )
         .unwrap();
 
-        assert_eq!(manifest.metadata.name, "example-font");
+        assert_eq!(manifest.name, "example-font");
+        assert_eq!(manifest.display_name.as_deref(), Some("Example Font"));
+        assert_eq!(manifest.version, Version::new(0, 1, 0));
+        assert_eq!(manifest.description.as_deref(), Some("example-font"));
+        assert_eq!(manifest.aliases, ["Example Font UI"]);
         assert_eq!(
-            manifest.metadata.display_name.as_deref(),
-            Some("Example Font")
-        );
-        assert_eq!(manifest.metadata.version, Version::new(0, 1, 0));
-        assert_eq!(
-            manifest.metadata.description.as_deref(),
-            Some("example-font")
-        );
-        assert_eq!(manifest.metadata.aliases, ["Example Font UI"]);
-        assert_eq!(
-            manifest.metadata.faces,
+            manifest.faces,
             [
                 "Example Font Regular",
                 "Example Font Bold",
@@ -508,15 +488,15 @@ include = ["*/*.ttf"]
             ]
         );
         assert_eq!(
-            manifest.metadata.homepage.as_ref().map(Url::as_str),
+            manifest.homepage.as_ref().map(Url::as_str),
             Some("https://example.com/homepage")
         );
         assert_eq!(
-            manifest.metadata.repository.as_ref().map(Url::as_str),
+            manifest.repository.as_ref().map(Url::as_str),
             Some("https://example.com/repository")
         );
         assert_eq!(
-            manifest.metadata.license.as_ref().map(ToString::to_string),
+            manifest.license.as_ref().map(ToString::to_string),
             Some("OFL-1.1".to_string())
         );
         assert_eq!(manifest.sources.len(), 1);
@@ -542,7 +522,6 @@ include = ["*/*.ttf"]
     fn package_manifest_rejects_invalid_license_expression() {
         let err = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 license = "not-a-valid-spdx"
@@ -563,7 +542,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             r#"
 sources = []
 
-[package]
 name = "example-font"
 version = "0.1.0"
 "#,
@@ -577,7 +555,6 @@ version = "0.1.0"
     fn package_manifest_rejects_empty_include() {
         let err = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 
@@ -596,7 +573,6 @@ include = []
     fn package_manifest_rejects_empty_description() {
         let err = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 description = ""
@@ -618,7 +594,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     fn package_manifest_rejects_empty_display_name() {
         let err = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 display-name = ""
@@ -640,7 +615,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     fn package_manifest_rejects_description_with_surrounding_whitespace() {
         let err = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 description = " example-font "
@@ -662,7 +636,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     fn package_manifest_rejects_aliases_with_surrounding_whitespace() {
         let err = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 aliases = [" Example Font "]
@@ -684,7 +657,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     fn package_manifest_rejects_empty_faces() {
         let err = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 faces = [""]
@@ -706,7 +678,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     fn package_manifest_rejects_non_http_source_url() {
         let err = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 
@@ -724,7 +695,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     fn package_manifest_rejects_non_http_homepage_url() {
         let err = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 homepage = "file:///tmp/project"
@@ -743,7 +713,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     fn package_metadata_match_manifest_prefers_stronger_match_from_another_field() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font-nerd"
 display-name = "Example Font"
 version = "0.1.0"
@@ -756,7 +725,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         .unwrap();
         let text_matcher = make_matcher(&["example font"]);
 
-        let result = manifest.metadata.match_manifest(&text_matcher).unwrap();
+        let result = manifest.match_manifest(&text_matcher).unwrap();
 
         assert_eq!(
             result,
@@ -772,7 +741,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     fn package_metadata_match_manifest_requires_all_queries_in_the_same_field() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font"
 display-name = "Example Font"
 description = "Nerd variant"
@@ -786,14 +754,13 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         .unwrap();
         let text_matcher = make_matcher(&["example", "nerd"]);
 
-        assert_eq!(manifest.metadata.match_manifest(&text_matcher), None);
+        assert_eq!(manifest.match_manifest(&text_matcher), None);
     }
 
     #[test]
     fn package_metadata_match_manifest_uses_weakest_match_kind_for_multiple_queries() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "typeface"
 display-name = "Example Font Nerd"
 version = "0.1.0"
@@ -806,7 +773,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         .unwrap();
         let text_matcher = make_matcher(&["example", "font"]);
 
-        let result = manifest.metadata.match_manifest(&text_matcher).unwrap();
+        let result = manifest.match_manifest(&text_matcher).unwrap();
 
         assert_eq!(
             result,
@@ -822,7 +789,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     fn package_manifest_uses_default_include_when_omitted() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 
@@ -848,7 +814,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     fn package_manifest_deserializes_exclude_patterns() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 
@@ -879,7 +844,7 @@ exclude = ["fonts/exclude.ttf", "fonts/legacy/*.ttf"]
 
         let manifest = PackageManifest::read(&path).unwrap();
 
-        assert_eq!(manifest.metadata.id().to_string(), "example-font@0.1.0");
+        assert_eq!(manifest.id().to_string(), "example-font@0.1.0");
     }
 
     #[test]

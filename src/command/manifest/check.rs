@@ -39,11 +39,11 @@ impl RootReportScope for CheckManifestScope {
 
 #[derive(Debug, Snafu)]
 enum CheckManifestWarnReport {
-    #[snafu(display("`package.display-name` is missing in manifest"))]
+    #[snafu(display("`display-name` field is missing in manifest"))]
     MissingDisplayName,
-    #[snafu(display("`package.license` is missing in manifest"))]
+    #[snafu(display("`license` field is missing in manifest"))]
     MissingLicense,
-    #[snafu(display("`package.description` is missing in manifest"))]
+    #[snafu(display("`description` field is missing in manifest"))]
     MissingDescription,
     #[snafu(display(
         concat!(
@@ -71,12 +71,12 @@ enum CheckManifestWarnReport {
         normalized: String,
         values: Vec<ValueWithSource>,
     },
-    #[snafu(display("`package.faces` does not contain the included font face: {face}"))]
+    #[snafu(display("`faces` does not list the included font face: {face}"))]
     UnlistedFace { face: String },
     #[snafu(display(
         concat!(
-            "`package.sources[{source_index}].include` contains wildcard pattern(s): {pattern}\n",
-            "this pattern extracts to the following paths:\n",
+            "`sources[{source_index}].include` contains wildcard pattern: {pattern}\n",
+            "this pattern matches the following paths:\n",
             "{extracted}\n",
             "consider replacing them with fixed strings to avoid unexpected matches\n",
         ),
@@ -91,7 +91,7 @@ enum CheckManifestWarnReport {
     },
     #[snafu(display(
         concat!(
-            "`{pattern}` in `package.sources[{source_index}].include` does not match any paths\n",
+            "`{pattern}` in `sources[{source_index}].include` does not match any paths\n",
             "consider removing it or replacing it with a pattern that matches the intended paths\n",
         ),
         source_index = source_index,
@@ -103,7 +103,7 @@ enum CheckManifestWarnReport {
     },
     #[snafu(display(
         concat!(
-            "`package.sources[{source_index}].include` contains multiple patterns that match the same path: {path}\n",
+            "`sources[{source_index}].include` contains multiple patterns that match the same path: {path}\n",
             "{patterns}\n",
             "consider removing redundant patterns",
         ),
@@ -118,7 +118,7 @@ enum CheckManifestWarnReport {
     },
     #[snafu(display(
         concat!(
-            "`{pattern}` in `package.sources[{source_index}].exclude` does not match any paths\n",
+            "`{pattern}` in `sources[{source_index}].exclude` does not match any paths\n",
             "consider removing it or replacing it with a pattern that matches the intended paths\n",
         ),
         source_index = source_index,
@@ -130,7 +130,7 @@ enum CheckManifestWarnReport {
     },
     #[snafu(display(
         concat!(
-            "`package.sources[{source_index}]` contains font-like paths that match neither `include` nor `exclude`\n",
+            "`sources[{source_index}]` contains font-like paths that match neither `include` nor `exclude`\n",
             "{skipped}\n",
             "consider adding them to `include` or `exclude` explicitly, depending on the intended behavior",
         ),
@@ -202,7 +202,7 @@ pub(crate) async fn check_manifest(
     let manifest = PackageManifest::read(manifest_path)
         .map_err(CheckManifestErrorReport::from)
         .report_error(cx.reporter())?;
-    let pkg_id = manifest.metadata.id();
+    let pkg_id = manifest.id();
 
     let tempdir = tempfile::tempdir()
         .context(CreateTempDirSnafu)
@@ -233,13 +233,13 @@ fn check_manifest_fields(
     extract_details: &[ExtractDetail],
 ) -> Result<(), CheckManifestError> {
     let mut reports = vec![];
-    if manifest.metadata.display_name.is_none() {
+    if manifest.display_name.is_none() {
         reports.push(MissingDisplayNameSnafu.build());
     }
-    if manifest.metadata.license.is_none() {
+    if manifest.license.is_none() {
         reports.push(MissingLicenseSnafu.build());
     }
-    if manifest.metadata.description.is_none() {
+    if manifest.description.is_none() {
         reports.push(MissingDescriptionSnafu.build());
     }
 
@@ -267,24 +267,24 @@ fn check_display_name_duplication(
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
     let mut display_names: BTreeMap<String, Vec<_>> = BTreeMap::new();
-    if let Some(display_name) = &manifest.metadata.display_name {
+    if let Some(display_name) = &manifest.display_name {
         let normalized = NormalizedString::new(display_name).into_compact();
         display_names
             .entry(normalized)
             .or_default()
             .push(ValueWithSource {
                 value: display_name.clone(),
-                source_field: "package.display-name",
+                source_field: "display-name",
             });
     }
-    for alias in &manifest.metadata.aliases {
+    for alias in &manifest.aliases {
         let normalized = NormalizedString::new(alias).into_compact();
         display_names
             .entry(normalized)
             .or_default()
             .push(ValueWithSource {
                 value: alias.clone(),
-                source_field: "package.aliases",
+                source_field: "aliases",
             });
     }
     for (normalized, values) in display_names {
@@ -296,11 +296,11 @@ fn check_display_name_duplication(
 
 fn check_face_duplication(manifest: &PackageManifest, reports: &mut Vec<CheckManifestWarnReport>) {
     let mut faces: BTreeMap<String, Vec<_>> = BTreeMap::new();
-    for face in &manifest.metadata.faces {
+    for face in &manifest.faces {
         let normalized = NormalizedString::new(face).into_compact();
         faces.entry(normalized).or_default().push(ValueWithSource {
             value: face.clone(),
-            source_field: "package.faces",
+            source_field: "faces",
         });
     }
     for (normalized, values) in faces {
@@ -316,12 +316,7 @@ fn check_face_completeness(
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
     for entry in package.entries() {
-        if !manifest
-            .metadata
-            .faces
-            .iter()
-            .any(|face| entry.title() == face)
-        {
+        if !manifest.faces.iter().any(|face| entry.title() == face) {
             reports.push(
                 UnlistedFaceSnafu {
                     face: entry.title(),
@@ -507,7 +502,6 @@ mod tests {
     fn check_display_name_duplication_reports_compact_duplicates() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font"
 display-name = "UDPGothic"
 version = "0.1.0"
@@ -533,7 +527,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     fn check_face_duplication_reports_compact_duplicates() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 faces = ["HackGen Regular", "HackGenRegular"]
@@ -558,7 +551,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     fn check_face_completeness_reports_unlisted_faces() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 faces = ["Listed Face"]
@@ -583,7 +575,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     fn check_include_extraction_reports_patterns_matching_no_font_paths() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 
@@ -609,7 +600,6 @@ include = ["fonts/missing.ttf"]
     fn check_include_extraction_reports_wildcard_patterns_with_matching_font_paths() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 
@@ -646,7 +636,6 @@ include = ["fonts/c.ttf"]
     fn check_include_extraction_reports_multiple_patterns_matching_same_path() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 
@@ -678,7 +667,6 @@ include = ["fonts/a.ttf", "fonts/a.ttf"]
     fn check_include_extraction_reports_wildcard_and_duplicate_match_independently() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 
@@ -720,7 +708,6 @@ include = ["fonts/*.ttf", "fonts/a.ttf"]
     fn check_exclude_extraction_reports_patterns_matching_no_paths() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 
@@ -746,7 +733,6 @@ exclude = ["fonts/missing.ttf"]
     fn check_exclude_extraction_does_not_report_when_pattern_matches_paths() {
         let manifest = parse_manifest(
             r#"
-[package]
 name = "example-font"
 version = "0.1.0"
 

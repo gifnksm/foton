@@ -12,7 +12,7 @@ use crate::{
         },
     },
     engine,
-    package::{PackageManifest, PackageMetadata, PackageSource, PackageSpec, PackageState},
+    package::{PackageManifest, PackageSource, PackageSpec, PackageState},
 };
 
 #[derive(Debug)]
@@ -98,8 +98,7 @@ fn render_package_info<W>(
 where
     W: io::Write,
 {
-    let PackageManifest { metadata, sources } = manifest;
-    let PackageMetadata {
+    let PackageManifest {
         name,
         display_name,
         version,
@@ -109,7 +108,8 @@ where
         homepage,
         repository,
         license,
-    } = metadata;
+        sources,
+    } = manifest;
     writeln!(writer, "Name: {name}")?;
     if let Some(display_name) = display_name {
         writeln!(writer, "Display Name: {display_name}")?;
@@ -202,7 +202,6 @@ mod tests {
     fn render_package_info_prints_optional_metadata_fields_when_present() {
         let manifest: PackageManifest = toml::from_str(
             r#"
-[package]
 name = "example-font"
 display-name = "Example Font"
 version = "0.1.0"

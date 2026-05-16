@@ -90,7 +90,7 @@ where
     }
 
     pub(in crate::engine) async fn execute(self, cx: &ReportContext<S>) -> Result<(), S::Error> {
-        let pkg_id = self.manifest.metadata.id();
+        let pkg_id = self.manifest.id();
         let cx =
             InstallExecutionScope::start_with_report(cx, format_args!("Installing {pkg_id}..."));
 
