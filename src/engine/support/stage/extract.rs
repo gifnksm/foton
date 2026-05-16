@@ -17,9 +17,8 @@ use crate::{
             NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
         },
     },
-    package::FontSource,
     util::{
-        glob::GLOB_MATCH_OPTIONS,
+        glob::PathPattern,
         path::{AbsolutePath, FileName},
     },
 };
@@ -90,13 +89,24 @@ impl From<ExtractErrorReport> for ReportValue<'static> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ExtractEntry {
+    pub(crate) path_in_archive: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ExtractDetail {
+    pub(crate) included: Vec<ExtractEntry>,
+    pub(crate) excluded: Vec<ExtractEntry>,
+}
+
 pub(super) fn extract_archive<S>(
     cx: &ReportContext<S>,
     file: File,
-    include: &[glob::Pattern],
+    include: &[PathPattern],
+    exclude: &[PathPattern],
     fonts_dir: &AbsolutePath,
-    source_index: usize,
-) -> Result<Vec<(FileName, FontSource)>, S::Error>
+) -> Result<(Vec<FileName>, ExtractDetail), S::Error>
 where
     S: ReportScope,
 {
@@ -104,18 +114,19 @@ where
         cx,
         format_args!("Extracting archive to {}...", fonts_dir.display()),
     );
-    extract_archive_impl(file, include, fonts_dir, source_index, cx.config())
-        .report_error(cx.reporter())
+    extract_archive_impl(file, include, exclude, fonts_dir, cx.config()).report_error(cx.reporter())
 }
 
 fn extract_archive_impl(
     file: File,
-    include: &[glob::Pattern],
+    include: &[PathPattern],
+    exclude: &[PathPattern],
     fonts_dir: &AbsolutePath,
-    source_index: usize,
     config: &FotonConfig,
-) -> Result<Vec<(FileName, FontSource)>, ExtractErrorReport> {
-    let mut files = vec![];
+) -> Result<(Vec<FileName>, ExtractDetail), ExtractErrorReport> {
+    let mut file_names = vec![];
+    let mut included = vec![];
+    let mut excluded = vec![];
     let mut archive = ZipArchive::new(file).context(ReadArchiveSnafu)?;
 
     for i in 0..archive.len() {
@@ -127,10 +138,15 @@ fn extract_archive_impl(
         let Some(archive_path) = archive_file.enclosed_name() else {
             continue;
         };
-        let matches = include
-            .iter()
-            .any(|pattern| pattern.matches_path_with(&archive_path, GLOB_MATCH_OPTIONS));
-        if !matches {
+        let is_excluded = exclude.iter().any(|pattern| pattern.matches(&archive_path));
+        if is_excluded {
+            excluded.push(ExtractEntry {
+                path_in_archive: archive_path,
+            });
+            continue;
+        }
+        let is_included = include.iter().any(|pattern| pattern.matches(&archive_path));
+        if !is_included {
             continue;
         }
         snafu::ensure!(
@@ -153,7 +169,7 @@ fn extract_archive_impl(
         let fs_path = fonts_dir.join(&file_name);
 
         snafu::ensure!(
-            files.len() < config.install.max_extracted_files,
+            included.len() < config.install.max_extracted_files,
             TooManyExtractableFilesSnafu {
                 max_files: config.install.max_extracted_files
             }
@@ -175,10 +191,12 @@ fn extract_archive_impl(
         file.flush()
             .context(FlushExtractedFileSnafu { path: &fs_path })?;
 
-        let source = FontSource::new(source_index, archive_path);
-        files.push((file_name, source));
+        file_names.push(file_name);
+        included.push(ExtractEntry {
+            path_in_archive: archive_path,
+        });
     }
-    Ok(files)
+    Ok((file_names, ExtractDetail { included, excluded }))
 }
 
 #[cfg(test)]
@@ -205,38 +223,39 @@ mod tests {
         file
     }
 
-    fn default_include() -> Vec<glob::Pattern> {
+    fn default_include() -> Vec<PathPattern> {
         vec![
-            glob::Pattern::new("**/*.ttf").unwrap(),
-            glob::Pattern::new("**/*.ttc").unwrap(),
-            glob::Pattern::new("**/*.otf").unwrap(),
+            PathPattern::new("**/*.ttf").unwrap(),
+            PathPattern::new("**/*.ttc").unwrap(),
+            PathPattern::new("**/*.otf").unwrap(),
         ]
+    }
+
+    fn default_exclude() -> Vec<PathPattern> {
+        vec![]
     }
 
     fn extract_to_tempdir(
         archive: File,
-        include: &[glob::Pattern],
+        include: &[PathPattern],
+        exclude: &[PathPattern],
         config: &FotonConfig,
     ) -> Result<(TempDir, Vec<FileName>), Box<ExtractErrorReport>> {
         let tempdir = tempfile::tempdir().unwrap();
         let fonts_dir = AbsolutePath::new(tempdir.path()).unwrap();
-        let files = extract_archive_impl(archive, include, &fonts_dir, 0, config)?
-            .into_iter()
-            .map(|(file_name, _source)| file_name)
-            .collect();
-        Ok((tempdir, files))
+        let (file_names, _extract_detail) =
+            extract_archive_impl(archive, include, exclude, &fonts_dir, config)?;
+        Ok((tempdir, file_names))
     }
 
     #[test]
     fn extract_archive_does_not_match_plain_globs_across_directories() {
         let archive = build_zip(&[("a/font.ttf", b"font")]);
-        let include = [glob::Pattern::new("*.ttf").unwrap()];
+        let include = [PathPattern::new("*.ttf").unwrap()];
+        let exclude = [];
 
-        let (_tempdir, files) = {
-            let include: &[glob::Pattern] = &include;
-            extract_to_tempdir(archive, include, &FotonConfig::default())
-        }
-        .unwrap();
+        let (_tempdir, files) =
+            extract_to_tempdir(archive, &include, &exclude, &FotonConfig::default()).unwrap();
 
         assert!(files.is_empty());
     }
@@ -244,13 +263,11 @@ mod tests {
     #[test]
     fn extract_archive_matches_single_directory_globs_against_nested_paths() {
         let archive = build_zip(&[("a/font.ttf", b"font")]);
-        let include = [glob::Pattern::new("*/*.ttf").unwrap()];
+        let include = [PathPattern::new("*/*.ttf").unwrap()];
+        let exclude = [];
 
-        let (_tempdir, files) = {
-            let include: &[glob::Pattern] = &include;
-            extract_to_tempdir(archive, include, &FotonConfig::default())
-        }
-        .unwrap();
+        let (_tempdir, files) =
+            extract_to_tempdir(archive, &include, &exclude, &FotonConfig::default()).unwrap();
 
         assert_eq!(files, vec!["font.ttf"]);
     }
@@ -258,23 +275,50 @@ mod tests {
     #[test]
     fn extract_archive_matches_recursive_globs_against_nested_paths() {
         let archive = build_zip(&[("a/b/font.ttf", b"font")]);
-        let include = [glob::Pattern::new("**/*.ttf").unwrap()];
+        let include = [PathPattern::new("**/*.ttf").unwrap()];
+        let exclude = [];
 
-        let (_tempdir, files) = {
-            let include: &[glob::Pattern] = &include;
-            extract_to_tempdir(archive, include, &FotonConfig::default())
-        }
-        .unwrap();
+        let (_tempdir, files) =
+            extract_to_tempdir(archive, &include, &exclude, &FotonConfig::default()).unwrap();
 
         assert_eq!(files, vec!["font.ttf"]);
+    }
+
+    #[test]
+    fn extract_archive_skips_files_matching_exclude_patterns() {
+        let archive = build_zip(&[("fonts/keep.ttf", b"keep"), ("fonts/skip.ttf", b"skip")]);
+        let include = [PathPattern::new("fonts/*.ttf").unwrap()];
+        let exclude = [PathPattern::new("fonts/skip.ttf").unwrap()];
+
+        let (_tempdir, files) =
+            extract_to_tempdir(archive, &include, &exclude, &FotonConfig::default()).unwrap();
+
+        assert_eq!(files, vec!["keep.ttf"]);
+    }
+
+    #[test]
+    fn extract_archive_exclude_takes_precedence_over_include() {
+        let archive = build_zip(&[("fonts/font.ttf", b"font")]);
+        let include = [PathPattern::new("fonts/font.ttf").unwrap()];
+        let exclude = [PathPattern::new("fonts/font.ttf").unwrap()];
+
+        let (_tempdir, files) =
+            extract_to_tempdir(archive, &include, &exclude, &FotonConfig::default()).unwrap();
+
+        assert!(files.is_empty());
     }
 
     #[test]
     fn extract_archive_rejects_duplicate_font_file_names() {
         let archive = build_zip(&[("a/font.ttf", b"font-a"), ("b/font.ttf", b"font-b")]);
 
-        let err =
-            extract_to_tempdir(archive, &default_include(), &FotonConfig::default()).unwrap_err();
+        let err = extract_to_tempdir(
+            archive,
+            &default_include(),
+            &default_exclude(),
+            &FotonConfig::default(),
+        )
+        .unwrap_err();
         assert!(matches!(
             *err,
             ExtractErrorReport::ExtractedFileAlreadyExists { .. }
@@ -291,8 +335,13 @@ mod tests {
             ("dir/", b""),
         ]);
 
-        let (_tempdir, files) =
-            extract_to_tempdir(archive, &default_include(), &FotonConfig::default()).unwrap();
+        let (_tempdir, files) = extract_to_tempdir(
+            archive,
+            &default_include(),
+            &default_exclude(),
+            &FotonConfig::default(),
+        )
+        .unwrap();
 
         assert_eq!(files, vec!["font.ttf", "font.ttc", "font.otf"]);
     }
@@ -308,7 +357,8 @@ mod tests {
             ..FotonConfig::default()
         };
 
-        let err = extract_to_tempdir(archive, &default_include(), &config).unwrap_err();
+        let err = extract_to_tempdir(archive, &default_include(), &default_exclude(), &config)
+            .unwrap_err();
         assert!(matches!(
             *err,
             ExtractErrorReport::TooManyExtractableFiles { .. }
@@ -326,7 +376,8 @@ mod tests {
             ..FotonConfig::default()
         };
 
-        let err = extract_to_tempdir(archive, &default_include(), &config).unwrap_err();
+        let err = extract_to_tempdir(archive, &default_include(), &default_exclude(), &config)
+            .unwrap_err();
         assert!(matches!(
             *err,
             ExtractErrorReport::ExtractedFileExceedsMaxSize { .. }

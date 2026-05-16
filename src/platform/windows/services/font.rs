@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use snafu::{OptionExt as _, ResultExt as _, Snafu};
 
 use crate::{
-    package::{FontEntry, FontSource},
+    package::FontEntry,
     platform::windows::primitives::font_inspector::{FontInspector, FontInspectorError},
     util::path::FileName,
 };
@@ -52,7 +52,6 @@ impl FontValidator {
         &self,
         fonts_dir: P,
         file_name: &FileName,
-        source: &FontSource,
     ) -> Result<Option<FontEntry>, FontValidatorError>
     where
         P: AsRef<Path>,
@@ -78,6 +77,6 @@ impl FontValidator {
             .to_str()
             .context(ConvertFontTitleToStringSnafu { path: &path })?;
 
-        Ok(Some(FontEntry::new(title, file_name, source.clone())))
+        Ok(Some(FontEntry::new(title, file_name)))
     }
 }

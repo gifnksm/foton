@@ -11,6 +11,7 @@ use snafu::{IntoError as _, ResultExt as _, Snafu};
 use crate::{
     package::{PackageId, PackageName, PackageVersion},
     util::{
+        glob::PathPattern,
         hash::GenericDigest,
         text::{MatchForm, MatchKind, TextMatcher},
     },
@@ -123,9 +124,16 @@ pub(crate) struct PackageSource {
     pub(crate) hash: GenericDigest,
     /// Glob patterns selecting which font files to install from the downloaded source.
     ///
-    /// When omitted, common font file extensions are included by default.
-    #[serde(default = "default_include", with = "glob_pattern")]
-    pub(crate) include: Vec<glob::Pattern>,
+    /// When omitted, common font file extensions are included by default. If a path matches both
+    /// `include` and `exclude`, `exclude` takes precedence.
+    #[serde(
+        default = "default_include",
+        deserialize_with = "non_empty_vec::deserialize"
+    )]
+    pub(crate) include: Vec<PathPattern>,
+    /// Glob patterns excluding files from installation even if they are matched by `include`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) exclude: Vec<PathPattern>,
 }
 
 impl PackageMetadata {
@@ -134,11 +142,11 @@ impl PackageMetadata {
     }
 }
 
-fn default_include() -> Vec<glob::Pattern> {
+fn default_include() -> Vec<PathPattern> {
     vec![
-        glob::Pattern::new("**/*.ttf").unwrap(),
-        glob::Pattern::new("**/*.otf").unwrap(),
-        glob::Pattern::new("**/*.ttc").unwrap(),
+        PathPattern::new("**/*.ttf").unwrap(),
+        PathPattern::new("**/*.otf").unwrap(),
+        PathPattern::new("**/*.ttc").unwrap(),
     ]
 }
 
@@ -265,36 +273,6 @@ mod http_url {
             ));
         }
         Ok(url)
-    }
-}
-
-mod glob_pattern {
-    use serde::{Deserialize as _, Serialize as _};
-
-    pub(super) fn serialize<S>(patterns: &[glob::Pattern], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let pattern_strs: Vec<String> = patterns.iter().map(|p| p.as_str().to_string()).collect();
-        pattern_strs.serialize(serializer)
-    }
-
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<glob::Pattern>, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let pattern_strs: Vec<String> = Vec::deserialize(deserializer)?;
-        if pattern_strs.is_empty() {
-            return Err(serde::de::Error::invalid_value(
-                serde::de::Unexpected::Seq,
-                &"a non-empty array",
-            ));
-        }
-        let patterns = pattern_strs
-            .into_iter()
-            .map(|s| glob::Pattern::new(&s).map_err(serde::de::Error::custom))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(patterns)
     }
 }
 
@@ -479,10 +457,11 @@ include = ["*/*.ttf"]
             manifest.sources[0]
                 .include
                 .iter()
-                .map(glob::Pattern::as_str)
+                .map(PathPattern::as_str)
                 .collect::<Vec<_>>(),
             ["*/*.ttf"]
         );
+        assert!(manifest.sources[0].exclude.is_empty());
     }
 
     #[test]
@@ -553,7 +532,7 @@ include = ["*/*.ttf"]
             manifest.sources[0]
                 .include
                 .iter()
-                .map(glob::Pattern::as_str)
+                .map(PathPattern::as_str)
                 .collect::<Vec<_>>(),
             ["*/*.ttf"]
         );
@@ -858,9 +837,37 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             manifest.sources[0]
                 .include
                 .iter()
-                .map(glob::Pattern::as_str)
+                .map(PathPattern::as_str)
                 .collect::<Vec<_>>(),
             ["**/*.ttf", "**/*.otf", "**/*.ttc"]
+        );
+        assert!(manifest.sources[0].exclude.is_empty());
+    }
+
+    #[test]
+    fn package_manifest_deserializes_exclude_patterns() {
+        let manifest = parse_manifest(
+            r#"
+[package]
+name = "example-font"
+version = "0.1.0"
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+include = ["fonts/*.ttf"]
+exclude = ["fonts/exclude.ttf", "fonts/legacy/*.ttf"]
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            manifest.sources[0]
+                .exclude
+                .iter()
+                .map(PathPattern::as_str)
+                .collect::<Vec<_>>(),
+            ["fonts/exclude.ttf", "fonts/legacy/*.ttf"]
         );
     }
 

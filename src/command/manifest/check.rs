@@ -4,7 +4,6 @@ use std::{
     path::PathBuf,
 };
 
-use ::glob::Pattern;
 use snafu::{OptionExt as _, ResultExt as _, Snafu};
 
 use crate::{
@@ -17,14 +16,9 @@ use crate::{
             ScopeResultErrorExt as _,
         },
     },
-    engine,
+    engine::{self, ExtractDetail},
     package::{self, Package, PackageDirs, PackageId, PackageManifest, PackageManifestError},
-    util::{
-        fs::FsError,
-        glob::{self, GLOB_MATCH_OPTIONS},
-        path::AbsolutePath,
-        text::NormalizedString,
-    },
+    util::{fs::FsError, glob::PathPattern, path::AbsolutePath, text::NormalizedString},
 };
 
 #[derive(Debug)]
@@ -82,7 +76,7 @@ enum CheckManifestWarnReport {
     #[snafu(display(
         concat!(
             "`package.sources[{source_index}].include` contains wildcard pattern(s): {pattern}\n",
-            "this pattern extracts to the following installable font paths:\n",
+            "this pattern extracts to the following font paths:\n",
             "{extracted}\n",
             "consider replacing them with fixed strings to avoid unexpected matches\n",
         ),
@@ -92,12 +86,12 @@ enum CheckManifestWarnReport {
     ))]
     WildcardPattern {
         source_index: usize,
-        pattern: Pattern,
+        pattern: PathPattern,
         extracted: BTreeSet<PathBuf>,
     },
     #[snafu(display(
         concat!(
-            "`package.sources[{source_index}].include` contains pattern `{pattern}` that matches no installable font paths\n",
+            "`package.sources[{source_index}].include` contains pattern `{pattern}` that matches no font paths\n",
             "consider removing it or replacing it with a pattern that matches the intended paths\n",
         ),
         source_index = source_index,
@@ -105,11 +99,11 @@ enum CheckManifestWarnReport {
     ))]
     IncludePatternMatchesNothing {
         source_index: usize,
-        pattern: Pattern,
+        pattern: PathPattern,
     },
     #[snafu(display(
         concat!(
-            "`package.sources[{source_index}].include` contains multiple patterns that match the same installable font path: {path}\n",
+            "`package.sources[{source_index}].include` contains multiple patterns that match the same font path: {path}\n",
             "{patterns}\n",
             "consider removing redundant patterns",
         ),
@@ -117,10 +111,22 @@ enum CheckManifestWarnReport {
         path = path.display(),
         patterns = BulletList(patterns),
     ))]
-    MultiplePatternsMatchSamePath {
+    MultipleIncludePatternsMatchSamePath {
         source_index: usize,
         path: PathBuf,
-        patterns: Vec<Pattern>,
+        patterns: Vec<PathPattern>,
+    },
+    #[snafu(display(
+        concat!(
+            "`package.sources[{source_index}].exclude` contains pattern `{pattern}` that matches no paths\n",
+            "consider removing it or replacing it with a pattern that matches the intended paths\n",
+        ),
+        source_index = source_index,
+        pattern = pattern,
+    ))]
+    ExcludePatternMatchesNothing {
+        source_index: usize,
+        pattern: PathPattern,
     },
 }
 
@@ -201,8 +207,8 @@ pub(crate) async fn check_manifest(
         .context(CreatePackageDirsSnafu { pkg_id })
         .report_error(cx.reporter())?;
 
-    let package = engine::stage_package(&cx, &pkg_dirs, &manifest).await?;
-    check_manifest_fields(&cx, &manifest, &package)?;
+    let (package, extract_details) = engine::stage_package(&cx, &pkg_dirs, &manifest).await?;
+    check_manifest_fields(&cx, &manifest, &package, &extract_details)?;
 
     Ok(())
 }
@@ -211,6 +217,7 @@ fn check_manifest_fields(
     cx: &ReportContext<CheckManifestScope>,
     manifest: &PackageManifest,
     package: &Package,
+    extract_details: &[ExtractDetail],
 ) -> Result<(), CheckManifestError> {
     let mut reports = vec![];
     if manifest.metadata.display_name.is_none() {
@@ -226,7 +233,8 @@ fn check_manifest_fields(
     check_display_name_duplication(manifest, &mut reports);
     check_face_duplication(manifest, &mut reports);
     check_face_completeness(manifest, package, &mut reports);
-    check_include_extraction(manifest, package, &mut reports);
+    check_include_extraction(manifest, extract_details, &mut reports);
+    check_exclude_extraction(manifest, extract_details, &mut reports);
 
     let mut err = None;
     for report in reports {
@@ -310,32 +318,43 @@ fn check_face_completeness(
     }
 }
 
-fn find_match_paths(
-    package: &Package,
+fn collect_included_paths(
+    extract_details: &[ExtractDetail],
     source_index: usize,
-    pattern: &Pattern,
+    pattern: &PathPattern,
 ) -> BTreeSet<PathBuf> {
-    package
-        .entries()
-        .iter()
-        .filter_map(|entry| {
-            let source = entry.source();
-            (source.source_index() == source_index
-                && pattern.matches_path_with(source.path_in_source(), GLOB_MATCH_OPTIONS))
-            .then(|| source.path_in_source().clone())
-        })
+    extract_details
+        .get(source_index)
+        .into_iter()
+        .flat_map(|result| &result.included)
+        .filter(|entry| pattern.matches(&entry.path_in_archive))
+        .map(|entry| entry.path_in_archive.clone())
+        .collect()
+}
+
+fn collect_excluded_paths(
+    extract_details: &[ExtractDetail],
+    source_index: usize,
+    pattern: &PathPattern,
+) -> BTreeSet<PathBuf> {
+    extract_details
+        .get(source_index)
+        .into_iter()
+        .flat_map(|result| &result.excluded)
+        .filter(|&entry| pattern.matches(&entry.path_in_archive))
+        .map(|entry| entry.path_in_archive.clone())
         .collect()
 }
 
 fn check_include_extraction(
     manifest: &PackageManifest,
-    package: &Package,
+    extract_details: &[ExtractDetail],
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
     for (source_index, source) in manifest.sources.iter().enumerate() {
         let mut source_patterns: BTreeMap<PathBuf, Vec<_>> = BTreeMap::new();
         for pattern in &source.include {
-            let extracted = find_match_paths(package, source_index, pattern);
+            let extracted = collect_included_paths(extract_details, source_index, pattern);
             for path in &extracted {
                 source_patterns
                     .entry(path.clone())
@@ -350,7 +369,7 @@ fn check_include_extraction(
                     }
                     .build(),
                 );
-            } else if glob::is_wildcard_pattern(pattern) {
+            } else if pattern.contains_wildcard() {
                 reports.push(
                     WildcardPatternSnafu {
                         source_index,
@@ -364,10 +383,31 @@ fn check_include_extraction(
         for (path, patterns) in source_patterns {
             if patterns.len() > 1 {
                 reports.push(
-                    MultiplePatternsMatchSamePathSnafu {
+                    MultipleIncludePatternsMatchSamePathSnafu {
                         source_index,
                         path,
                         patterns,
+                    }
+                    .build(),
+                );
+            }
+        }
+    }
+}
+
+fn check_exclude_extraction(
+    manifest: &PackageManifest,
+    extract_details: &[ExtractDetail],
+    reports: &mut Vec<CheckManifestWarnReport>,
+) {
+    for (source_index, source) in manifest.sources.iter().enumerate() {
+        for pattern in &source.exclude {
+            let extracted = collect_excluded_paths(extract_details, source_index, pattern);
+            if extracted.is_empty() {
+                reports.push(
+                    ExcludePatternMatchesNothingSnafu {
+                        source_index,
+                        pattern: pattern.clone(),
                     }
                     .build(),
                 );
@@ -382,7 +422,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        package::{FontEntry, FontSource},
+        engine::ExtractEntry,
+        package::FontEntry,
         util::{path::FileName, testing},
     };
 
@@ -392,19 +433,33 @@ mod tests {
         toml::from_str(input).unwrap()
     }
 
-    fn make_package(entries: &[(&str, &str, usize, &str)]) -> Package {
+    fn make_package(entries: &[(&str, &str)]) -> Package {
         let (_tempdir, _app_dirs, pkg_dirs) = testing::make_package_dirs(&PKG_ID);
         let entries = entries
             .iter()
-            .map(|(title, file_name, source_index, path_in_source)| {
-                FontEntry::new(
-                    *title,
-                    FileName::new(*file_name).unwrap(),
-                    FontSource::new(*source_index, *path_in_source),
-                )
-            })
+            .copied()
+            .map(|(title, file_name)| FontEntry::new(title, FileName::new(file_name).unwrap()))
             .collect();
         Package::new(PKG_ID.clone(), pkg_dirs, entries)
+    }
+
+    fn make_extract_detail(included: &[&str], excluded: &[&str]) -> ExtractDetail {
+        ExtractDetail {
+            included: included
+                .iter()
+                .copied()
+                .map(|path| ExtractEntry {
+                    path_in_archive: path.into(),
+                })
+                .collect(),
+            excluded: excluded
+                .iter()
+                .copied()
+                .map(|path| ExtractEntry {
+                    path_in_archive: path.into(),
+                })
+                .collect(),
+        }
     }
 
     #[test]
@@ -472,7 +527,7 @@ url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 "#,
         );
-        let package = make_package(&[("Actual Face", "actual.ttf", 0, "fonts/actual.ttf")]);
+        let package = make_package(&[("Actual Face", "actual.ttf")]);
         let mut reports = vec![];
 
         check_face_completeness(&manifest, &package, &mut reports);
@@ -484,7 +539,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     }
 
     #[test]
-    fn check_include_extraction_reports_patterns_matching_no_installable_font_paths() {
+    fn check_include_extraction_reports_patterns_matching_no_font_paths() {
         let manifest = parse_manifest(
             r#"
 [package]
@@ -497,10 +552,10 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = ["fonts/missing.ttf"]
 "#,
         );
-        let package = make_package(&[("Actual Face", "actual.ttf", 0, "fonts/actual.ttf")]);
+        let extract_details = [make_extract_detail(&["fonts/actual.ttf"], &[])];
         let mut reports = vec![];
 
-        check_include_extraction(&manifest, &package, &mut reports);
+        check_include_extraction(&manifest, &extract_details, &mut reports);
 
         assert!(matches!(
             reports.as_slice(),
@@ -510,7 +565,7 @@ include = ["fonts/missing.ttf"]
     }
 
     #[test]
-    fn check_include_extraction_reports_wildcard_patterns_with_matching_installable_font_paths() {
+    fn check_include_extraction_reports_wildcard_patterns_with_matching_font_paths() {
         let manifest = parse_manifest(
             r#"
 [package]
@@ -523,14 +578,13 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = ["fonts/*.ttf"]
 "#,
         );
-        let package = make_package(&[
-            ("Font A", "a.ttf", 0, "fonts/a.ttf"),
-            ("Font B", "b.ttf", 0, "fonts/b.ttf"),
-            ("Font C", "c.ttf", 1, "fonts/c.ttf"),
-        ]);
+        let extract_details = [
+            make_extract_detail(&["fonts/a.ttf", "fonts/b.ttf"], &[]),
+            make_extract_detail(&["fonts/c.ttf"], &[]),
+        ];
         let mut reports = vec![];
 
-        check_include_extraction(&manifest, &package, &mut reports);
+        check_include_extraction(&manifest, &extract_details, &mut reports);
 
         assert!(matches!(
             reports.as_slice(),
@@ -556,20 +610,20 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = ["fonts/a.ttf", "fonts/a.ttf"]
 "#,
         );
-        let package = make_package(&[("Font A", "a.ttf", 0, "fonts/a.ttf")]);
+        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[])];
         let mut reports = vec![];
 
-        check_include_extraction(&manifest, &package, &mut reports);
+        check_include_extraction(&manifest, &extract_details, &mut reports);
 
         assert!(matches!(
             reports.as_slice(),
-            [CheckManifestWarnReport::MultiplePatternsMatchSamePath {
+            [CheckManifestWarnReport::MultipleIncludePatternsMatchSamePath {
                 source_index,
                 path,
                 patterns,
             }] if *source_index == 0
                 && path == &PathBuf::from("fonts/a.ttf")
-                && patterns.iter().map(Pattern::as_str).collect::<Vec<_>>()
+                && patterns.iter().map(PathPattern::as_str).collect::<Vec<_>>()
                     == vec!["fonts/a.ttf", "fonts/a.ttf"]
         ));
     }
@@ -588,10 +642,10 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = ["fonts/*.ttf", "fonts/a.ttf"]
 "#,
         );
-        let package = make_package(&[("Font A", "a.ttf", 0, "fonts/a.ttf")]);
+        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[])];
         let mut reports = vec![];
 
-        check_include_extraction(&manifest, &package, &mut reports);
+        check_include_extraction(&manifest, &extract_details, &mut reports);
 
         assert!(reports.iter().any(|report| matches!(
             report,
@@ -605,14 +659,65 @@ include = ["fonts/*.ttf", "fonts/a.ttf"]
         )));
         assert!(reports.iter().any(|report| matches!(
             report,
-            CheckManifestWarnReport::MultiplePatternsMatchSamePath {
+            CheckManifestWarnReport::MultipleIncludePatternsMatchSamePath {
                 source_index,
                 path,
                 patterns,
             } if *source_index == 0
                 && path == &PathBuf::from("fonts/a.ttf")
-                && patterns.iter().map(Pattern::as_str).collect::<Vec<_>>()
+                && patterns.iter().map(PathPattern::as_str).collect::<Vec<_>>()
                     == vec!["fonts/*.ttf", "fonts/a.ttf"]
         )));
+    }
+
+    #[test]
+    fn check_exclude_extraction_reports_patterns_matching_no_paths() {
+        let manifest = parse_manifest(
+            r#"
+[package]
+name = "example-font"
+version = "0.1.0"
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+exclude = ["fonts/missing.ttf"]
+"#,
+        );
+        let extract_details = [make_extract_detail(&["fonts/actual.ttf"], &[])];
+        let mut reports = vec![];
+
+        check_exclude_extraction(&manifest, &extract_details, &mut reports);
+
+        assert!(matches!(
+            reports.as_slice(),
+            [CheckManifestWarnReport::ExcludePatternMatchesNothing { source_index, pattern }]
+                if *source_index == 0 && pattern.as_str() == "fonts/missing.ttf"
+        ));
+    }
+
+    #[test]
+    fn check_exclude_extraction_does_not_report_when_pattern_matches_paths() {
+        let manifest = parse_manifest(
+            r#"
+[package]
+name = "example-font"
+version = "0.1.0"
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+exclude = ["fonts/skip.ttf"]
+"#,
+        );
+        let extract_details = [make_extract_detail(
+            &["fonts/actual.ttf"],
+            &["fonts/skip.ttf"],
+        )];
+        let mut reports = vec![];
+
+        check_exclude_extraction(&manifest, &extract_details, &mut reports);
+
+        assert!(reports.is_empty());
     }
 }

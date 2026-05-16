@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use snafu::Snafu;
 
+pub(crate) use self::extract::*;
 use crate::{
     cli::{
         context::ReportContext,
@@ -56,7 +57,7 @@ pub(crate) async fn stage_package<S>(
     cx: &ReportContext<S>,
     pkg_dirs: &PackageDirs,
     manifest: &PackageManifest,
-) -> Result<Package, S::Error>
+) -> Result<(Package, Vec<ExtractDetail>), S::Error>
 where
     S: ReportScope,
 {
@@ -66,25 +67,27 @@ where
     let reporter = cx.reporter();
     let package_fonts_dir = pkg_dirs.fonts_dir();
 
-    let mut file_paths = vec![];
+    let mut file_names = vec![];
+    let mut extract_details = vec![];
 
-    for (source_index, source) in manifest.sources.iter().enumerate() {
+    for source in &manifest.sources {
         let file = cx
             .cancel_token()
             .run_until_cancelled(download::download_archive(&cx, &pkg_id, source))
             .await
             .unwrap_or(Err(S::Error::cancelled()))?;
-
-        file_paths.extend(extract::extract_archive(
+        let (source_file_names, extract_detail) = extract_archive(
             &cx,
             file,
             &source.include,
+            &source.exclude,
             package_fonts_dir,
-            source_index,
-        )?);
+        )?;
+        file_names.extend(source_file_names);
+        extract_details.push(extract_detail);
     }
 
-    let valid_entries = validate::validate_and_prune_fonts(&cx, package_fonts_dir, &file_paths)?;
+    let valid_entries = validate::validate_and_prune_fonts(&cx, package_fonts_dir, &file_names)?;
     if cx.cancel_token().is_cancelled() {
         return Err(S::Error::cancelled());
     }
@@ -99,5 +102,5 @@ where
     ));
 
     let package = Package::new(pkg_id.clone(), pkg_dirs.clone(), valid_entries);
-    Ok(package)
+    Ok((package, extract_details))
 }

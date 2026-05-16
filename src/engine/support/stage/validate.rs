@@ -10,7 +10,7 @@ use crate::{
             ScopeResultWarnExt as _, SubReportScope,
         },
     },
-    package::{FontEntry, FontSource},
+    package::FontEntry,
     platform::windows::services::font::{FontValidator, FontValidatorError},
     util::{
         fs as fs_util,
@@ -89,7 +89,7 @@ impl From<ValidationErrorReport> for ReportValue<'static> {
 pub(super) fn validate_and_prune_fonts<S>(
     cx: &ReportContext<S>,
     fonts_dir: &AbsolutePath,
-    file_names: &[(FileName, FontSource)],
+    file_names: &[FileName],
 ) -> Result<Vec<FontEntry>, S::Error>
 where
     S: ReportScope,
@@ -103,9 +103,9 @@ where
         .context(CreateValidatorSnafu)
         .report_error(reporter)?;
 
-    for (file_name, source) in file_names {
+    for file_name in file_names {
         let Some(entry) = validator
-            .validate_font(fonts_dir, file_name, source)
+            .validate_font(fonts_dir, file_name)
             .context(ValidateFontSnafu { file_name })
             .report_error(reporter)?
         else {
