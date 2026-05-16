@@ -140,35 +140,27 @@ where
     if let Some(license) = license {
         writeln!(writer, "License: {license}")?;
     }
-    writeln!(writer, "Sources:")?;
-    for source in sources {
+    for (source_index, source) in sources.iter().enumerate() {
+        writeln!(writer, "Sources[{source_index}]:")?;
         let PackageSource {
             url,
             hash,
             include,
             exclude,
         } = source;
-        writeln!(writer, "- URL: {url}")?;
-        writeln!(writer, "  Hash: {hash}")?;
-        writeln!(
-            writer,
-            "  Includes: {}",
-            include
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )?;
+        writeln!(writer, "  - URL: {url}")?;
+        writeln!(writer, "  - Hash: {hash}")?;
+        if !include.is_empty() {
+            writeln!(writer, "  - Includes:")?;
+            for pattern in include {
+                writeln!(writer, "    - {pattern}")?;
+            }
+        }
         if !exclude.is_empty() {
-            writeln!(
-                writer,
-                "  Excludes: {}",
-                exclude
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )?;
+            writeln!(writer, "  - Excludes:")?;
+            for pattern in exclude {
+                writeln!(writer, "    - {pattern}")?;
+            }
         }
     }
     writeln!(writer)?;
@@ -194,10 +186,13 @@ mod tests {
                 "Name: example-font\n",
                 "Version: 0.1.0\n",
                 "State: installed\n",
-                "Sources:\n",
-                "- URL: https://example.com/example-font-0.1.0.zip\n",
-                "  Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
-                "  Includes: **/*.ttf, **/*.otf, **/*.ttc\n",
+                "Sources[0]:\n",
+                "  - URL: https://example.com/example-font-0.1.0.zip\n",
+                "  - Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
+                "  - Includes:\n",
+                "    - **/*.ttf\n",
+                "    - **/*.otf\n",
+                "    - **/*.ttc\n",
                 "\n",
             )
         );
@@ -249,11 +244,13 @@ exclude = ["fonts/exclude.ttf"]
                 "Homepage: https://example.com/home\n",
                 "Repository: https://example.com/repo\n",
                 "License: MIT\n",
-                "Sources:\n",
-                "- URL: https://example.com/example-font-0.1.0.zip\n",
-                "  Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
-                "  Includes: fonts/*.ttf\n",
-                "  Excludes: fonts/exclude.ttf\n",
+                "Sources[0]:\n",
+                "  - URL: https://example.com/example-font-0.1.0.zip\n",
+                "  - Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
+                "  - Includes:\n",
+                "    - fonts/*.ttf\n",
+                "  - Excludes:\n",
+                "    - fonts/exclude.ttf\n",
                 "\n",
             )
         );
