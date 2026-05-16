@@ -22,6 +22,7 @@ impl<S> ReportScope for ManifestScope<S>
 where
     S: ReportScope,
 {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = ManifestErrorReport;
     type Error = S::Error;

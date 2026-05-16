@@ -6,8 +6,8 @@ use crate::{
     cli::{
         context::ReportContext,
         reporter::{
-            ReportScope, ReportValue, ScopeResultErrorExt as _, ScopeResultWarnExt as _,
-            SubReportScope,
+            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _,
+            ScopeResultNoticeExt as _, SubReportScope,
         },
     },
     package::Package,
@@ -26,7 +26,8 @@ impl<S> ReportScope for RegistrationScope<S>
 where
     S: ReportScope,
 {
-    type WarnReportValue = RegistrationWarnReport;
+    type NoticeReportValue = RegistrationNoticeReport;
+    type WarnReportValue = NeverReport;
     type ErrorReportValue = RegistrationErrorReport;
     type Error = S::Error;
 }
@@ -43,7 +44,7 @@ where
 }
 
 #[derive(Debug, Snafu)]
-enum RegistrationWarnReport {
+enum RegistrationNoticeReport {
     #[snafu(display(
         concat!(
             "failed to load font into current session: {path}\n",
@@ -61,8 +62,8 @@ enum RegistrationWarnReport {
     BroadcastFontAfterInstall { source: SessionError },
 }
 
-impl From<RegistrationWarnReport> for ReportValue<'static> {
-    fn from(report: RegistrationWarnReport) -> Self {
+impl From<RegistrationNoticeReport> for ReportValue<'static> {
+    fn from(report: RegistrationNoticeReport) -> Self {
         ReportValue::BoxedError(report.into())
     }
 }
@@ -106,12 +107,12 @@ where
     for entry in &registered_fonts {
         session::load_font(entry.path())
             .context(LoadFontSnafu { path: entry.path() })
-            .report_warn(reporter);
+            .report_notice(reporter);
     }
 
     session::broadcast_font_change()
         .context(BroadcastFontAfterInstallSnafu)
-        .report_warn(reporter);
+        .report_notice(reporter);
 
     Ok(())
 }

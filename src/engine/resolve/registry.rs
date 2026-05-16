@@ -23,6 +23,7 @@ impl<S> ReportScope for RegistryScope<S>
 where
     S: ReportScope,
 {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = RegistryErrorReport;
     type Error = S::Error;

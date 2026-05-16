@@ -15,6 +15,7 @@ use crate::{
 struct UninstallScope {}
 
 impl ReportScope for UninstallScope {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = NeverReport;
     type Error = UninstallError;

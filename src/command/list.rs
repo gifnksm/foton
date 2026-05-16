@@ -19,6 +19,7 @@ use crate::{
 struct ListScope {}
 
 impl ReportScope for ListScope {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = ListErrorReport;
     type Error = ListError;

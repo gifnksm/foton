@@ -27,6 +27,7 @@ impl<S> ReportScope for UninstallExecutionScope<S>
 where
     S: ReportScope,
 {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = UninstallExecutionErrorReport;
     type Error = S::Error;

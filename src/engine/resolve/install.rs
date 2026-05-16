@@ -32,6 +32,7 @@ impl<S> ReportScope for InstallResolveScope<S>
 where
     S: ReportScope,
 {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = InstallResolveErrorReport;
     type Error = S::Error;

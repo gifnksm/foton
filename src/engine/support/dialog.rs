@@ -21,6 +21,7 @@ impl<S> ReportScope for DialogScope<S>
 where
     S: ReportScope,
 {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = DialogErrorReport;
     type Error = S::Error;

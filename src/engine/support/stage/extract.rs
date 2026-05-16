@@ -30,6 +30,7 @@ impl<S> ReportScope for ExtractScope<S>
 where
     S: ReportScope,
 {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = ExtractErrorReport;
     type Error = S::Error;

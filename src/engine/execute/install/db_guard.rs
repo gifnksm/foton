@@ -25,6 +25,7 @@ impl<S> ReportScope for InstallDbGuardScope<S>
 where
     S: ReportScope,
 {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = InstallDbGuardErrorReport;
     type Error = S::Error;

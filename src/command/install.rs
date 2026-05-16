@@ -21,6 +21,7 @@ use crate::{
 struct InstallScope {}
 
 impl ReportScope for InstallScope {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = NeverReport;
     type Error = InstallError;

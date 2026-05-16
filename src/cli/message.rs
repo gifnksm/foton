@@ -12,9 +12,9 @@ macro_rules! _message_info {
     };
 }
 
-macro_rules! _message_error {
+macro_rules! _message_notice {
     ($($arg:tt)*) => {
-        $crate::cli::message::eprintln_error(::std::format_args!($($arg)*))
+        $crate::cli::message::eprintln_notice(::std::format_args!($($arg)*))
     };
 }
 
@@ -24,8 +24,15 @@ macro_rules! _message_warn {
     };
 }
 
+macro_rules! _message_error {
+    ($($arg:tt)*) => {
+        $crate::cli::message::eprintln_error(::std::format_args!($($arg)*))
+    };
+}
+
 pub(crate) use _message_error as error;
 pub(crate) use _message_info as info;
+pub(crate) use _message_notice as notice;
 pub(crate) use _message_scope as scope;
 pub(crate) use _message_warn as warn;
 use console::Style;
@@ -69,11 +76,11 @@ const SCOPE_STYLE: MessageStyle = MessageStyle {
     head_separator: " ",
     tail_separator: " ",
 };
-const ERROR_STYLE: MessageStyle = MessageStyle {
-    prefix_style: Style::new().red().bold().bright(),
+const NOTICE_STYLE: MessageStyle = MessageStyle {
+    prefix_style: Style::new().blue().bold().bright(),
     body_style: Style::new().bold().bright(),
-    head_prefix: "error",
-    tail_prefix: "     ",
+    head_prefix: "notice",
+    tail_prefix: "      ",
     head_separator: ": ",
     tail_separator: "  ",
 };
@@ -82,6 +89,14 @@ const WARNING_STYLE: MessageStyle = MessageStyle {
     body_style: Style::new().bold().bright(),
     head_prefix: "warning",
     tail_prefix: "       ",
+    head_separator: ": ",
+    tail_separator: "  ",
+};
+const ERROR_STYLE: MessageStyle = MessageStyle {
+    prefix_style: Style::new().red().bold().bright(),
+    body_style: Style::new().bold().bright(),
+    head_prefix: "error",
+    tail_prefix: "     ",
     head_separator: ": ",
     tail_separator: "  ",
 };
@@ -94,12 +109,16 @@ pub(crate) fn eprintln_info(message: fmt::Arguments<'_>) {
     eprintln!("{message}");
 }
 
-pub(crate) fn eprintln_error(message: fmt::Arguments<'_>) {
-    ERROR_STYLE.eprint(message);
+pub(crate) fn eprintln_notice(message: fmt::Arguments<'_>) {
+    NOTICE_STYLE.eprint(message);
 }
 
 pub(crate) fn eprintln_warn(message: fmt::Arguments<'_>) {
     WARNING_STYLE.eprint(message);
+}
+
+pub(crate) fn eprintln_error(message: fmt::Arguments<'_>) {
+    ERROR_STYLE.eprint(message);
 }
 
 #[derive(Debug)]
