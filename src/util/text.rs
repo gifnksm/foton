@@ -53,6 +53,10 @@ impl NormalizedString {
         let compact = separated.replace(' ', "");
         Self { separated, compact }
     }
+
+    pub(crate) fn into_compact(self) -> String {
+        self.compact
+    }
 }
 
 impl From<String> for NormalizedString {

@@ -35,6 +35,9 @@ pub(crate) enum Command {
     Info(InfoArgs),
     /// Search packages from registries.
     Search(SearchArgs),
+    /// Work with package manifest files.
+    #[clap(subcommand)]
+    Manifest(ManifestCommand),
 }
 
 #[derive(Debug, clap::Args)]
@@ -161,6 +164,19 @@ pub(crate) struct SearchArgs {
     /// All specified query terms must match within the same package metadata field.
     #[clap(value_name = "QUERY", required = true)]
     pub(crate) queries: Vec<QueryString>,
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub(crate) enum ManifestCommand {
+    /// Check a manifest file for installation errors and quality warnings.
+    Check(CheckManifestArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct CheckManifestArgs {
+    /// Manifest file to check.
+    #[clap(value_name = "MANIFEST", required = true)]
+    pub(crate) manifest_path: PathBuf,
 }
 
 fn parse_positive_usize(s: &str) -> Result<usize, String> {

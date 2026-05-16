@@ -32,7 +32,7 @@ impl RootReportScope for ListScope {
 }
 
 #[derive(Debug, Snafu)]
-pub(crate) enum ListErrorReport {
+enum ListErrorReport {
     #[snafu(display("failed to write entry to stdout"))]
     WriteEntry { source: io::Error },
 }

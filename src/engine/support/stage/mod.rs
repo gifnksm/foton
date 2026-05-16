@@ -52,7 +52,7 @@ impl From<StageErrorReport> for ReportValue<'static> {
     }
 }
 
-pub(in crate::engine) async fn stage_package<S>(
+pub(crate) async fn stage_package<S>(
     cx: &ReportContext<S>,
     pkg_dirs: &PackageDirs,
     manifest: &PackageManifest,
@@ -68,7 +68,7 @@ where
 
     let mut file_paths = vec![];
 
-    for source in &manifest.sources {
+    for (source_index, source) in manifest.sources.iter().enumerate() {
         let file = cx
             .cancel_token()
             .run_until_cancelled(download::download_archive(&cx, &pkg_id, source))
@@ -80,6 +80,7 @@ where
             file,
             &source.include,
             package_fonts_dir,
+            source_index,
         )?);
     }
 
