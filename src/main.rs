@@ -13,7 +13,7 @@ use crate::{
         args::{Args, Command, GlobalArgs},
         context::RootContext,
         message,
-        reporter::RootReporter,
+        reporter::{Report, RootReporter},
     },
     command::{
         GenerateManError, InfoError, InstallError, ListError, PrintCompletionError, SearchError,
@@ -110,7 +110,7 @@ fn run() -> Result<(), FotonError> {
 
 fn init_context(global_args: GlobalArgs) -> Result<RootContext, InitializationError> {
     let app_dirs = AppDirs::from_directories()?;
-    let reporter = RootReporter::message_reporter();
+    let reporter = RootReporter::message_reporter(global_args.warnings_as_errors);
     let config = cli::config::load_config(&app_dirs).context(LoadConfigSnafu)?;
     let cx = RootContext::new(
         APP_ID.into(),
@@ -153,7 +153,9 @@ where
             let reporter = cx.reporter().clone();
             async move {
                 ctrl_c.recv().await;
-                reporter.report_warn(format_args!("cancellation requested, shutting down..."));
+                reporter.report(Report::notice(format_args!(
+                    "cancellation requested, shutting down..."
+                )));
                 cancel_token.cancel();
             }
         });

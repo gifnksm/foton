@@ -15,6 +15,7 @@ use crate::{
 struct UpdateScope {}
 
 impl ReportScope for UpdateScope {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = NeverReport;
     type Error = UpdateError;

@@ -21,6 +21,7 @@ impl<S> ReportScope for DatabaseLoadScope<S>
 where
     S: ReportScope,
 {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = DatabaseLoadErrorReport;
     type Error = S::Error;

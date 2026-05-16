@@ -28,6 +28,7 @@ impl<S> ReportScope for DownloadScope<S>
 where
     S: ReportScope,
 {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = DownloadErrorReport;
     type Error = S::Error;

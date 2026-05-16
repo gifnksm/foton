@@ -9,23 +9,19 @@ use crate::{
     cli::{
         context::ReportContext,
         reporter::{
-            NeverReport, OperationError as _, ReportScope, ReportValue, ScopeResultErrorExt as _,
-            SubReportScope,
+            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
         },
     },
     db::PackageDatabase,
-    engine::execute::install::db_guard::InstallDbGuard,
-    package::{self, Package, PackageDirs, PackageId, PackageManifest},
+    engine::{execute::install::db_guard::InstallDbGuard, support},
+    package::{self, PackageDirs, PackageId, PackageManifest},
     platform::windows::steps::unregistration,
     util::fs::FsError,
 };
 
 mod db_guard;
-mod download;
-mod extract;
 mod package_dirs_guard;
 mod registration;
-mod validate;
 
 #[derive(Debug)]
 struct InstallExecutionScope<S> {
@@ -36,6 +32,7 @@ impl<S> ReportScope for InstallExecutionScope<S>
 where
     S: ReportScope,
 {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = InstallExecutionErrorReport;
     type Error = S::Error;
@@ -68,8 +65,6 @@ enum InstallExecutionErrorReport {
         pkg_id = pkg_id,
     ))]
     RemovePackageFiles { pkg_id: PackageId, source: FsError },
-    #[snafu(display("no valid font files found in package {pkg_id}"))]
-    NoValidFonts { pkg_id: PackageId },
 }
 
 #[derive(Debug)]
@@ -106,7 +101,7 @@ where
             .report_error(cx.reporter())?;
 
         let pkg_dirs_guard = package_dirs_guard::create_new_package_dirs(&cx, &pkg_id)?;
-        let package = stage_package(&cx, &pkg_dirs_guard, &self.manifest).await?;
+        let package = support::stage_package(&cx, &pkg_dirs_guard, &self.manifest).await?;
 
         let registration_guard = registration::register_package_fonts(&cx, &package)?;
 
@@ -117,51 +112,4 @@ where
 
         Ok(())
     }
-}
-
-async fn stage_package<S>(
-    cx: &ReportContext<InstallExecutionScope<S>>,
-    pkg_dirs: &PackageDirs,
-    manifest: &PackageManifest,
-) -> Result<Package, S::Error>
-where
-    S: ReportScope,
-{
-    let pkg_id = manifest.metadata.id();
-    let reporter = cx.reporter();
-    let package_fonts_dir = pkg_dirs.fonts_dir();
-
-    let mut file_paths = vec![];
-
-    for source in &manifest.sources {
-        let file = cx
-            .cancel_token()
-            .run_until_cancelled(download::download_archive(cx, &pkg_id, source))
-            .await
-            .unwrap_or(Err(S::Error::cancelled()))?;
-
-        file_paths.extend(extract::extract_archive(
-            cx,
-            file,
-            &source.include,
-            package_fonts_dir,
-        )?);
-    }
-
-    let valid_entries = validate::validate_and_prune_fonts(cx, package_fonts_dir, &file_paths)?;
-    if cx.cancel_token().is_cancelled() {
-        return Err(S::Error::cancelled());
-    }
-
-    if valid_entries.is_empty() {
-        return Err(reporter.report_error(NoValidFontsSnafu { pkg_id }.build()));
-    }
-
-    reporter.report_info(format_args!(
-        "{} valid font(s) found in package",
-        valid_entries.len()
-    ));
-
-    let package = Package::new(pkg_id.clone(), pkg_dirs.clone(), valid_entries);
-    Ok(package)
 }

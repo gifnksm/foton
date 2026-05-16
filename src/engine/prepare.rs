@@ -28,6 +28,7 @@ impl<S> ReportScope for PrepareScope<S>
 where
     S: ReportScope,
 {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = PrepareErrorReport;
     type Error = S::Error;

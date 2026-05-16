@@ -6,8 +6,8 @@ use crate::{
     cli::{
         context::ReportContext,
         reporter::{
-            ReportScope, ReportValue, ScopeResultErrorExt as _, ScopeResultWarnExt as _,
-            SubReportScope,
+            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _,
+            ScopeResultNoticeExt as _, SubReportScope,
         },
     },
     package::{self, PackageDirs, PackageId},
@@ -23,7 +23,8 @@ impl<S> ReportScope for PackageDirsScope<S>
 where
     S: ReportScope,
 {
-    type WarnReportValue = PackageDirWarnReport;
+    type NoticeReportValue = PackageDirNoticeReport;
+    type WarnReportValue = NeverReport;
     type ErrorReportValue = PackageDirErrorReport;
     type Error = S::Error;
 }
@@ -40,7 +41,7 @@ where
 }
 
 #[derive(Debug, Snafu)]
-enum PackageDirWarnReport {
+enum PackageDirNoticeReport {
     #[snafu(display(
         concat!(
             "failed to remove package directory after install failure\n",
@@ -50,8 +51,8 @@ enum PackageDirWarnReport {
     RemovePackageDirectoryAfterInstallFailure { source: FsError },
 }
 
-impl From<PackageDirWarnReport> for ReportValue<'static> {
-    fn from(report: PackageDirWarnReport) -> Self {
+impl From<PackageDirNoticeReport> for ReportValue<'static> {
+    fn from(report: PackageDirNoticeReport) -> Self {
         ReportValue::BoxedError(report.into())
     }
 }
@@ -123,9 +124,9 @@ where
             .reporter()
             .report_info(format_args!("rolling back package fonts directories..."));
 
-        let _ = package::remove_package_dirs(&self.pkg_dirs)
+        package::remove_package_dirs(&self.pkg_dirs)
             .context(RemovePackageDirectoryAfterInstallFailureSnafu)
-            .report_warn(self.cx.reporter());
+            .report_notice(self.cx.reporter());
     }
 }
 

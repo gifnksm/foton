@@ -6,8 +6,8 @@ use crate::{
     cli::{
         context::ReportContext,
         reporter::{
-            ReportScope, ReportValue, ScopeResultErrorExt as _, ScopeResultWarnExt as _,
-            SubReportScope,
+            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _,
+            ScopeResultWarnExt as _, SubReportScope,
         },
     },
     package::FontEntry,
@@ -27,6 +27,7 @@ impl<S> ReportScope for ValidationScope<S>
 where
     S: ReportScope,
 {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = ValidationWarnReport;
     type ErrorReportValue = ValidationErrorReport;
     type Error = S::Error;
@@ -45,8 +46,8 @@ where
 
 #[derive(Debug, Snafu)]
 enum ValidationWarnReport {
-    #[snafu(display("removing unsupported font file: {path}", path = path.display()))]
-    RemovingUnsupportedFontFile { path: PathBuf },
+    #[snafu(display("unsupported font file found: {path}", path = path.display()))]
+    UnsupportedFontFile { path: PathBuf },
     #[snafu(display(
         concat!(
             "failed to remove unsupported font file: {path}\n",
@@ -109,10 +110,10 @@ where
             .report_error(reporter)?
         else {
             let path = fonts_dir.join(file_name);
-            reporter.report_warn(RemovingUnsupportedFontFileSnafu { path: &path }.build());
+            reporter.report_warn(UnsupportedFontFileSnafu { path: &path }.build())?;
             fs_util::remove_file(&path)
                 .context(RemoveUnsupportedFontFileSnafu { path: &path })
-                .report_warn(reporter);
+                .report_warn(reporter)?;
             continue;
         };
 

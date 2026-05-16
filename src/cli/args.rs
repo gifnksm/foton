@@ -16,6 +16,9 @@ pub(crate) struct GlobalArgs {
     /// Bypass any and all interactive confirmation prompts.
     #[clap(long, global = true)]
     pub(crate) no_confirm: bool,
+    /// Treat warnings as errors, causing the operation to fail if any warning is emitted.
+    #[clap(long, global = true)]
+    pub(crate) warnings_as_errors: bool,
 }
 
 #[derive(Debug, clap::Subcommand)]

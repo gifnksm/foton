@@ -21,6 +21,7 @@ use crate::{
 struct SearchScope {}
 
 impl ReportScope for SearchScope {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = SearchErrorReport;
     type Error = SearchError;

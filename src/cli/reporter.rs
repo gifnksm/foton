@@ -19,8 +19,9 @@ type SharedCallback = Arc<dyn for<'r> Fn(Report<'r>) + Send + Sync + 'static>;
 pub(crate) enum ReportSeverity {
     Scope,
     Info,
-    Error,
+    Notice,
     Warn,
+    Error,
 }
 
 #[derive(Debug, derive_more::From)]
@@ -67,11 +68,11 @@ impl<'a> Report<'a> {
         Self::new(ReportSeverity::Scope, value)
     }
 
-    pub(crate) fn error<V>(value: V) -> Self
+    pub(crate) fn notice<V>(value: V) -> Self
     where
         V: Into<ReportValue<'a>>,
     {
-        Self::new(ReportSeverity::Error, value)
+        Self::new(ReportSeverity::Notice, value)
     }
 
     pub(crate) fn warn<V>(value: V) -> Self
@@ -79,6 +80,13 @@ impl<'a> Report<'a> {
         V: Into<ReportValue<'a>>,
     {
         Self::new(ReportSeverity::Warn, value)
+    }
+
+    pub(crate) fn error<V>(value: V) -> Self
+    where
+        V: Into<ReportValue<'a>>,
+    {
+        Self::new(ReportSeverity::Error, value)
     }
 
     pub(crate) fn severity(&self) -> ReportSeverity {
@@ -94,6 +102,7 @@ impl<'a> Report<'a> {
 pub(crate) struct RootReporter {
     multi_progress_bar: Arc<Mutex<MultiProgress>>,
     callback: SharedCallback,
+    warnings_as_errors: bool,
 }
 
 impl Debug for RootReporter {
@@ -106,7 +115,7 @@ impl Debug for RootReporter {
 }
 
 impl RootReporter {
-    fn new<C>(callback: C) -> Self
+    fn new<C>(callback: C, warnings_as_errors: bool) -> Self
     where
         C: for<'r> Fn(Report<'r>) + Send + Sync + 'static,
     {
@@ -117,16 +126,21 @@ impl RootReporter {
         Self {
             multi_progress_bar: pb,
             callback,
+            warnings_as_errors,
         }
     }
 
-    pub(crate) fn message_reporter() -> Self {
-        Self::new(|report| match report.severity() {
-            ReportSeverity::Scope => message::scope!("{}", report.value()),
-            ReportSeverity::Info => message::info!("{}", report.value()),
-            ReportSeverity::Error => message::error!("{}", report.value()),
-            ReportSeverity::Warn => message::warn!("{}", report.value()),
-        })
+    pub(crate) fn message_reporter(warnings_as_errors: bool) -> Self {
+        Self::new(
+            |report| match report.severity() {
+                ReportSeverity::Scope => message::scope!("{}", report.value()),
+                ReportSeverity::Info => message::info!("{}", report.value()),
+                ReportSeverity::Notice => message::notice!("{}", report.value()),
+                ReportSeverity::Warn => message::warn!("{}", report.value()),
+                ReportSeverity::Error => message::error!("{}", report.value()),
+            },
+            warnings_as_errors,
+        )
     }
 
     pub(crate) fn with_scope<S>(&self, scope: S) -> ScopedReporter<S>
@@ -142,34 +156,6 @@ impl RootReporter {
     pub(crate) fn report(&self, report: Report<'_>) {
         let mpb = self.multi_progress_bar.lock().unwrap().clone();
         mpb.suspend(|| (self.callback)(report));
-    }
-
-    pub(crate) fn report_scope<'a, V>(&self, value: V)
-    where
-        V: Into<ReportValue<'a>>,
-    {
-        self.report(Report::scope(value));
-    }
-
-    pub(crate) fn report_info<'a, V>(&self, value: V)
-    where
-        V: Into<ReportValue<'a>>,
-    {
-        self.report(Report::info(value));
-    }
-
-    pub(crate) fn report_error<'a, V>(&self, value: V)
-    where
-        V: Into<ReportValue<'a>>,
-    {
-        self.report(Report::error(value));
-    }
-
-    pub(crate) fn report_warn<'a, V>(&self, value: V)
-    where
-        V: Into<ReportValue<'a>>,
-    {
-        self.report(Report::warn(value));
     }
 }
 
@@ -188,6 +174,7 @@ pub(crate) trait OperationError: Debug {
 }
 
 pub(crate) trait ReportScope: Debug {
+    type NoticeReportValue: Into<ReportValue<'static>>;
     type WarnReportValue: Into<ReportValue<'static>>;
     type ErrorReportValue: Into<ReportValue<'static>>;
     type Error: OperationError;
@@ -270,22 +257,32 @@ where
     where
         V: Into<ReportValue<'a>>,
     {
-        self.root_reporter.report_scope(report);
+        self.root_reporter.report(Report::scope(report));
     }
 
     pub(crate) fn report_info<'a, V>(&self, report: V)
     where
         V: Into<ReportValue<'a>>,
     {
-        self.root_reporter.report_info(report);
+        self.root_reporter.report(Report::info(report));
     }
 
-    pub(crate) fn report_warn(&self, report: S::WarnReportValue) {
-        self.root_reporter.report_warn(report);
+    pub(crate) fn report_notice(&self, report: S::NoticeReportValue) {
+        self.root_reporter.report(Report::notice(report));
+    }
+
+    pub(crate) fn report_warn(&self, report: S::WarnReportValue) -> Result<(), S::Error> {
+        if self.root_reporter.warnings_as_errors {
+            self.root_reporter.report(Report::error(report));
+            Err(S::Error::failed())
+        } else {
+            self.root_reporter.report(Report::warn(report));
+            Ok(())
+        }
     }
 
     pub(crate) fn report_error(&self, report: S::ErrorReportValue) -> S::Error {
-        self.root_reporter.report_error(report);
+        self.root_reporter.report(Report::error(report));
         S::Error::failed()
     }
 
@@ -335,13 +332,33 @@ where
     }
 }
 
+pub(crate) trait ScopeResultNoticeExt<S>
+where
+    S: ReportScope,
+{
+    type Item;
+
+    fn report_notice(self, reporter: &ScopedReporter<S>) -> Option<Self::Item>;
+}
+
+impl<S, T, E> ScopeResultNoticeExt<S> for Result<T, E>
+where
+    S: ReportScope<NoticeReportValue = E>,
+{
+    type Item = T;
+
+    fn report_notice(self, reporter: &ScopedReporter<S>) -> Option<Self::Item> {
+        self.map_err(|err| reporter.report_notice(err)).ok()
+    }
+}
+
 pub(crate) trait ScopeResultWarnExt<S>
 where
     S: ReportScope,
 {
     type Item;
 
-    fn report_warn(self, reporter: &ScopedReporter<S>) -> Option<Self::Item>;
+    fn report_warn(self, reporter: &ScopedReporter<S>) -> Result<Option<Self::Item>, S::Error>;
 }
 
 impl<S, T, E> ScopeResultWarnExt<S> for Result<T, E>
@@ -350,8 +367,14 @@ where
 {
     type Item = T;
 
-    fn report_warn(self, reporter: &ScopedReporter<S>) -> Option<Self::Item> {
-        self.map_err(|err| reporter.report_warn(err)).ok()
+    fn report_warn(self, reporter: &ScopedReporter<S>) -> Result<Option<Self::Item>, S::Error> {
+        match self {
+            Ok(item) => Ok(Some(item)),
+            Err(err) => {
+                reporter.report_warn(err)?;
+                Ok(None)
+            }
+        }
     }
 }
 

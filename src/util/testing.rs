@@ -25,6 +25,7 @@ const APP_ID: &str = "io.github.gifnksm.foton-test";
 pub(crate) struct TestScope {}
 
 impl ReportScope for TestScope {
+    type NoticeReportValue = NeverReport;
     type WarnReportValue = NeverReport;
     type ErrorReportValue = NeverReport;
     type Error = TestError;
@@ -67,9 +68,10 @@ impl TempdirContext {
     where
         S: Into<Arc<str>>,
     {
+        let warnings_as_errors = false;
         let (tempdir, app_dirs) = make_app_dirs();
         let config = FotonConfig::default();
-        let reporter = RootReporter::message_reporter();
+        let reporter = RootReporter::message_reporter(warnings_as_errors);
         let cx = RootContext::new(
             app_id.into(),
             Arc::new(app_dirs),

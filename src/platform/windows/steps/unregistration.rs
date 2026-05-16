@@ -6,8 +6,8 @@ use crate::{
     cli::{
         context::ReportContext,
         reporter::{
-            ReportScope, ReportValue, ScopeResultErrorExt as _, ScopeResultWarnExt as _,
-            SubReportScope,
+            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _,
+            ScopeResultNoticeExt as _, SubReportScope,
         },
     },
     package::PackageId,
@@ -26,7 +26,8 @@ impl<S> ReportScope for UnregistrationScope<S>
 where
     S: ReportScope,
 {
-    type WarnReportValue = UnregistrationWarnReport;
+    type NoticeReportValue = UnregistrationNoticeReport;
+    type WarnReportValue = NeverReport;
     type ErrorReportValue = UnregistrationErrorReport;
     type Error = S::Error;
 }
@@ -43,7 +44,7 @@ where
 }
 
 #[derive(Debug, Snafu)]
-enum UnregistrationWarnReport {
+enum UnregistrationNoticeReport {
     #[snafu(display("failed to list registered package fonts for the package"))]
     ListInstalledFonts { source: RegistryError },
     #[snafu(display(
@@ -55,8 +56,8 @@ enum UnregistrationWarnReport {
     BroadcastFontAfterUninstall { source: SessionError },
 }
 
-impl From<UnregistrationWarnReport> for ReportValue<'static> {
-    fn from(report: UnregistrationWarnReport) -> Self {
+impl From<UnregistrationNoticeReport> for ReportValue<'static> {
+    fn from(report: UnregistrationNoticeReport) -> Self {
         ReportValue::BoxedError(report.into())
     }
 }
@@ -85,7 +86,7 @@ where
 
     let entries = registry::list_registered_package_fonts(cx.app_id(), pkg_id)
         .context(ListInstalledFontsSnafu)
-        .report_warn(reporter);
+        .report_notice(reporter);
 
     if let Some(entries) = entries {
         for entry in entries {
@@ -100,9 +101,9 @@ where
         .context(UnregisterFontsFromRegistrySnafu)
         .report_error(reporter);
 
-    let _ = session::broadcast_font_change()
+    session::broadcast_font_change()
         .context(BroadcastFontAfterUninstallSnafu)
-        .report_warn(reporter);
+        .report_notice(reporter);
 
     res
 }
