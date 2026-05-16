@@ -10,8 +10,8 @@ description = "A font manager for Windows that manages fonts for the current use
 readme = "README.md"
 repository = "https://github.com/gifnksm/foton"
 license = "MIT OR Apache-2.0"
-keywords = []
-categories = []
+keywords = ["font", "windows", "font-manager", "font-installer", "package-manager"]
+categories = ["command-line-utilities"]
 
 [lints]
 workspace = true
