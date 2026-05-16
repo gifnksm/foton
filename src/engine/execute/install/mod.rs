@@ -101,7 +101,7 @@ where
             .report_error(cx.reporter())?;
 
         let pkg_dirs_guard = package_dirs_guard::create_new_package_dirs(&cx, &pkg_id)?;
-        let package = support::stage_package(&cx, &pkg_dirs_guard, &self.manifest).await?;
+        let (package, _) = support::stage_package(&cx, &pkg_dirs_guard, &self.manifest).await?;
 
         let registration_guard = registration::register_package_fonts(&cx, &package)?;
 

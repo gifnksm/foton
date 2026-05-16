@@ -142,7 +142,12 @@ where
     }
     writeln!(writer, "Sources:")?;
     for source in sources {
-        let PackageSource { url, hash, include } = source;
+        let PackageSource {
+            url,
+            hash,
+            include,
+            exclude,
+        } = source;
         writeln!(writer, "- URL: {url}")?;
         writeln!(writer, "  Hash: {hash}")?;
         writeln!(
@@ -154,6 +159,17 @@ where
                 .collect::<Vec<_>>()
                 .join(", ")
         )?;
+        if !exclude.is_empty() {
+            writeln!(
+                writer,
+                "  Excludes: {}",
+                exclude
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )?;
+        }
     }
     writeln!(writer)?;
     Ok(())
@@ -206,6 +222,7 @@ license = "MIT"
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = ["fonts/*.ttf"]
+exclude = ["fonts/exclude.ttf"]
 "#,
         )
         .unwrap();
@@ -236,6 +253,7 @@ include = ["fonts/*.ttf"]
                 "- URL: https://example.com/example-font-0.1.0.zip\n",
                 "  Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
                 "  Includes: fonts/*.ttf\n",
+                "  Excludes: fonts/exclude.ttf\n",
                 "\n",
             )
         );
