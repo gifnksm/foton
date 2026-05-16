@@ -98,14 +98,14 @@ where
             pkg_spec: pkg_spec.clone(),
         }),
         [(_state, manifest)] => Ok(ResolvedUninstallTarget::Resolved {
-            pkg_id: manifest.metadata.id(),
+            pkg_id: manifest.id(),
         }),
         _ => Err(cx.reporter().report_error(
             MultipleMatchingPackagesSnafu {
                 pkg_spec: pkg_spec.clone(),
                 pkg_ids: candidates
                     .into_iter()
-                    .map(|(_state, manifest)| manifest.metadata.id())
+                    .map(|(_state, manifest)| manifest.id())
                     .collect::<Vec<_>>(),
             }
             .build(),
@@ -163,7 +163,7 @@ mod tests {
 
         testing::with_db(&cx, |mut db| {
             let manifest = testing::make_manifest("example-font@0.1.0");
-            let expected = manifest.metadata.id();
+            let expected = manifest.id();
             testing::mark_as_installed(&mut db, &manifest);
 
             for spec in [
@@ -224,7 +224,7 @@ mod tests {
         let cx = TestScope::start(&cx);
 
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let expected_pkg_id = manifest.metadata.id();
+        let expected_pkg_id = manifest.id();
         let pkg_specs = vec![
             PackageSpec::from_str("example-font@0.1.0").unwrap(),
             PackageSpec::from_str("example-font").unwrap(),
@@ -248,7 +248,7 @@ mod tests {
         let cx = UninstallResolveScope::start(&cx);
 
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
+        let pkg_id = manifest.id();
 
         let spec = PackageSpec::from_str("example-font").unwrap();
 

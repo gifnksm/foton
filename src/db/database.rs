@@ -182,8 +182,8 @@ impl<'a> PackageDatabase<'a> {
     }
 
     fn insert_entry(&mut self, state: PackageState, manifest: Arc<PackageManifest>) {
-        let pkg_name = manifest.metadata.name.clone();
-        let pkg_version = manifest.metadata.version.clone();
+        let pkg_name = manifest.name.clone();
+        let pkg_version = manifest.version.clone();
         self.persist_db
             .packages
             .entry(pkg_name)
@@ -202,22 +202,22 @@ impl<'a> PackageDatabase<'a> {
     }
 
     pub(crate) fn check_installability(&self, manifest: &PackageManifest) -> Installability {
-        let pkg_name = manifest.metadata.name.clone();
-        let pkg_version = manifest.metadata.version.clone();
+        let pkg_name = manifest.name.clone();
+        let pkg_version = manifest.version.clone();
         let mut installed_other_versions = vec![];
         let mut pending_installs = vec![];
         let mut pending_uninstalls = vec![];
         for (state, m) in self.entries_by_name(&pkg_name) {
-            if m.metadata.version == pkg_version {
+            if m.version == pkg_version {
                 match state {
                     PackageState::Installed => return Installability::AlreadyInstalled,
                     PackageState::PendingInstall | PackageState::PendingUninstall => {}
                 }
             } else {
                 match state {
-                    PackageState::Installed => installed_other_versions.push(m.metadata.id()),
-                    PackageState::PendingInstall => pending_installs.push(m.metadata.id()),
-                    PackageState::PendingUninstall => pending_uninstalls.push(m.metadata.id()),
+                    PackageState::Installed => installed_other_versions.push(m.id()),
+                    PackageState::PendingInstall => pending_installs.push(m.id()),
+                    PackageState::PendingUninstall => pending_uninstalls.push(m.id()),
                 }
             }
         }
@@ -359,7 +359,7 @@ mod tests {
 
     fn get_entry_state(db: &PackageDatabase<'_>, id: &PackageId) -> Option<PackageState> {
         let (state, manifest) = db.entry_by_id(id)?;
-        assert_eq!(manifest.metadata.id(), *id);
+        assert_eq!(manifest.id(), *id);
         Some(state)
     }
 
@@ -431,7 +431,7 @@ mod tests {
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
+        let pkg_id = manifest.id();
 
         assert_status_change(
             &app_dirs,
@@ -453,7 +453,7 @@ mod tests {
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
+        let pkg_id = manifest.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_pending_installed(db, &manifest);
@@ -490,17 +490,17 @@ mod tests {
             &mut lock_file,
             &[
                 (
-                    &installed_manifest.metadata.id(),
+                    &installed_manifest.id(),
                     Some(PackageState::Installed),
                     Some(PackageState::Installed),
                 ),
                 (
-                    &pending_install_manifest.metadata.id(),
+                    &pending_install_manifest.id(),
                     Some(PackageState::PendingInstall),
                     Some(PackageState::PendingInstall),
                 ),
                 (
-                    &pending_uninstall_manifest.metadata.id(),
+                    &pending_uninstall_manifest.id(),
                     Some(PackageState::PendingUninstall),
                     Some(PackageState::PendingUninstall),
                 ),
@@ -508,17 +508,17 @@ mod tests {
             |db| {
                 let plan = ExecutionPlan::new_for_test([
                     UninstallOp {
-                        pkg_id: installed_manifest.metadata.id(),
+                        pkg_id: installed_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
                     }
                     .into(),
                     UninstallOp {
-                        pkg_id: pending_install_manifest.metadata.id(),
+                        pkg_id: pending_install_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
                     }
                     .into(),
                     UninstallOp {
-                        pkg_id: pending_uninstall_manifest.metadata.id(),
+                        pkg_id: pending_uninstall_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
                     }
                     .into(),
@@ -536,7 +536,7 @@ mod tests {
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
+        let pkg_id = manifest.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_pending_installed(db, &manifest);
@@ -559,7 +559,7 @@ mod tests {
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
+        let pkg_id = manifest.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_installed(db, &manifest);
@@ -584,7 +584,7 @@ mod tests {
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
+        let pkg_id = manifest.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_pending_installed(db, &manifest);
@@ -609,7 +609,7 @@ mod tests {
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
+        let pkg_id = manifest.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_pending_installed(db, &manifest);
@@ -634,7 +634,7 @@ mod tests {
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
+        let pkg_id = manifest.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_pending_uninstalled(db, &manifest);

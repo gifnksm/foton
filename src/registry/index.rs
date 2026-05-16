@@ -99,7 +99,7 @@ impl RegistryIndex {
         let manifest_path = package_dir.join("manifest.toml");
         let manifest =
             PackageManifest::read(&manifest_path).context(ReadManifestSnafu { pkg_id })?;
-        let manifest_id = manifest.metadata.id();
+        let manifest_id = manifest.id();
         snafu::ensure!(
             manifest_id == *pkg_id,
             PackageIdMismatchSnafu {
@@ -227,7 +227,7 @@ mod tests {
         let pkg_id: PackageId = "example-font@0.1.0".parse().unwrap();
         let manifest = registry.find_package_by_id(&pkg_id).unwrap().unwrap();
 
-        assert_eq!(manifest.metadata.id(), pkg_id);
+        assert_eq!(manifest.id(), pkg_id);
     }
 
     #[test]
@@ -242,7 +242,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(manifest.metadata.id().to_string(), "example-font@0.2.0");
+        assert_eq!(manifest.id().to_string(), "example-font@0.2.0");
     }
 
     #[test]
@@ -275,7 +275,7 @@ mod tests {
             .unwrap();
         let mut ids = manifests
             .into_iter()
-            .map(|manifest| manifest.metadata.id().to_string())
+            .map(|manifest| manifest.id().to_string())
             .collect::<Vec<_>>();
         ids.sort();
 

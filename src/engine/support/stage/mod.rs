@@ -63,7 +63,7 @@ where
 {
     let cx = StageScope::start(cx);
 
-    let pkg_id = manifest.metadata.id();
+    let pkg_id = manifest.id();
     let reporter = cx.reporter();
     let package_fonts_dir = pkg_dirs.fonts_dir();
 

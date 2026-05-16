@@ -23,7 +23,7 @@ where
             "Installing the following packages:\n{}",
             BulletList(
                 &install_ops
-                    .map(|op| format!("{} ({})", op.manifest.metadata.id(), op.reason))
+                    .map(|op| format!("{} ({})", op.manifest.id(), op.reason))
                     .collect::<Vec<_>>()
             )
         ));

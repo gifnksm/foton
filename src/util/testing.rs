@@ -145,7 +145,6 @@ where
     let version = pkg_id.version();
     format!(
         r#"
-[package]
 name = "{name}"
 version = "{version}"
 
@@ -238,7 +237,7 @@ pub(crate) fn mark_as_pending_installed(
     db: &mut PackageDatabase<'_>,
     manifest: &Arc<PackageManifest>,
 ) {
-    let pkg_id = manifest.metadata.id();
+    let pkg_id = manifest.id();
     let plan = make_install_plan(manifest);
     db.apply_plan_transaction(&plan).unwrap();
     assert_eq!(
@@ -248,7 +247,7 @@ pub(crate) fn mark_as_pending_installed(
 }
 
 pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &Arc<PackageManifest>) {
-    let pkg_id = manifest.metadata.id();
+    let pkg_id = manifest.id();
     let plan = make_install_plan(manifest);
     db.apply_plan_transaction(&plan).unwrap();
     db.complete_install(&pkg_id).unwrap();
@@ -259,11 +258,11 @@ pub(crate) fn mark_as_pending_uninstalled(
     db: &mut PackageDatabase<'_>,
     manifest: &Arc<PackageManifest>,
 ) {
-    let pkg_id = manifest.metadata.id();
+    let pkg_id = manifest.id();
     let plan = make_install_plan(manifest);
     db.apply_plan_transaction(&plan).unwrap();
     db.complete_install(&pkg_id).unwrap();
-    let plan = make_uninstall_plan(&manifest.metadata.id());
+    let plan = make_uninstall_plan(&manifest.id());
     db.apply_plan_transaction(&plan).unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().0,

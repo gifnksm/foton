@@ -51,7 +51,7 @@ where
 
 #[derive(Debug, Snafu)]
 enum InstallResolveErrorReport {
-    #[snafu(display("failed to find package by {pkg_spec}"))]
+    #[snafu(display("failed to find package for `{pkg_spec}`"))]
     FindLatestPackageBySpec {
         pkg_spec: PackageSpec,
         #[snafu(source(from(RegistryIndexError, Box::new)))]
@@ -70,7 +70,7 @@ enum InstallResolveErrorReport {
         pkg_spec: PackageSpec,
         pkg_ids: Vec<(RegistryId, PackageId)>,
     },
-    #[snafu(display("no package found matching the specified package `{pkg_spec}`"))]
+    #[snafu(display("no package found for `{pkg_spec}`"))]
     PackageNotFoundForSpec { pkg_spec: PackageSpec },
     #[snafu(display(
         concat!(
@@ -186,7 +186,7 @@ fn resolve_installed_package(db: &PackageDatabase<'_>, pkg_spec: &PackageSpec) -
     let installed_pkg = db
         .entries_by_spec(pkg_spec)
         .filter_map(|(state, manifest)| (state == PackageState::Installed).then_some(manifest))
-        .max_by(|a, b| a.metadata.version.cmp(&b.metadata.version));
+        .max_by(|a, b| a.version.cmp(&b.version));
     if let Some(manifest) = installed_pkg {
         ResolveState::Resolved {
             source: InstallTargetSource::Installed,
@@ -237,7 +237,7 @@ where
     if manifests.len() > 1 {
         let pkg_ids = manifests
             .into_iter()
-            .map(|(registry, pkg)| (registry.clone(), pkg.metadata.id()))
+            .map(|(registry, pkg)| (registry.clone(), pkg.id()))
             .collect::<Vec<_>>();
         return Err(cx.reporter().report_error(
             MultipleMatchingPackagesInRegistriesSnafu { pkg_spec, pkg_ids }.build(),
@@ -258,7 +258,7 @@ where
 
 fn dedup_by_id(targets: &mut Vec<ResolvedInstallTarget>) {
     let mut seen = BTreeSet::new();
-    targets.retain(|target| seen.insert(target.manifest.metadata.id()));
+    targets.retain(|target| seen.insert(target.manifest.id()));
 }
 
 fn check_conflicts<S>(
@@ -270,11 +270,11 @@ where
 {
     let mut versions_by_name: BTreeMap<PackageName, Vec<_>> = BTreeMap::new();
     for target in targets {
-        let metadata = &target.manifest.metadata;
+        let manifest = &target.manifest;
         versions_by_name
-            .entry(metadata.name.clone())
+            .entry(manifest.name.clone())
             .or_default()
-            .push((target.source.clone(), metadata.id()));
+            .push((target.source.clone(), manifest.id()));
     }
     versions_by_name
         .into_values()
@@ -384,14 +384,8 @@ mod tests {
             let targets =
                 resolve_install_targets_by_spec(&cx, &db, &[registry], &pkg_specs).unwrap();
             assert_eq!(targets.len(), 2);
-            assert_eq!(
-                targets[0].manifest.metadata.id(),
-                installed_manifest.metadata.id()
-            );
-            assert_eq!(
-                targets[1].manifest.metadata.id().to_string(),
-                "example-font@1.0.0"
-            );
+            assert_eq!(targets[0].manifest.id(), installed_manifest.id());
+            assert_eq!(targets[1].manifest.id().to_string(), "example-font@1.0.0");
         });
     }
 
@@ -468,10 +462,7 @@ mod tests {
 
         let spec = PackageSpec::from_str("example-font").unwrap();
         let target = resolve_spec_from_registry(&cx, &[index], &spec).unwrap();
-        assert_eq!(
-            target.manifest.metadata.id().to_string(),
-            "example-font@0.2.0"
-        );
+        assert_eq!(target.manifest.id().to_string(), "example-font@0.2.0");
     }
 
     #[test]
@@ -516,7 +507,7 @@ mod tests {
     #[test]
     fn dedup_by_id_collapses_duplicate_targets() {
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let expected_pkg_id = manifest.metadata.id();
+        let expected_pkg_id = manifest.id();
         let mut targets = vec![
             ResolvedInstallTarget {
                 source: InstallTargetSource::Installed,
@@ -532,7 +523,7 @@ mod tests {
 
         assert_eq!(targets.len(), 1);
         assert!(
-            matches!(&targets[0], ResolvedInstallTarget { manifest, .. } if manifest.metadata.id() == expected_pkg_id)
+            matches!(&targets[0], ResolvedInstallTarget { manifest, .. } if manifest.id() == expected_pkg_id)
         );
     }
 }

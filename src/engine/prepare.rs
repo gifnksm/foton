@@ -124,9 +124,9 @@ mod tests {
         let cx = TestScope::start(&cx);
 
         let install_manifest = testing::make_manifest("install-font@0.1.0");
-        let install_pkg_id = install_manifest.metadata.id();
+        let install_pkg_id = install_manifest.id();
         let uninstall_manifest = testing::make_manifest("uninstall-font@0.1.0");
-        let uninstall_pkg_id = uninstall_manifest.metadata.id();
+        let uninstall_pkg_id = uninstall_manifest.id();
         let skipped_pkg_id = "skipped-font@0.1.0".parse::<PackageId>().unwrap();
 
         testing::with_db(&cx, |mut db| {

@@ -77,7 +77,7 @@ where
     S: ReportScope,
 {
     let cx = InstallDbGuardScope::start(cx);
-    let pkg_id = manifest.metadata.id();
+    let pkg_id = manifest.id();
 
     {
         let db = db.lock().unwrap();
@@ -165,7 +165,7 @@ mod tests {
         let cx = TestScope::start(&cx);
 
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
+        let pkg_id = manifest.id();
 
         testing::with_db(&cx, |mut db| {
             let plan = testing::make_install_plan(&manifest);
@@ -193,7 +193,7 @@ mod tests {
         let cx = TestScope::start(&cx);
 
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
+        let pkg_id = manifest.id();
 
         let mut db_lock_file = engine::open_db_lock_file(&cx).unwrap();
 
@@ -218,7 +218,7 @@ mod tests {
         let cx = TestScope::start(&cx);
 
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.metadata.id();
+        let pkg_id = manifest.id();
 
         let mut db_lock_file = engine::open_db_lock_file(&cx).unwrap();
 

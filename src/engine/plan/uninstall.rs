@@ -62,7 +62,7 @@ mod tests {
 
         let other_manifest = testing::make_manifest("example-font@0.1.0");
         let uninstall_manifest = testing::make_manifest("example-font@0.2.0");
-        let uninstall_pkg_id = uninstall_manifest.metadata.id();
+        let uninstall_pkg_id = uninstall_manifest.id();
         let uninstall_target = testing::make_resolved_uninstall_target(&uninstall_pkg_id);
 
         let plan = testing::with_db(&cx, |mut db| {
