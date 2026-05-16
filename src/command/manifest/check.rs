@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io,
+    io, iter,
     path::PathBuf,
 };
 
@@ -76,7 +76,7 @@ enum CheckManifestWarnReport {
     #[snafu(display(
         concat!(
             "`package.sources[{source_index}].include` contains wildcard pattern(s): {pattern}\n",
-            "this pattern extracts to the following font paths:\n",
+            "this pattern extracts to the following paths:\n",
             "{extracted}\n",
             "consider replacing them with fixed strings to avoid unexpected matches\n",
         ),
@@ -91,7 +91,7 @@ enum CheckManifestWarnReport {
     },
     #[snafu(display(
         concat!(
-            "`package.sources[{source_index}].include` contains pattern `{pattern}` that matches no font paths\n",
+            "`{pattern}` in `package.sources[{source_index}].include` does not match any paths\n",
             "consider removing it or replacing it with a pattern that matches the intended paths\n",
         ),
         source_index = source_index,
@@ -103,7 +103,7 @@ enum CheckManifestWarnReport {
     },
     #[snafu(display(
         concat!(
-            "`package.sources[{source_index}].include` contains multiple patterns that match the same font path: {path}\n",
+            "`package.sources[{source_index}].include` contains multiple patterns that match the same path: {path}\n",
             "{patterns}\n",
             "consider removing redundant patterns",
         ),
@@ -118,7 +118,7 @@ enum CheckManifestWarnReport {
     },
     #[snafu(display(
         concat!(
-            "`package.sources[{source_index}].exclude` contains pattern `{pattern}` that matches no paths\n",
+            "`{pattern}` in `package.sources[{source_index}].exclude` does not match any paths\n",
             "consider removing it or replacing it with a pattern that matches the intended paths\n",
         ),
         source_index = source_index,
@@ -127,6 +127,19 @@ enum CheckManifestWarnReport {
     ExcludePatternMatchesNothing {
         source_index: usize,
         pattern: PathPattern,
+    },
+    #[snafu(display(
+        concat!(
+            "`package.sources[{source_index}]` contains font-like paths that match neither `include` nor `exclude`\n",
+            "{skipped}\n",
+            "consider adding them to `include` or `exclude` explicitly, depending on the intended behavior",
+        ),
+        source_index = source_index,
+        skipped = BulletList(&skipped.iter().map(|path| path.display()).collect::<Vec<_>>()),
+    ))]
+    SuspiciousSkip {
+        source_index: usize,
+        skipped: BTreeSet<PathBuf>,
     },
 }
 
@@ -235,6 +248,7 @@ fn check_manifest_fields(
     check_face_completeness(manifest, package, &mut reports);
     check_include_extraction(manifest, extract_details, &mut reports);
     check_exclude_extraction(manifest, extract_details, &mut reports);
+    check_suspicious_skips(extract_details, &mut reports);
 
     let mut err = None;
     for report in reports {
@@ -319,29 +333,25 @@ fn check_face_completeness(
 }
 
 fn collect_included_paths(
-    extract_details: &[ExtractDetail],
-    source_index: usize,
+    extract_detail: &ExtractDetail,
     pattern: &PathPattern,
 ) -> BTreeSet<PathBuf> {
-    extract_details
-        .get(source_index)
-        .into_iter()
-        .flat_map(|result| &result.included)
+    extract_detail
+        .included
+        .iter()
         .filter(|entry| pattern.matches(&entry.path_in_archive))
         .map(|entry| entry.path_in_archive.clone())
         .collect()
 }
 
 fn collect_excluded_paths(
-    extract_details: &[ExtractDetail],
-    source_index: usize,
+    extract_detail: &ExtractDetail,
     pattern: &PathPattern,
 ) -> BTreeSet<PathBuf> {
-    extract_details
-        .get(source_index)
-        .into_iter()
-        .flat_map(|result| &result.excluded)
-        .filter(|&entry| pattern.matches(&entry.path_in_archive))
+    extract_detail
+        .excluded
+        .iter()
+        .filter(|entry| pattern.matches(&entry.path_in_archive))
         .map(|entry| entry.path_in_archive.clone())
         .collect()
 }
@@ -351,10 +361,13 @@ fn check_include_extraction(
     extract_details: &[ExtractDetail],
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
-    for (source_index, source) in manifest.sources.iter().enumerate() {
+    assert_eq!(manifest.sources.len(), extract_details.len());
+    for (source_index, (source, extract_detail)) in
+        iter::zip(&manifest.sources, extract_details).enumerate()
+    {
         let mut source_patterns: BTreeMap<PathBuf, Vec<_>> = BTreeMap::new();
         for pattern in &source.include {
-            let extracted = collect_included_paths(extract_details, source_index, pattern);
+            let extracted = collect_included_paths(extract_detail, pattern);
             for path in &extracted {
                 source_patterns
                     .entry(path.clone())
@@ -400,9 +413,12 @@ fn check_exclude_extraction(
     extract_details: &[ExtractDetail],
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
-    for (source_index, source) in manifest.sources.iter().enumerate() {
+    assert_eq!(manifest.sources.len(), extract_details.len());
+    for (source_index, (source, extract_detail)) in
+        iter::zip(&manifest.sources, extract_details).enumerate()
+    {
         for pattern in &source.exclude {
-            let extracted = collect_excluded_paths(extract_details, source_index, pattern);
+            let extracted = collect_excluded_paths(extract_detail, pattern);
             if extracted.is_empty() {
                 reports.push(
                     ExcludePatternMatchesNothingSnafu {
@@ -412,6 +428,28 @@ fn check_exclude_extraction(
                     .build(),
                 );
             }
+        }
+    }
+}
+
+fn check_suspicious_skips(
+    extract_details: &[ExtractDetail],
+    reports: &mut Vec<CheckManifestWarnReport>,
+) {
+    for (source_index, extract_detail) in extract_details.iter().enumerate() {
+        if !extract_detail.suspicious_skips.is_empty() {
+            let skipped: BTreeSet<_> = extract_detail
+                .suspicious_skips
+                .iter()
+                .map(|entry| entry.path_in_archive.clone())
+                .collect();
+            reports.push(
+                SuspiciousSkipSnafu {
+                    source_index,
+                    skipped,
+                }
+                .build(),
+            );
         }
     }
 }
@@ -443,22 +481,25 @@ mod tests {
         Package::new(PKG_ID.clone(), pkg_dirs, entries)
     }
 
-    fn make_extract_detail(included: &[&str], excluded: &[&str]) -> ExtractDetail {
+    fn to_extract_entries(paths: &[&str]) -> Vec<ExtractEntry> {
+        paths
+            .iter()
+            .copied()
+            .map(|path| ExtractEntry {
+                path_in_archive: path.into(),
+            })
+            .collect()
+    }
+
+    fn make_extract_detail(
+        included: &[&str],
+        excluded: &[&str],
+        suspicious_skips: &[&str],
+    ) -> ExtractDetail {
         ExtractDetail {
-            included: included
-                .iter()
-                .copied()
-                .map(|path| ExtractEntry {
-                    path_in_archive: path.into(),
-                })
-                .collect(),
-            excluded: excluded
-                .iter()
-                .copied()
-                .map(|path| ExtractEntry {
-                    path_in_archive: path.into(),
-                })
-                .collect(),
+            included: to_extract_entries(included),
+            excluded: to_extract_entries(excluded),
+            suspicious_skips: to_extract_entries(suspicious_skips),
         }
     }
 
@@ -552,7 +593,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = ["fonts/missing.ttf"]
 "#,
         );
-        let extract_details = [make_extract_detail(&["fonts/actual.ttf"], &[])];
+        let extract_details = [make_extract_detail(&["fonts/actual.ttf"], &[], &[])];
         let mut reports = vec![];
 
         check_include_extraction(&manifest, &extract_details, &mut reports);
@@ -576,11 +617,16 @@ version = "0.1.0"
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = ["fonts/*.ttf"]
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+include = ["fonts/c.ttf"]
 "#,
         );
         let extract_details = [
-            make_extract_detail(&["fonts/a.ttf", "fonts/b.ttf"], &[]),
-            make_extract_detail(&["fonts/c.ttf"], &[]),
+            make_extract_detail(&["fonts/a.ttf", "fonts/b.ttf"], &[], &[]),
+            make_extract_detail(&["fonts/c.ttf"], &[], &[]),
         ];
         let mut reports = vec![];
 
@@ -610,7 +656,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = ["fonts/a.ttf", "fonts/a.ttf"]
 "#,
         );
-        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[])];
+        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[], &[])];
         let mut reports = vec![];
 
         check_include_extraction(&manifest, &extract_details, &mut reports);
@@ -642,7 +688,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = ["fonts/*.ttf", "fonts/a.ttf"]
 "#,
         );
-        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[])];
+        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[], &[])];
         let mut reports = vec![];
 
         check_include_extraction(&manifest, &extract_details, &mut reports);
@@ -684,7 +730,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 exclude = ["fonts/missing.ttf"]
 "#,
         );
-        let extract_details = [make_extract_detail(&["fonts/actual.ttf"], &[])];
+        let extract_details = [make_extract_detail(&["fonts/actual.ttf"], &[], &[])];
         let mut reports = vec![];
 
         check_exclude_extraction(&manifest, &extract_details, &mut reports);
@@ -713,11 +759,34 @@ exclude = ["fonts/skip.ttf"]
         let extract_details = [make_extract_detail(
             &["fonts/actual.ttf"],
             &["fonts/skip.ttf"],
+            &[],
         )];
         let mut reports = vec![];
 
         check_exclude_extraction(&manifest, &extract_details, &mut reports);
 
         assert!(reports.is_empty());
+    }
+
+    #[test]
+    fn check_suspicious_skips_reports_font_like_paths_not_covered_by_include_or_exclude() {
+        let extract_details = [make_extract_detail(
+            &["fonts/actual.ttf"],
+            &[],
+            &["fonts/SKIP.TTF", "fonts/skip.otf"],
+        )];
+        let mut reports = vec![];
+
+        check_suspicious_skips(&extract_details, &mut reports);
+
+        assert!(matches!(
+            reports.as_slice(),
+            [CheckManifestWarnReport::SuspiciousSkip { source_index, skipped }]
+                if *source_index == 0
+                    && skipped == &BTreeSet::from([
+                        PathBuf::from("fonts/SKIP.TTF"),
+                        PathBuf::from("fonts/skip.otf"),
+                    ])
+        ));
     }
 }
