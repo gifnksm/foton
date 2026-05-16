@@ -98,6 +98,7 @@ pub(crate) struct ExtractEntry {
 pub(crate) struct ExtractDetail {
     pub(crate) included: Vec<ExtractEntry>,
     pub(crate) excluded: Vec<ExtractEntry>,
+    pub(crate) suspicious_skips: Vec<ExtractEntry>,
 }
 
 pub(super) fn extract_archive<S>(
@@ -127,6 +128,7 @@ fn extract_archive_impl(
     let mut file_names = vec![];
     let mut included = vec![];
     let mut excluded = vec![];
+    let mut suspicious_skips = vec![];
     let mut archive = ZipArchive::new(file).context(ReadArchiveSnafu)?;
 
     for i in 0..archive.len() {
@@ -135,30 +137,39 @@ fn extract_archive_impl(
         if !archive_file.is_file() {
             continue;
         }
-        let Some(archive_path) = archive_file.enclosed_name() else {
+        let Some(path_in_archive) = archive_file.enclosed_name() else {
             continue;
         };
-        let is_excluded = exclude.iter().any(|pattern| pattern.matches(&archive_path));
+        let is_excluded = exclude
+            .iter()
+            .any(|pattern| pattern.matches(&path_in_archive));
         if is_excluded {
-            excluded.push(ExtractEntry {
-                path_in_archive: archive_path,
-            });
+            excluded.push(ExtractEntry { path_in_archive });
             continue;
         }
-        let is_included = include.iter().any(|pattern| pattern.matches(&archive_path));
+        let is_included = include
+            .iter()
+            .any(|pattern| pattern.matches(&path_in_archive));
         if !is_included {
+            if let Some(ext) = path_in_archive.extension()
+                && (ext.eq_ignore_ascii_case("ttf")
+                    || ext.eq_ignore_ascii_case("otf")
+                    || ext.eq_ignore_ascii_case("ttc"))
+            {
+                suspicious_skips.push(ExtractEntry { path_in_archive });
+            }
             continue;
         }
         snafu::ensure!(
             archive_file.size() <= config.install.max_extracted_file_size_bytes,
             ExtractedFileExceedsMaxSizeSnafu {
-                file_path: archive_path,
+                file_path: path_in_archive,
                 file_size: archive_file.size(),
                 max_size: config.install.max_extracted_file_size_bytes,
             }
         );
 
-        let file_name = archive_path
+        let file_name = path_in_archive
             .file_name()
             .context(GetFileNameSnafu { index: i })?
             .to_owned();
@@ -192,11 +203,16 @@ fn extract_archive_impl(
             .context(FlushExtractedFileSnafu { path: &fs_path })?;
 
         file_names.push(file_name);
-        included.push(ExtractEntry {
-            path_in_archive: archive_path,
-        });
+        included.push(ExtractEntry { path_in_archive });
     }
-    Ok((file_names, ExtractDetail { included, excluded }))
+    Ok((
+        file_names,
+        ExtractDetail {
+            included,
+            excluded,
+            suspicious_skips,
+        },
+    ))
 }
 
 #[cfg(test)]
@@ -246,6 +262,19 @@ mod tests {
         let (file_names, _extract_detail) =
             extract_archive_impl(archive, include, exclude, &fonts_dir, config)?;
         Ok((tempdir, file_names))
+    }
+
+    fn extract_detail_to_tempdir(
+        archive: File,
+        include: &[PathPattern],
+        exclude: &[PathPattern],
+        config: &FotonConfig,
+    ) -> Result<(TempDir, ExtractDetail), Box<ExtractErrorReport>> {
+        let tempdir = tempfile::tempdir().unwrap();
+        let fonts_dir = AbsolutePath::new(tempdir.path()).unwrap();
+        let (_file_names, extract_detail) =
+            extract_archive_impl(archive, include, exclude, &fonts_dir, config)?;
+        Ok((tempdir, extract_detail))
     }
 
     #[test]
@@ -382,5 +411,46 @@ mod tests {
             *err,
             ExtractErrorReport::ExtractedFileExceedsMaxSize { .. }
         ));
+    }
+
+    #[test]
+    fn extract_archive_records_suspicious_skips_for_font_like_paths_case_insensitively() {
+        let archive = build_zip(&[("fonts/SKIP.TTF", b"font"), ("fonts/readme.txt", b"readme")]);
+        let include = [PathPattern::new("fonts/include.ttf").unwrap()];
+        let exclude = [];
+
+        let (_tempdir, extract_detail) =
+            extract_detail_to_tempdir(archive, &include, &exclude, &FotonConfig::default())
+                .unwrap();
+
+        assert_eq!(
+            extract_detail
+                .suspicious_skips
+                .iter()
+                .map(|entry| entry.path_in_archive.as_path())
+                .collect::<Vec<_>>(),
+            vec![PathBuf::from("fonts/SKIP.TTF").as_path()]
+        );
+    }
+
+    #[test]
+    fn extract_archive_does_not_record_suspicious_skips_for_excluded_font_like_paths() {
+        let archive = build_zip(&[("fonts/skip.ttf", b"font")]);
+        let include = [];
+        let exclude = [PathPattern::new("fonts/skip.ttf").unwrap()];
+
+        let (_tempdir, extract_detail) =
+            extract_detail_to_tempdir(archive, &include, &exclude, &FotonConfig::default())
+                .unwrap();
+
+        assert!(extract_detail.suspicious_skips.is_empty());
+        assert_eq!(
+            extract_detail
+                .excluded
+                .iter()
+                .map(|entry| entry.path_in_archive.as_path())
+                .collect::<Vec<_>>(),
+            vec![PathBuf::from("fonts/skip.ttf").as_path()]
+        );
     }
 }
