@@ -6,7 +6,6 @@ use std::{
     path::PathBuf,
 };
 
-use glob::MatchOptions;
 use snafu::{IntoError as _, OptionExt as _, ResultExt as _, Snafu};
 use zip::{ZipArchive, result::ZipError};
 
@@ -18,7 +17,11 @@ use crate::{
             NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
         },
     },
-    util::path::{AbsolutePath, FileName},
+    package::FontSource,
+    util::{
+        glob::GLOB_MATCH_OPTIONS,
+        path::{AbsolutePath, FileName},
+    },
 };
 
 #[derive(Debug)]
@@ -92,7 +95,8 @@ pub(super) fn extract_archive<S>(
     file: File,
     include: &[glob::Pattern],
     fonts_dir: &AbsolutePath,
-) -> Result<Vec<FileName>, S::Error>
+    source_index: usize,
+) -> Result<Vec<(FileName, FontSource)>, S::Error>
 where
     S: ReportScope,
 {
@@ -100,21 +104,17 @@ where
         cx,
         format_args!("Extracting archive to {}...", fonts_dir.display()),
     );
-    extract_archive_impl(file, include, fonts_dir, cx.config()).report_error(cx.reporter())
+    extract_archive_impl(file, include, fonts_dir, source_index, cx.config())
+        .report_error(cx.reporter())
 }
 
 fn extract_archive_impl(
     file: File,
     include: &[glob::Pattern],
     fonts_dir: &AbsolutePath,
+    source_index: usize,
     config: &FotonConfig,
-) -> Result<Vec<FileName>, ExtractErrorReport> {
-    const MATCH_OPTIONS: MatchOptions = MatchOptions {
-        case_sensitive: false,
-        require_literal_separator: true,
-        require_literal_leading_dot: true,
-    };
-
+) -> Result<Vec<(FileName, FontSource)>, ExtractErrorReport> {
     let mut files = vec![];
     let mut archive = ZipArchive::new(file).context(ReadArchiveSnafu)?;
 
@@ -129,7 +129,7 @@ fn extract_archive_impl(
         };
         let matches = include
             .iter()
-            .any(|pattern| pattern.matches_path_with(&archive_path, MATCH_OPTIONS));
+            .any(|pattern| pattern.matches_path_with(&archive_path, GLOB_MATCH_OPTIONS));
         if !matches {
             continue;
         }
@@ -175,7 +175,8 @@ fn extract_archive_impl(
         file.flush()
             .context(FlushExtractedFileSnafu { path: &fs_path })?;
 
-        files.push(file_name);
+        let source = FontSource::new(source_index, archive_path);
+        files.push((file_name, source));
     }
     Ok(files)
 }
@@ -219,7 +220,10 @@ mod tests {
     ) -> Result<(TempDir, Vec<FileName>), Box<ExtractErrorReport>> {
         let tempdir = tempfile::tempdir().unwrap();
         let fonts_dir = AbsolutePath::new(tempdir.path()).unwrap();
-        let files = extract_archive_impl(archive, include, &fonts_dir, config)?;
+        let files = extract_archive_impl(archive, include, &fonts_dir, 0, config)?
+            .into_iter()
+            .map(|(file_name, _source)| file_name)
+            .collect();
         Ok((tempdir, files))
     }
 

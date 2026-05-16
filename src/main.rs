@@ -1,7 +1,7 @@
 #[cfg(not(windows))]
 compile_error!("foton is supported on Windows only.");
 
-use std::{env, io, process, sync::Arc};
+use std::{io, process, sync::Arc};
 
 use clap::Parser as _;
 use config::ConfigError;
@@ -10,15 +10,12 @@ use tokio::signal;
 
 use crate::{
     cli::{
-        args::{Args, Command, GlobalArgs},
+        args::{Args, GlobalArgs},
         context::RootContext,
         message,
         reporter::{Report, RootReporter},
     },
-    command::{
-        GenerateManError, InfoError, InstallError, ListError, PrintCompletionError, SearchError,
-        UninstallError, UpdateError,
-    },
+    command::{CommandError, SpecialCommandError},
     platform::windows::{
         self,
         com::{ComError, ComGuard},
@@ -51,30 +48,6 @@ enum FotonError {
 }
 
 #[derive(Debug, Snafu)]
-enum SpecialCommandError {
-    #[snafu(transparent)]
-    PrintCompletion { source: PrintCompletionError },
-    #[snafu(transparent)]
-    GenerateMan { source: GenerateManError },
-}
-
-#[derive(Debug, Snafu)]
-enum CommandError {
-    #[snafu(transparent)]
-    Install { source: InstallError },
-    #[snafu(transparent)]
-    Update { source: UpdateError },
-    #[snafu(transparent)]
-    Uninstall { source: UninstallError },
-    #[snafu(transparent)]
-    List { source: ListError },
-    #[snafu(transparent)]
-    Info { source: InfoError },
-    #[snafu(transparent)]
-    Search { source: SearchError },
-}
-
-#[derive(Debug, Snafu)]
 enum InitializationError {
     #[snafu(transparent)]
     AppDirs { source: AppDirsError },
@@ -96,14 +69,14 @@ fn main() {
 }
 
 fn run() -> Result<(), FotonError> {
-    run_special_command()?;
+    command::run_special_command()?;
 
     let Args {
         global_args,
         command,
     } = Args::parse();
     let cx = init_context(global_args).context(InitializationSnafu)?;
-    start_task(&cx, async move |cx| run_command(cx, command).await)?;
+    start_task(&cx, async move |cx| command::run_command(cx, command).await)?;
 
     Ok(())
 }
@@ -161,33 +134,4 @@ where
         });
         fut(cx).await.map_err(Into::into)
     })
-}
-
-fn run_special_command() -> Result<(), SpecialCommandError> {
-    let bin_name = env!("CARGO_BIN_NAME");
-    let env_prefix = bin_name.to_uppercase().replace('-', "_");
-
-    if let Ok(shell) = env::var(format!("{env_prefix}_COMPLETE")) {
-        command::print_completion(bin_name, &shell)?;
-        process::exit(0);
-    }
-
-    if let Some(output_dir) = env::var_os(format!("{env_prefix}_GENERATE_MAN_TO")) {
-        command::generate_man(&output_dir)?;
-        process::exit(0);
-    }
-
-    Ok(())
-}
-
-async fn run_command(cx: &RootContext, command: Command) -> Result<(), CommandError> {
-    match command {
-        Command::Install(args) => command::install_package(cx, &args).await?,
-        Command::Update(args) => command::update_package(cx, &args).await?,
-        Command::Uninstall(args) => command::uninstall_package(cx, &args).await?,
-        Command::List(args) => command::list_package(cx, &args)?,
-        Command::Info(args) => command::info_package(cx, &args)?,
-        Command::Search(args) => command::search_packages(cx, &args)?,
-    }
-    Ok(())
 }

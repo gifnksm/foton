@@ -39,7 +39,7 @@ where
 }
 
 #[derive(Debug, Snafu)]
-pub(crate) enum DialogErrorReport {
+enum DialogErrorReport {
     #[snafu(display("failed to receive user confirmation"))]
     UserConfirmation { source: dialoguer::Error },
 }

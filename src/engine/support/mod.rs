@@ -1,5 +1,4 @@
-pub(in crate::engine) use self::stage::*;
-pub(crate) use self::{db_session::*, dialog::*, report::*};
+pub(crate) use self::{db_session::*, dialog::*, report::*, stage::*};
 
 mod db_session;
 mod dialog;

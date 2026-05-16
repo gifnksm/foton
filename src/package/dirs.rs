@@ -18,6 +18,10 @@ pub(crate) struct PackageDirs {
 impl PackageDirs {
     pub(crate) fn new(app_dirs: &AppDirs, pkg_id: &PackageId) -> Self {
         let package_base_dir = app_dirs.data_local_dir().join("packages");
+        Self::new_in(&package_base_dir, pkg_id)
+    }
+
+    pub(crate) fn new_in(package_base_dir: &AbsolutePath, pkg_id: &PackageId) -> Self {
         let name_dir = package_base_dir.join(pkg_id.name());
         let version_dir = name_dir.join(pkg_id.version().to_string());
         let fonts_dir = version_dir.join("fonts");
