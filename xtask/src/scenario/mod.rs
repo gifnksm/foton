@@ -8,11 +8,14 @@ use tempfile::TempDir;
 
 use crate::{
     report::{ExecResult, RunId, RunKind, RunReport},
-    util::{build, fs as fs_util},
+    util::{build, env as env_util, fs as fs_util},
 };
 
 mod help_check;
-mod smoke_test;
+mod install_failure;
+mod install_uninstall;
+mod manifest_check;
+mod update;
 
 #[derive(
     Debug,
@@ -31,7 +34,10 @@ mod smoke_test;
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum Scenario {
     HelpCheck,
-    SmokeTest,
+    InstallUninstall,
+    Update,
+    ManifestCheck,
+    InstallFailure,
 }
 
 /// Commands for running scenarios.
@@ -110,10 +116,12 @@ impl RunArgs {
             })?;
             (Some(tempdir), path)
         };
+        let fixture_dir = env_util::fixture_dir()?;
         Ok((
             tempdir_guard,
             ScenarioParameters {
                 foton_exe,
+                fixture_dir,
                 output_dir,
                 run_id: RunId::new(),
             },
@@ -124,6 +132,7 @@ impl RunArgs {
 #[derive(Debug)]
 pub(crate) struct ScenarioParameters {
     pub(crate) foton_exe: Utf8PathBuf,
+    pub(crate) fixture_dir: Utf8PathBuf,
     pub(crate) output_dir: Utf8PathBuf,
     pub(crate) run_id: RunId,
 }
@@ -135,7 +144,10 @@ pub(crate) fn run(
 ) -> eyre::Result<()> {
     match scenario {
         Scenario::HelpCheck => help_check::run(params, exec_results),
-        Scenario::SmokeTest => smoke_test::run(params, exec_results),
+        Scenario::InstallUninstall => install_uninstall::run(params, exec_results),
+        Scenario::Update => update::run(params, exec_results),
+        Scenario::ManifestCheck => manifest_check::run(params, exec_results),
+        Scenario::InstallFailure => install_failure::run(params, exec_results),
     }
 }
 
