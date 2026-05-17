@@ -96,6 +96,18 @@ impl ExecResult {
     }
 
     #[track_caller]
+    pub(crate) fn ensure_exit_code(&self, code: i32) -> eyre::Result<&Self> {
+        ensure!(
+            self.exit_status == format!("exit code: {code}"),
+            "{} failed with exit status {}. stderr:\n{}",
+            self.name,
+            self.exit_status,
+            self.stderr
+        );
+        Ok(self)
+    }
+
+    #[track_caller]
     pub(crate) fn ensure_stdout<P>(&self, predicate: P) -> eyre::Result<&Self>
     where
         P: FnOnce(&str) -> bool,
@@ -122,6 +134,33 @@ impl ExecResult {
         );
         Ok(self)
     }
+}
+
+pub(crate) fn contains_line_starting_with(s: &str, prefix: &str) -> bool {
+    s.lines().any(|line| line.starts_with(prefix))
+}
+
+const ERROR_PREFIX: &str = "error: ";
+const WARNING_PREFIX: &str = "warning: ";
+
+pub(crate) fn not_contains_line_starting_with(s: &str, prefix: &str) -> bool {
+    s.lines().all(|line| !line.starts_with(prefix))
+}
+
+pub(crate) fn contains_error_line(stderr: &str) -> bool {
+    contains_line_starting_with(stderr, ERROR_PREFIX)
+}
+
+pub(crate) fn not_contains_error_line(stderr: &str) -> bool {
+    not_contains_line_starting_with(stderr, ERROR_PREFIX)
+}
+
+pub(crate) fn contains_warning_line(stderr: &str) -> bool {
+    contains_line_starting_with(stderr, WARNING_PREFIX)
+}
+
+pub(crate) fn not_contains_warning_line(stderr: &str) -> bool {
+    not_contains_line_starting_with(stderr, WARNING_PREFIX)
 }
 
 #[derive(Debug, Deserialize, Serialize)]

@@ -3,7 +3,7 @@ use std::{
     fs::{self, File},
 };
 
-use cargo_metadata::camino::Utf8Path;
+use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use color_eyre::eyre::{self, WrapErr as _, ensure};
 use serde::{Deserialize, Serialize};
 
@@ -78,6 +78,65 @@ where
     let bytes = fs::copy(src, dst)
         .wrap_err_with(|| format!("failed to copy {name}:\n  src: {src}\n  dst: {dst}"))?;
     Ok(bytes)
+}
+
+pub(crate) fn copy_dir<N, P, Q>(name: N, src: P, dst: Q) -> eyre::Result<()>
+where
+    N: Display,
+    P: AsRef<Utf8Path>,
+    Q: AsRef<Utf8Path>,
+{
+    let src = src.as_ref();
+    let dst = dst.as_ref();
+
+    ensure_dir_exists(format_args!("{name} source"), src)?;
+    let dst_parent = dst.parent().ok_or_else(|| {
+        eyre::eyre!("failed to get parent directory of {name} destination: {dst}")
+    })?;
+    ensure_dir_exists(format_args!("{name} destination directory"), dst_parent)?;
+
+    create_dir_all(format_args!("{name} destination directory"), dst)?;
+
+    for entry in fs::read_dir(src)
+        .wrap_err_with(|| format!("failed to read {name} source directory: {src}"))?
+    {
+        let entry = entry.wrap_err_with(|| {
+            format!("failed to read an entry in {name} source directory: {src}")
+        })?;
+        let file_type = entry.file_type().wrap_err_with(|| {
+            format!(
+                "failed to get file type of an entry in {name} source directory: {}",
+                entry.path().display()
+            )
+        })?;
+        let src_entry_path = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+            eyre::eyre!(
+                "failed to convert an entry path in {name} source directory to UTF-8: {}",
+                path.display()
+            )
+        })?;
+        let dst_entry_path = dst.join(src_entry_path.file_name().unwrap());
+        #[expect(clippy::filetype_is_file)]
+        if file_type.is_file() {
+            copy(
+                format_args!("{name} directory entry"),
+                &src_entry_path,
+                &dst_entry_path,
+            )?;
+        } else if file_type.is_dir() {
+            copy_dir(
+                format_args!("{name} directory entry"),
+                &src_entry_path,
+                &dst_entry_path,
+            )?;
+        } else {
+            eyre::bail!(
+                "{name} source directory contains an entry that is neither a file nor a directory: {src_entry_path}"
+            );
+        }
+    }
+
+    Ok(())
 }
 
 pub(crate) fn read_to_string<N, P>(name: N, path: P) -> eyre::Result<String>
