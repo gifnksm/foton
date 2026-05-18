@@ -338,6 +338,29 @@ jobs:
           tool: just
       - run: just ci-markdownlint
 
+  build-guide:
+    name: Build guide
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,mdbook
+      - run: just ci-build-guide
+
+  test-guide:
+    name: Test guide
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,mdbook
+      - run: just ci-test-guide
+
   ci-complete:
     needs:
       - set-matrix
@@ -356,6 +379,8 @@ jobs:
       - actionlint
       - typos
       - markdownlint
+      - build-guide
+      - test-guide
     runs-on: ubuntu-latest
     if: ${{ always() }}
     steps:

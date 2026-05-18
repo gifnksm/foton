@@ -1,0 +1,19 @@
+[book]
+title = "Foton Documentation"
+authors = ["gifnksm"]
+description = "Documentation for foton, a font manager for Windows that manages fonts for the current user without administrator privileges."
+language = "en"
+
+[rust]
+edition = "2024"
+
+[output.html]
+git-repository-url = "https://github.com/gifnksm/foton"
+edit-url-template = "https://github.com/gifnksm/foton/edit/main/docs/book/{path}"
+
+[output.html.redirect]
+# workaround for mdBook #984 <https://github.com/rust-lang/mdBook/issues/984>
+"/guide/advanced/README.html" = "/guide/advanced/index.html"
+"/guide/basic/README.html" = "/guide/basic/index.html"
+"/reference/commands/README.html" = "/reference/commands/index.html"
+"/reference/commands/manifest/README.html" = "/reference/commands/manifest/index.html"

@@ -61,15 +61,15 @@ For the full command reference, run `foton --help`.
 
 ```bash
 # Install one or more font packages:
-foton install <package-specifier>...
+foton install <package-name>...
 
 # Update all installed packages:
 foton update
 # Update specific packages:
-foton update <package-specifier>...
+foton update <package-name>...
 
 # Uninstall one or more installed packages:
-foton uninstall <package-specifier>...
+foton uninstall <package-name>...
 
 # List installed packages:
 foton list
@@ -78,18 +78,11 @@ foton list
 foton search <query>...
 
 # Show details for one or more installed packages:
-foton info <package-specifier>...
+foton info <package-name>...
 ```
 
-A package specifier can be written in one of the following forms:
-
-* `<name>` - package name
-* `<name>@<version>` - package ID with an explicit version
-
-For example: `hackgen` or `hackgen@2.10.0`.
-
 Use `--registry` to choose which package registries to search, for example:
-`foton install --registry local,foton hackgen`
+`foton install --registry local,foton <package-name>`
 
 ## License
 

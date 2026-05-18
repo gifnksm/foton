@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::{package::PackageSpec, registry::RegistryId, util::text::QueryString};
 
-/// Install and uninstall fonts from package registries.
+/// Manage font packages from package registries and manifest files.
 #[derive(clap::Parser)]
 pub(crate) struct Args {
     #[clap(flatten)]
@@ -13,27 +13,27 @@ pub(crate) struct Args {
 
 #[derive(Debug, clap::Args, Default)]
 pub(crate) struct GlobalArgs {
-    /// Bypass any and all interactive confirmation prompts.
+    /// Skip interactive confirmation prompts.
     #[clap(long, global = true)]
     pub(crate) no_confirm: bool,
-    /// Treat warnings as errors, causing the operation to fail if any warning is emitted.
+    /// Treat warnings as errors, causing the command to fail if any warning is emitted.
     #[clap(long, global = true)]
     pub(crate) warnings_as_errors: bool,
 }
 
 #[derive(Debug, clap::Subcommand)]
 pub(crate) enum Command {
-    /// Install packages.
+    /// Install packages from package registries or manifest files.
     Install(InstallArgs),
-    /// Update installed packages.
+    /// Update installed packages from package registries.
     Update(UpdateArgs),
-    /// Uninstall installed packages.
+    /// Uninstall packages recorded in the local package database.
     Uninstall(UninstallArgs),
     /// List installed packages.
     List(ListArgs),
-    /// Show detailed information about packages.
+    /// Show detailed information about packages recorded in the local package database.
     Info(InfoArgs),
-    /// Search packages from registries.
+    /// Search packages in package registries.
     Search(SearchArgs),
     /// Work with package manifest files.
     #[clap(subcommand)]
@@ -48,16 +48,16 @@ pub(crate) struct InstallArgs {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct InstallTargetArgs {
-    /// Install packages defined in the specified manifest files.
+    /// Install packages defined in the given manifest files.
     ///
-    /// This option can be specified multiple times. It cannot be used together
-    /// with `--registry` or `PKG_SPEC`.
+    /// This option can be specified multiple times.
+    /// It cannot be used together with `--registry` or `<PACKAGE>`.
     #[clap(long = "manifest", value_name = "MANIFEST", conflicts_with_all = ["registries", "pkg_specs"])]
     pub(crate) manifests: Vec<PathBuf>,
-    /// Package registry IDs to resolve the package from.
+    /// Package registry IDs to resolve packages from.
     ///
     /// Use a comma-separated list such as `--registry local,foton`.
-    /// This option is only available when installing by `PKG_SPEC`.
+    /// This option is only available when installing by `<PACKAGE>`.
     #[clap(
         long = "registry",
         value_name = "REGISTRY_ID",
@@ -66,11 +66,11 @@ pub(crate) struct InstallTargetArgs {
         requires = "pkg_specs"
     )]
     pub(crate) registries: Option<Vec<RegistryId>>,
-    /// Package specifiers: name or package ID.
+    /// Package names, optionally with an exact version as `<package-name>@<version>`.
     ///
-    /// Required unless `--manifest` is specified. This cannot be used together
-    /// with `--manifest`.
-    #[clap(value_name = "PKG_SPEC", required_unless_present_any = ["manifests"])]
+    /// Required unless `--manifest` is specified.
+    /// This cannot be used together with `--manifest`.
+    #[clap(value_name = "PACKAGE", required_unless_present_any = ["manifests"])]
     pub(crate) pkg_specs: Vec<PackageSpec>,
 }
 
@@ -116,36 +116,43 @@ impl InstallTargets {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct UpdateArgs {
-    /// Package registry IDs to resolve the package from.
+    /// Package registry IDs to resolve packages from.
     ///
     /// Use a comma-separated list such as `--registry local,foton`.
     #[clap(long = "registry", value_name = "REGISTRY_ID", value_delimiter = ',')]
     pub(crate) registries: Option<Vec<RegistryId>>,
-    /// Package specifiers: name or package ID.
+    /// Package names, optionally with an exact version as `<package-name>@<version>`.
     ///
     /// If not specified, all installed packages will be updated if possible.
-    #[clap(value_name = "PKG_SPEC")]
+    /// When an exact version is specified, `update` selects the matching installed
+    /// package first, then looks for a newer version of the same package name.
+    #[clap(value_name = "PACKAGE")]
     pub(crate) pkg_specs: Vec<PackageSpec>,
 }
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct UninstallArgs {
-    /// Package specifiers: name or package ID.
-    #[clap(value_name = "PKG_SPEC", required = true)]
+    /// Package names, optionally with an exact version as `<package-name>@<version>`.
+    #[clap(value_name = "PACKAGE", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
 }
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct ListArgs {
-    /// Include packages in pending-install and pending-uninstall states.
+    /// Include packages in pending states such as `pending-install` and
+    /// `pending-uninstall`.
+    ///
+    /// Without this option, only packages in the `installed` state are shown.
+    /// If you see packages in pending states, it usually means that an earlier
+    /// install or uninstall was interrupted or failed before it finished cleanly.
     #[clap(long)]
     pub(crate) show_pending: bool,
 }
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct InfoArgs {
-    /// Package specifiers: name or package ID.
-    #[clap(value_name = "PKG_SPEC", required = true)]
+    /// Package names, optionally with an exact version as `<package-name>@<version>`.
+    #[clap(value_name = "PACKAGE", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
 }
 
@@ -168,13 +175,13 @@ pub(crate) struct SearchArgs {
 
 #[derive(Debug, clap::Subcommand)]
 pub(crate) enum ManifestCommand {
-    /// Check a manifest file for installation errors and quality warnings.
+    /// Validate a manifest file for installation errors and quality warnings.
     Check(CheckManifestArgs),
 }
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct CheckManifestArgs {
-    /// Manifest file to check.
+    /// Path to the manifest file to validate.
     #[clap(value_name = "MANIFEST", required = true)]
     pub(crate) manifest_path: PathBuf,
 }
