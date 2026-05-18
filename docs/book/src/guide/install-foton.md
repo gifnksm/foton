@@ -21,7 +21,7 @@ your `PATH`, or add the extraction directory to your `PATH` yourself.
 To install `foton` with Cargo, first install the Rust toolchain.
 See [the Rust installation guide](https://www.rust-lang.org/tools/install) if you do not have Rust yet.
 
-Then install either the latest released version or the current Git version from the [GitHub repository](https://github.com/gifnksm/foton).
+Then install either the latest released version or the current development version from the [GitHub repository](https://github.com/gifnksm/foton).
 
 ```console
 cargo install foton
