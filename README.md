@@ -21,68 +21,49 @@
 
 [`foton-registry`]: https://github.com/gifnksm/foton-registry
 
+## Documentation
+
+* [**Latest**](https://foton.readthedocs.io/en/latest/) — documentation for the development version
+* [**Stable**](https://foton.readthedocs.io/en/stable/) — documentation for the latest release
+
 ## Installation
 
-There are several ways to install `foton`.
-Choose the one that best fits your needs.
+For detailed installation instructions, see the [installation guide](https://foton.readthedocs.io/en/stable/guide/install-foton.html).
 
-### Pre-built binaries
-
-Pre-built binaries are available on the [GitHub Releases page].
-
-You can also install one with [`cargo-binstall`].
+Quick install options:
 
 ```console
-# Install pre-built binary
+# Install the latest released version from pre-built binaries
 $ cargo binstall foton
-```
 
-[GitHub Releases page]: https://github.com/gifnksm/foton/releases/
-[`cargo-binstall`]: https://github.com/cargo-bins/cargo-binstall
-
-### Install with Cargo
-
-To install `foton` with Cargo, you need the Rust toolchain.
-If you do not have Rust yet, follow [this guide](https://www.rust-lang.org/tools/install).
-
-Once Rust is installed, run one of the following commands:
-
-```console
-# Install released version
+# Install the latest released version with Cargo
 $ cargo install foton
 
-# Install latest version
+# Install the current development version with Cargo
 $ cargo install --git https://github.com/gifnksm/foton.git foton
 ```
 
+You can also download pre-built binaries manually from the [GitHub Releases page].
+
+[GitHub Releases page]: https://github.com/gifnksm/foton/releases/
+
 ## Usage
 
-For the full command reference, run `foton --help`.
+For tutorials and day-to-day workflows, see the [basic usage guide](https://foton.readthedocs.io/en/stable/guide/basic/).
+For the full CLI reference, see the [command reference](https://foton.readthedocs.io/en/stable/reference/commands/).
 
-```bash
+Common commands:
+
+```console
 # Install one or more font packages:
 foton install <package-name>...
 
 # Update all installed packages:
 foton update
-# Update specific packages:
-foton update <package-name>...
-
-# Uninstall one or more installed packages:
-foton uninstall <package-name>...
-
-# List installed packages:
-foton list
 
 # Search registries for packages:
 foton search <query>...
-
-# Show details for one or more installed packages:
-foton info <package-name>...
 ```
-
-Use `--registry` to choose which package registries to search, for example:
-`foton install --registry local,foton <package-name>`
 
 ## License
 
