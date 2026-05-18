@@ -6,19 +6,20 @@ use std::{
 
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use snafu::Snafu;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub(crate) struct PackageVersion(Arc<Version>);
 
-impl From<Version> for PackageVersion {
-    fn from(version: Version) -> Self {
-        Self(version.into())
-    }
+#[derive(Debug, Snafu)]
+pub(crate) enum ParsePackageVersionError {
+    #[snafu(transparent)]
+    SemVer { source: semver::Error },
 }
 
 impl FromStr for PackageVersion {
-    type Err = semver::Error;
+    type Err = ParsePackageVersionError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let version = Version::parse(s)?;
@@ -27,7 +28,7 @@ impl FromStr for PackageVersion {
 }
 
 impl TryFrom<String> for PackageVersion {
-    type Error = semver::Error;
+    type Error = ParsePackageVersionError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Self::from_str(&value)
@@ -35,7 +36,7 @@ impl TryFrom<String> for PackageVersion {
 }
 
 impl TryFrom<&str> for PackageVersion {
-    type Error = semver::Error;
+    type Error = ParsePackageVersionError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Self::from_str(value)
@@ -51,17 +52,5 @@ impl Display for PackageVersion {
 impl From<&PackageVersion> for PackageVersion {
     fn from(version: &PackageVersion) -> Self {
         version.clone()
-    }
-}
-
-impl PartialEq<Version> for PackageVersion {
-    fn eq(&self, other: &Version) -> bool {
-        self.0.as_ref() == other
-    }
-}
-
-impl PartialEq<PackageVersion> for Version {
-    fn eq(&self, other: &PackageVersion) -> bool {
-        self == other.0.as_ref()
     }
 }

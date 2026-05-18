@@ -6,7 +6,9 @@ use std::{
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt as _, Snafu};
 
-use crate::package::{PackageName, PackageVersion, ParsePackageNameError};
+use crate::package::{
+    PackageName, PackageVersion, ParsePackageNameError, ParsePackageVersionError,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct PackageId {
@@ -70,7 +72,7 @@ pub(crate) enum ParsePackageIdError {
     #[snafu(display("invalid name in package ID"))]
     InvalidName { source: ParsePackageNameError },
     #[snafu(display("invalid version in package ID"))]
-    InvalidVersion { source: semver::Error },
+    InvalidVersion { source: ParsePackageVersionError },
 }
 
 impl FromStr for PackageId {
@@ -113,7 +115,6 @@ impl<'de> Deserialize<'de> for PackageId {
 
 #[cfg(test)]
 mod tests {
-    use semver::Version;
     use serde::de::value::{Error as ValueError, StrDeserializer};
 
     use super::*;
@@ -122,8 +123,8 @@ mod tests {
     fn package_id_parses_valid_string() {
         let pkg_id = PackageId::from_str("example-font@0.1.0").unwrap();
 
-        assert_eq!(pkg_id.name().to_string(), "example-font");
-        assert_eq!(pkg_id.version(), &Version::new(0, 1, 0));
+        assert_eq!(pkg_id.name().as_str(), "example-font");
+        assert_eq!(*pkg_id.version(), "0.1.0".parse().unwrap());
         assert_eq!(pkg_id.to_string(), "example-font@0.1.0");
     }
 

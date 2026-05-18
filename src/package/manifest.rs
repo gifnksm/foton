@@ -387,7 +387,6 @@ pub(crate) struct ManifestMatchResult {
 mod tests {
     use std::fs;
 
-    use semver::Version;
     use tempfile::TempDir;
 
     use super::*;
@@ -424,7 +423,7 @@ include = ["*/*.ttf"]
 
         assert_eq!(manifest.name, "example-font");
         assert_eq!(manifest.display_name, None);
-        assert_eq!(manifest.version, Version::new(0, 1, 0));
+        assert_eq!(manifest.version, "0.1.0".parse().unwrap());
         assert_eq!(manifest.description, None);
         assert!(manifest.aliases.is_empty());
         assert!(manifest.faces.is_empty());
@@ -475,7 +474,7 @@ include = ["*/*.ttf"]
 
         assert_eq!(manifest.name, "example-font");
         assert_eq!(manifest.display_name.as_deref(), Some("Example Font"));
-        assert_eq!(manifest.version, Version::new(0, 1, 0));
+        assert_eq!(manifest.version, "0.1.0".parse().unwrap());
         assert_eq!(manifest.description.as_deref(), Some("example-font"));
         assert_eq!(manifest.aliases, ["Example Font UI"]);
         assert_eq!(
