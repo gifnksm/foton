@@ -4,9 +4,14 @@ build:
   os: ubuntu-lts-latest
   tools:
     rust: latest
-  jobs:
-    install:
-      - cargo install mdbook
-    build:
-      html:
-        - mdbook build docs/book --dest-dir $READTHEDOCS_OUTPUT/html
+  commands:
+    # Install cargo binstall
+    - mkdir -p "${PATH%%:*}"
+    - curl -sSL "https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-gnu.tgz" | tar -xvz --directory "${PATH%%:*}"
+    # Install mdbook
+    - cargo binstall mdbook@0.5 --no-confirm --install-path "${PATH%%:*}"
+    # Build the book
+    - mkdir -p $READTHEDOCS_OUTPUT/html
+    - MDBOOK_OUTPUT__HTML__SITE_URL="/$READTHEDOCS_LANGUAGE/$READTHEDOCS_VERSION/" mdbook build docs/book --dest-dir=$READTHEDOCS_OUTPUT/html
+    # List the output files
+    - ls -lR $READTHEDOCS_OUTPUT/html
