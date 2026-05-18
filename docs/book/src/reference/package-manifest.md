@@ -55,6 +55,88 @@ For example, it can report:
 - wildcard `include` patterns that are broader than necessary
 - font-like files in a source that are neither included nor excluded
 
+## Package version format and ordering
+
+In a package manifest, the `version` field uses `foton`'s package-version
+format.
+It identifies a single immutable package release and is also used to order
+package versions when `foton` selects newer or older releases.
+
+### Format
+
+A package version follows this grammar:
+
+```text
+<package-version> = <numeric-part> ("." <numeric-part>)* [<suffix>]
+<suffix> = "-" <alpha-identifier> ("-" <suffix-identifier>)*
+<numeric-part> = <digit>+
+<alpha-identifier> = <lowercase-letter>+
+<suffix-identifier> = <alpha-identifier> | <digit>+
+<digit> = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
+<lowercase-letter> = "a" | ... | "z"
+```
+
+Additional rules:
+
+- `<suffix>` may appear only after the final `<numeric-part>`
+- `<suffix>` denotes a pre-release of the same `<package-version>` without the
+  `<suffix>`
+- `<suffix-identifier>` values are written as separate `-`-delimited tokens,
+  so use `1.0.0-rc-10`, not `1.0.0-rc10`
+
+Valid examples:
+
+- `2407.24`
+- `2024.05.11`
+- `1.2.3`
+- `1.0.0-rc-1`
+
+Invalid examples:
+
+- `1-rc.10`
+- `1.0-beta.2`
+- `1-rc10`
+- `1-RC`
+
+### Comparison rules
+
+Versions are compared in this order:
+
+1. Compare corresponding `<numeric-part>` values from left to right.
+2. Compare each `<numeric-part>` by numeric value.
+3. If two `<numeric-part>` values have the same numeric value, the one with
+   fewer leading zeros is older.
+4. If all shared `<numeric-part>` values are equal and one `<package-version>`
+   has fewer `<numeric-part>` values, the shorter version is older.
+5. A `<package-version>` with a `<suffix>` is a pre-release and is older than
+   the same `<package-version>` without a `<suffix>`.
+6. If both versions have `<suffix>` values, compare corresponding
+   `<suffix-identifier>` values from left to right.
+7. Numeric `<suffix-identifier>` values are compared by numeric value and are
+   older than alphabetic `<suffix-identifier>` values.
+8. If two numeric `<suffix-identifier>` values have the same numeric value,
+   the one with fewer leading zeros is older.
+9. If all shared `<suffix-identifier>` values are equal and one `<suffix>` has
+   fewer identifiers, the shorter suffix is older.
+
+### Comparison examples
+
+- Numeric parts are compared from left to right:
+  - `1.2.0 < 1.10.0`
+  - `1.2 < 1.2.0`
+  - `1 < 1.0-rc < 1.0`
+- Leading zeros affect ordering when the numeric values are otherwise equal:
+  - `5 < 05 < 005`
+  - `2024.5.11 < 2024.05.11`
+- A suffix makes a version older than the same version without a suffix:
+  - `1.0.0-rc < 1.0.0`
+  - `2024.05.11-beta-2 < 2024.05.11`
+- Suffix identifiers are compared from left to right:
+  - `1.0.0-alpha < 1.0.0-beta`
+  - `1.0.0-rc-2 < 1.0.0-rc-10`
+  - `1.0.0-rc-1 < 1.0.0-rc-a`
+  - `1.0.0-rc < 1.0.0-rc-1`
+
 ## Top-level fields
 
 Field headings indicate whether a field is required or optional.
@@ -96,8 +178,8 @@ Use this for the main label you want users to see.
 The package version.
 Use a version string that identifies an immutable package release.
 
-- **Type**: semantic version string
-- **Constraints**: must be a valid SemVer version
+- **Type**: package version string
+- **Constraints**: must follow the package-version format described above
 - **Example**:
 
   ```toml

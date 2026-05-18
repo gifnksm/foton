@@ -327,7 +327,7 @@ mod tests {
     }
 
     fn test_package_id(name: &str) -> PackageId {
-        format!("registry-test-{name}@0.1.0+pid-{pid}", pid = process::id())
+        format!("registry-test-{name}@0.1.0-pid-{pid}", pid = process::id())
             .parse()
             .unwrap()
     }
@@ -503,11 +503,11 @@ mod tests {
         with_registry_test(|app_id| {
             let pid = process::id();
             let pkg_id_v1 = PackageId::from_str(&format!(
-                "registry-test-cleanup-keep-parents@0.1.0+pid-{pid}"
+                "registry-test-cleanup-keep-parents@0.1.0-pid-{pid}"
             ))
             .unwrap();
             let pkg_id_v2 = PackageId::from_str(&format!(
-                "registry-test-cleanup-keep-parents@0.2.0+pid-{pid}-other",
+                "registry-test-cleanup-keep-parents@0.2.0-pid-{pid}-other",
             ))
             .unwrap();
 

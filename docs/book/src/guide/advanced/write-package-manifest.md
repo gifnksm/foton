@@ -61,6 +61,36 @@ Each `sources` entry must define:
 - `url`
 - `hash`
 
+## Choosing a package version
+
+Choose a `version` that identifies one specific immutable release and sorts in
+release order for that package.
+
+A practical way to choose package versions is:
+
+- Use the upstream release version when it already fits `foton`'s
+  package-version format.
+- If there is no usable upstream version, use a calendar-based version such as
+  `2024.05.11`.
+- If you need to publish a pre-release, add a suffix to the final part. A
+  suffix marks the version as a pre-release and sorts it before the
+  corresponding version without a suffix, such as `1.4.0-rc-1 < 1.4.0` or
+  `2024.05.11-beta-2 < 2024.05.11`.
+- If the upstream version does not fit `foton`'s package-version syntax,
+  rewrite it in a form that still preserves the upstream release ordering and
+  whether the release is stable or pre-release. For example, rewrite `v1.4.0`
+  as `1.4.0`, and rewrite `1.4.0-rc10` as `1.4.0-rc-10`.
+- Keep the notation consistent within the same package to avoid non-intuitive
+  ordering results:
+  - Do not mix forms such as `2024.5.11` and `2024.05.11`, because they are
+    different versions.
+  - Keep the same number of numeric parts within a package. For example,
+    prefer a consistent series such as `1.2.0`, `1.3.0`, and `1.4.0-rc-1`
+    over mixing forms such as `1.2`, `1.3.0`, and `1.4-rc-1`.
+
+For the exact package-version syntax and ordering rules, see
+[Package Manifest Reference](../../reference/package-manifest.md).
+
 ## Recommended fields
 
 These fields are optional, but they are strongly recommended because they help
