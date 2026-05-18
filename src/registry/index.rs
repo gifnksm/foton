@@ -11,7 +11,7 @@ use snafu::{IntoError, OptionExt as _, ResultExt as _, Snafu};
 use crate::{
     package::{
         PackageId, PackageManifest, PackageManifestError, PackageName, PackageSpec, PackageVersion,
-        ParsePackageNameError,
+        ParsePackageNameError, ParsePackageVersionError,
     },
     registry::RegistryId,
 };
@@ -46,7 +46,7 @@ pub(crate) enum RegistryIndexError {
     #[snafu(display("invalid package version in directory entry: {path}", path = path.display()))]
     InvalidVersionInDirectoryEntry {
         path: PathBuf,
-        source: semver::Error,
+        source: ParsePackageVersionError,
     },
     #[snafu(display("invalid package name in directory entry: {path}", path = path.display()))]
     InvalidPackageNameInDirectoryEntry {
