@@ -74,11 +74,19 @@ typos *args:
 markdownlint *args:
     npx markdownlint-cli {{ args }} .
 
+# Build guide with mdbook.
+build-guide *args:
+    mdbook build ./docs/book {{ args }}
+
+# Test guide with mdbook.
+test-guide *args:
+    mdbook test ./docs/book {{ args }}
+
 # Run lint and static checks used for day-to-day local verification.
 ci-lint: ci-rustfmt ci-check ci-clippy ci-machete ci-actionlint ci-typos ci-markdownlint
 
 # Run all CI-equivalent checks.
-ci: ci-lint ci-rustdoc ci-sync-rdme ci-test ci-coverage
+ci: ci-lint ci-rustdoc ci-sync-rdme ci-test ci-coverage ci-build-guide ci-test-guide
 
 # CI: formatting must be clean.
 ci-rustfmt:
@@ -124,6 +132,14 @@ ci-test:
 # CI: uploadable coverage artifact.
 ci-coverage:
     just llvm-cov-all --codecov --output-path target/codecov.json
+
+# CI: build guide.
+ci-build-guide:
+    just build-guide
+
+# CI: test guide.
+ci-test-guide:
+    just test-guide
 
 # Pre-release gate is equivalent to full CI.
 pre-release:
