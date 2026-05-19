@@ -97,6 +97,7 @@ pub(crate) fn resolve_update_targets<S>(
     db: &PackageDatabase<'_>,
     registries: &[RegistrySpec],
     pkg_specs: &[PackageSpec],
+    include_pre_release: bool,
 ) -> Result<Vec<ResolvedInstallTarget>, S::Error>
 where
     S: ReportScope,
@@ -120,7 +121,9 @@ where
     let indexes = registry::fetch_registries(&cx, registries)?;
     let targets = pkg_ids
         .into_iter()
-        .filter_map(|pkg_id| find_update_target(&cx, &indexes, &pkg_id).transpose())
+        .filter_map(|pkg_id| {
+            find_update_target(&cx, &indexes, &pkg_id, include_pre_release).transpose()
+        })
         .map(|res| {
             res.map(|(reg_id, manifest)| ResolvedInstallTarget {
                 source: InstallTargetSource::Registry(reg_id),
@@ -200,6 +203,7 @@ fn find_update_target<S>(
     cx: &ReportContext<UpdateResolveScope<S>>,
     indexes: &[RegistryIndex],
     pkg_id: &PackageId,
+    include_pre_release: bool,
 ) -> Result<Option<(RegistryId, Arc<PackageManifest>)>, S::Error>
 where
     S: ReportScope,
@@ -207,7 +211,7 @@ where
     let mut manifests = vec![];
     for index in indexes {
         let manifest = index
-            .find_latest_package_by_name(pkg_id.name())
+            .find_latest_package_by_name(pkg_id.name(), include_pre_release)
             .context(FindLatestPackageSnafu {
                 reg_id: index.id(),
                 name: pkg_id.name(),
@@ -263,7 +267,7 @@ mod tests {
             testing::mark_as_installed(&mut db, &current_manifest);
             testing::mark_as_pending_installed(&mut db, &pending_manifest);
 
-            let targets = resolve_update_targets(&cx, &db, &[registry], &[]).unwrap();
+            let targets = resolve_update_targets(&cx, &db, &[registry], &[], false).unwrap();
             let target_ids = targets
                 .iter()
                 .map(|target| target.manifest.id().to_string())
@@ -289,7 +293,7 @@ mod tests {
             let manifest = testing::make_manifest("example-font@1.0.0");
             testing::mark_as_installed(&mut db, &manifest);
 
-            let targets = resolve_update_targets(&cx, &db, &[registry], &pkg_specs).unwrap();
+            let targets = resolve_update_targets(&cx, &db, &[registry], &pkg_specs, false).unwrap();
 
             assert_eq!(targets.len(), 1);
             assert_eq!(targets[0].manifest.id().to_string(), "example-font@2.0.0");
@@ -315,7 +319,7 @@ mod tests {
             testing::mark_as_installed(&mut db, &older_manifest);
             testing::mark_as_installed(&mut db, &newer_manifest);
 
-            let targets = resolve_update_targets(&cx, &db, &[registry], &pkg_specs).unwrap();
+            let targets = resolve_update_targets(&cx, &db, &[registry], &pkg_specs, false).unwrap();
 
             assert!(targets.is_empty());
         });
@@ -337,9 +341,54 @@ mod tests {
             let manifest = testing::make_manifest("example-font@1.0.0");
             testing::mark_as_installed(&mut db, &manifest);
 
-            let err = resolve_update_targets(&cx, &db, &registries, &pkg_specs).unwrap_err();
+            let err = resolve_update_targets(&cx, &db, &registries, &pkg_specs, false).unwrap_err();
 
             assert!(matches!(err, TestError::Failed));
+        });
+    }
+
+    #[test]
+    fn resolve_update_targets_skips_pre_release_by_default() {
+        let (registry_dir, registry) = testing::make_registry_spec("test-registry");
+        testing::write_manifest(registry_dir.path(), "example-font@1.0.1");
+        testing::write_manifest(registry_dir.path(), "example-font@2.0.0-rc-1");
+
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+        let registries = [registry];
+
+        testing::with_db(&cx, |mut db| {
+            let manifest = testing::make_manifest("example-font@1.0.0");
+            testing::mark_as_installed(&mut db, &manifest);
+
+            let targets = resolve_update_targets(&cx, &db, &registries, &[], false).unwrap();
+
+            assert_eq!(targets.len(), 1);
+            assert_eq!(targets[0].manifest.id().to_string(), "example-font@1.0.1");
+        });
+    }
+
+    #[test]
+    fn resolve_update_targets_includes_pre_release_when_requested() {
+        let (registry_dir, registry) = testing::make_registry_spec("test-registry");
+        testing::write_manifest(registry_dir.path(), "example-font@1.0.1");
+        testing::write_manifest(registry_dir.path(), "example-font@2.0.0-rc-1");
+
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+        let registries = [registry];
+
+        testing::with_db(&cx, |mut db| {
+            let manifest = testing::make_manifest("example-font@1.0.0");
+            testing::mark_as_installed(&mut db, &manifest);
+
+            let targets = resolve_update_targets(&cx, &db, &registries, &[], true).unwrap();
+
+            assert_eq!(targets.len(), 1);
+            assert_eq!(
+                targets[0].manifest.id().to_string(),
+                "example-font@2.0.0-rc-1"
+            );
         });
     }
 }

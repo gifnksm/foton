@@ -34,6 +34,12 @@ Skip interactive confirmation prompts.
 
 Treat warnings as errors, causing the command to fail if any warning is emitted.
 
+### `--pre-release`
+
+Allow updating to pre-release versions when resolving packages from registries.
+
+Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored.
+
 ## Examples
 
 ```console

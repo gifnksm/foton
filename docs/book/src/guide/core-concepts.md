@@ -24,7 +24,7 @@ Use `<package-name>` when you want `foton` to choose an appropriate version
 for the command you are running.
 Use `<package-name>@<version>` when you want to select an exact version.
 
-## Registries
+## Package registries
 
 Packages are usually installed from package registries.
 A package registry is a collection of package definitions that `foton` can

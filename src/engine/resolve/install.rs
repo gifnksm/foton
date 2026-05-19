@@ -123,6 +123,7 @@ pub(crate) fn resolve_install_targets_by_spec<S>(
     db: &PackageDatabase<'_>,
     registries: &[RegistrySpec],
     pkg_specs: &[PackageSpec],
+    include_pre_release: bool,
 ) -> Result<Vec<ResolvedInstallTarget>, S::Error>
 where
     S: ReportScope,
@@ -149,7 +150,7 @@ where
         let indexes = registry::fetch_registries(&cx, registries)?;
         targets
             .into_iter()
-            .map(|target| resolve_from_registry(&cx, &indexes, target))
+            .map(|target| resolve_from_registry(&cx, &indexes, target, include_pre_release))
             .collect_to_end()?
     };
 
@@ -203,6 +204,7 @@ fn resolve_from_registry<S>(
     cx: &ReportContext<InstallResolveScope<S>>,
     indexes: &[RegistryIndex],
     target: ResolveState,
+    include_pre_release: bool,
 ) -> Result<ResolvedInstallTarget, S::Error>
 where
     S: ReportScope,
@@ -211,7 +213,9 @@ where
         ResolveState::Resolved { source, manifest } => {
             Ok(ResolvedInstallTarget { source, manifest })
         }
-        ResolveState::Unresolved { pkg_spec } => resolve_spec_from_registry(cx, indexes, &pkg_spec),
+        ResolveState::Unresolved { pkg_spec } => {
+            resolve_spec_from_registry(cx, indexes, &pkg_spec, include_pre_release)
+        }
     }
 }
 
@@ -219,6 +223,7 @@ fn resolve_spec_from_registry<S>(
     cx: &ReportContext<InstallResolveScope<S>>,
     indexes: &[RegistryIndex],
     pkg_spec: &PackageSpec,
+    include_pre_release: bool,
 ) -> Result<ResolvedInstallTarget, S::Error>
 where
     S: ReportScope,
@@ -226,7 +231,7 @@ where
     let mut manifests = vec![];
     for index in indexes {
         let manifest = index
-            .find_latest_package_by_spec(pkg_spec)
+            .find_latest_package_by_spec(pkg_spec, include_pre_release)
             .context(FindLatestPackageBySpecSnafu { pkg_spec })
             .report_error(cx.reporter())?;
         if let Some(manifest) = manifest {
@@ -382,7 +387,7 @@ mod tests {
             testing::mark_as_installed(&mut db, &installed_manifest);
 
             let targets =
-                resolve_install_targets_by_spec(&cx, &db, &[registry], &pkg_specs).unwrap();
+                resolve_install_targets_by_spec(&cx, &db, &[registry], &pkg_specs, false).unwrap();
             assert_eq!(targets.len(), 2);
             assert_eq!(targets[0].manifest.id(), installed_manifest.id());
             assert_eq!(targets[1].manifest.id().to_string(), "example-font@1.0.0");
@@ -402,8 +407,8 @@ mod tests {
         let pkg_specs = vec![PackageSpec::from_str("example-font").unwrap()];
 
         testing::with_db(&cx, |db| {
-            let err =
-                resolve_install_targets_by_spec(&cx, &db, &[registry], &pkg_specs).unwrap_err();
+            let err = resolve_install_targets_by_spec(&cx, &db, &[registry], &pkg_specs, false)
+                .unwrap_err();
             assert!(matches!(err, TestError::Failed));
         });
     }
@@ -461,8 +466,55 @@ mod tests {
         let cx = InstallResolveScope::start(&cx);
 
         let spec = PackageSpec::from_str("example-font").unwrap();
-        let target = resolve_spec_from_registry(&cx, &[index], &spec).unwrap();
+        let target = resolve_spec_from_registry(&cx, &[index], &spec, false).unwrap();
         assert_eq!(target.manifest.id().to_string(), "example-font@0.2.0");
+    }
+
+    #[test]
+    fn resolve_spec_from_registry_skips_pre_release_by_default() {
+        let (registry_dir, index) = testing::make_registry_index("test-registry");
+        testing::write_manifest(registry_dir.path(), "example-font@1.0.0");
+        testing::write_manifest(registry_dir.path(), "example-font@2.0.0-rc-1");
+
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+        let cx = InstallResolveScope::start(&cx);
+
+        let spec = PackageSpec::from_str("example-font").unwrap();
+        let stable_target = resolve_spec_from_registry(&cx, &[index], &spec, false).unwrap();
+        assert_eq!(
+            stable_target.manifest.id().to_string(),
+            "example-font@1.0.0"
+        );
+    }
+
+    #[test]
+    fn resolve_spec_from_registry_includes_pre_release_when_requested() {
+        let (registry_dir, index) = testing::make_registry_index("test-registry");
+        testing::write_manifest(registry_dir.path(), "example-font@1.0.0");
+        testing::write_manifest(registry_dir.path(), "example-font@2.0.0-rc-1");
+
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+        let cx = InstallResolveScope::start(&cx);
+
+        let spec = PackageSpec::from_str("example-font").unwrap();
+        let target = resolve_spec_from_registry(&cx, &[index], &spec, true).unwrap();
+        assert_eq!(target.manifest.id().to_string(), "example-font@2.0.0-rc-1");
+    }
+
+    #[test]
+    fn resolve_spec_from_registry_allows_exact_pre_release_id_without_flag() {
+        let (registry_dir, index) = testing::make_registry_index("test-registry");
+        testing::write_manifest(registry_dir.path(), "example-font@2.0.0-rc-1");
+
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+        let cx = InstallResolveScope::start(&cx);
+
+        let spec = PackageSpec::from_str("example-font@2.0.0-rc-1").unwrap();
+        let target = resolve_spec_from_registry(&cx, &[index], &spec, false).unwrap();
+        assert_eq!(target.manifest.id().to_string(), "example-font@2.0.0-rc-1");
     }
 
     #[test]
@@ -479,7 +531,7 @@ mod tests {
         let cx = InstallResolveScope::start(&cx);
 
         let spec: PackageSpec = "example-font".parse().unwrap();
-        let err = resolve_spec_from_registry(&cx, &indexes, &spec).unwrap_err();
+        let err = resolve_spec_from_registry(&cx, &indexes, &spec, false).unwrap_err();
         assert!(matches!(err, TestError::Failed));
     }
 

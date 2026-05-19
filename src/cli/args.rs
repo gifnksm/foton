@@ -51,8 +51,8 @@ pub(crate) struct InstallTargetArgs {
     /// Install packages defined in the given manifest files.
     ///
     /// This option can be specified multiple times.
-    /// It cannot be used together with `--registry` or `<PACKAGE>`.
-    #[clap(long = "manifest", value_name = "MANIFEST", conflicts_with_all = ["registries", "pkg_specs"])]
+    /// It cannot be used together with `--registry`, `--pre-release` or `<PACKAGE>`.
+    #[clap(long = "manifest", value_name = "MANIFEST", conflicts_with_all = ["registries", "pkg_specs", "pre_release"])]
     pub(crate) manifests: Vec<PathBuf>,
     /// Package registry IDs to resolve packages from.
     ///
@@ -72,6 +72,13 @@ pub(crate) struct InstallTargetArgs {
     /// This cannot be used together with `--manifest`.
     #[clap(value_name = "PACKAGE", required_unless_present_any = ["manifests"])]
     pub(crate) pkg_specs: Vec<PackageSpec>,
+    /// Allow installing pre-release versions when resolving packages from registries.
+    ///
+    /// Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored
+    /// unless an exact version is specified.
+    /// This cannot be used together with `--manifest`.
+    #[clap(long)]
+    pub(crate) pre_release: bool,
 }
 
 #[derive(Debug)]
@@ -82,6 +89,7 @@ pub(crate) enum InstallTargets {
     PackageSpec {
         registries: Option<Vec<RegistryId>>,
         pkg_specs: Vec<PackageSpec>,
+        pre_release: bool,
     },
 }
 
@@ -91,6 +99,7 @@ impl InstallTargetArgs {
             manifests,
             registries,
             pkg_specs,
+            pre_release,
         } = self;
         if pkg_specs.is_empty() {
             InstallTargets::Manifest {
@@ -100,6 +109,7 @@ impl InstallTargetArgs {
             InstallTargets::PackageSpec {
                 registries: registries.clone(),
                 pkg_specs: pkg_specs.clone(),
+                pre_release: *pre_release,
             }
         }
     }
@@ -128,6 +138,11 @@ pub(crate) struct UpdateArgs {
     /// package first, then looks for a newer version of the same package name.
     #[clap(value_name = "PACKAGE")]
     pub(crate) pkg_specs: Vec<PackageSpec>,
+    /// Allow updating to pre-release versions when resolving packages from registries.
+    ///
+    /// Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored.
+    #[clap(long)]
+    pub(crate) pre_release: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -171,6 +186,11 @@ pub(crate) struct SearchArgs {
     /// All specified query terms must match within the same package metadata field.
     #[clap(value_name = "QUERY", required = true)]
     pub(crate) queries: Vec<QueryString>,
+    /// Allow matching pre-release versions when searching packages in registries.
+    ///
+    /// Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored.
+    #[clap(long)]
+    pub(crate) pre_release: bool,
 }
 
 #[derive(Debug, clap::Subcommand)]
@@ -218,6 +238,7 @@ mod tests {
     fn install_accepts_valid_argument_combinations() {
         let cases = [
             &["foton", "install", "package1", "package2"][..],
+            &["foton", "install", "--pre-release", "package1"][..],
             &[
                 "foton",
                 "install",
@@ -253,6 +274,13 @@ mod tests {
                 "--registry",
                 "local",
             ],
+            &[
+                "foton",
+                "install",
+                "--manifest",
+                "fonts.toml",
+                "--pre-release",
+            ][..],
             &["foton", "install", "--registry", "local"],
         ];
         for case in cases {
