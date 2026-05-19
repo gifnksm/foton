@@ -18,7 +18,7 @@ At the top level, a manifest contains package metadata and a non-empty
 name = "example-font"
 display-name = "Example Font"
 version = "1.2.3"
-description = "Example package description"
+description = "Example font family for UI and coding"
 aliases = [
   "Example Font UI",
   "Example Font Console",
@@ -30,8 +30,8 @@ faces = [
   "Example Font UI Bold",
 ]
 homepage = "https://example.com/example-font"
-repository = "https://example.com/example-font/repository"
-license = "MIT"
+repository = "https://github.com/example/example-font"
+license = "OFL-1.1"
 
 [[sources]]
 url = "https://example.com/downloads/example-font-1.2.3.zip"
@@ -141,7 +141,11 @@ Versions are compared in this order:
 
 Field headings indicate whether a field is required or optional.
 Fields marked recommended are optional, but strongly recommended because they
-help users discover and understand the package.
+help users discover and understand the fonts provided by the package.
+Metadata fields such as `display-name`, `description`, `aliases`, `faces`,
+`homepage`, `repository`, and `license` describe the fonts provided by the
+package. Packaging fields such as `name`, `version`, and `sources` describe how
+`foton` identifies and installs the package.
 
 ### `name` (required)
 
@@ -160,13 +164,16 @@ This is the stable identifier for the package.
 
 ### `display-name` (optional, recommended)
 
-A user-facing primary name for the package.
-Use this for the main label you want users to see.
+A human-friendly primary name for the font family, collection, or bundle
+provided by the package.
+Use this for the primary label shown to users in search results and other
+output.
 
 - **Type**: string
 - **Constraints**: must be non-empty and must not have leading or trailing
   whitespace
-- **Recommended because**: it gives users a clear primary name for the package
+- **Recommended because**: it gives users a clear primary name for the fonts
+  provided by the package
 - **Example**:
 
   ```toml
@@ -188,7 +195,8 @@ Use a version string that identifies an immutable package release.
 
 ### `description` (optional, recommended)
 
-A short description shown in search results and package details.
+A short description of the font family, collection, or bundle provided by the
+package.
 
 - **Type**: string
 - **Constraints**: must be non-empty and must not have leading or trailing
@@ -197,13 +205,15 @@ A short description shown in search results and package details.
 - **Example**:
 
   ```toml
-  description = "Example package description"
+  description = "Example font family for UI and coding"
   ```
 
 ### `aliases` (optional, recommended)
 
-Alternative package-level names and spellings used for search.
-Use this for package or family names, abbreviations, and alternate spellings.
+Alternative names and spellings for the font family, collection, or bundle used
+for search.
+Use this for family or collection names, abbreviations, and alternate
+spellings.
 
 - **Type**: array of strings
 - **Constraints**: each entry must be non-empty and must not have leading or
@@ -234,12 +244,15 @@ Use this for entries such as Regular, Bold, or other specific face names.
 
 ### `homepage` (optional, recommended)
 
-A homepage for the project or package.
+The upstream homepage for the font project or distribution represented by the
+package.
 
 - **Type**: URL string
-- **Constraints**: the URL scheme must be `http` or `https`
+- **Constraints**: the URL scheme must be `http` or `https`; omit this field if
+  there is no distinct upstream homepage
 - **Recommended because**: it gives users a homepage for more information about
-  the package
+  the fonts provided by the package
+- **Note**: do not duplicate `repository` here when both would be the same URL
 - **Example**:
 
   ```toml
@@ -248,29 +261,32 @@ A homepage for the project or package.
 
 ### `repository` (optional, recommended)
 
-A source repository for the package definition or the upstream font project.
+The upstream source repository for the font project represented by the package.
 
 - **Type**: URL string
-- **Constraints**: the URL scheme must be `http` or `https`
-- **Recommended because**: it gives users a source repository for the package
-  definition or upstream project
+- **Constraints**: the URL scheme must be `http` or `https`; omit this field if
+  there is no suitable public upstream repository
+- **Recommended because**: it gives users a source repository for the upstream
+  font project
 - **Example**:
 
   ```toml
-  repository = "https://example.com/example-font/repository"
+  repository = "https://github.com/example/example-font"
   ```
 
 ### `license` (optional, recommended)
 
-The package license in SPDX expression form.
+The SPDX license expression for the upstream font files included in the
+package.
 
 - **Type**: SPDX expression string
 - **Constraints**: must be a valid SPDX expression
-- **Recommended because**: it tells users the package licensing terms
+- **Recommended because**: it tells users the licensing terms of the font files
+  included in the package
 - **Example**:
 
   ```toml
-  license = "MIT"
+  license = "OFL-1.1"
   ```
 
 ### `sources` (required)

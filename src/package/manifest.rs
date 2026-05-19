@@ -26,11 +26,12 @@ pub(crate) struct PackageManifest {
     /// This is the stable identifier for the package and is not intended to match every
     /// user-facing font name exactly.
     pub(crate) name: PackageName,
-    /// Human-friendly primary name for the package as a whole, such as `HackGen`.
+    /// Human-friendly primary name for the font family, collection, or bundle provided by the
+    /// package, such as `HackGen`.
     ///
     /// For packages that primarily provide a single font family, this is usually that family
-    /// name. For packages that contain multiple families, use the package or bundle name that
-    /// best represents the package as a whole.
+    /// name. For packages that contain multiple families, use the family, collection, or bundle
+    /// name that best represents what users will install.
     ///
     /// Use this for the primary label shown to users in search results and other output.
     #[serde(
@@ -43,18 +44,19 @@ pub(crate) struct PackageManifest {
     ///
     /// This identifies a specific immutable release of the package.
     pub(crate) version: PackageVersion,
-    /// Short package description shown in search results and package details.
+    /// Short description of the font family, collection, or bundle provided by the package.
     #[serde(
         default,
         deserialize_with = "option_nonempty_string_without_surrounding_whitespaces::deserialize",
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) description: Option<String>,
-    /// Alternative package-level names and spellings used for search.
+    /// Alternative names and spellings for the font family, collection, or bundle used for
+    /// search.
     ///
-    /// Use this for other names by which users may look for the package, such as common
-    /// alternate spellings, abbreviations, or additional family names included in a multi-family
-    /// package.
+    /// Use this for other names by which users may look for the fonts provided by the package,
+    /// such as common alternate spellings, abbreviations, or additional family names included in
+    /// a multi-family package.
     ///
     /// Do not use this for names of individual font faces; use `faces` for those.
     #[serde(
@@ -77,21 +79,21 @@ pub(crate) struct PackageManifest {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub(crate) faces: Vec<String>,
-    /// Project or package homepage for users who want more information.
+    /// Upstream homepage for the font project or distribution represented by the package.
     #[serde(
         default,
         deserialize_with = "optional_http_url::deserialize",
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) homepage: Option<Url>,
-    /// Source repository for the package definition or the upstream font project.
+    /// Upstream source repository for the font project represented by the package.
     #[serde(
         default,
         deserialize_with = "optional_http_url::deserialize",
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) repository: Option<Url>,
-    /// SPDX license expression describing the package's licensing terms.
+    /// SPDX license expression for the upstream font files included in the package.
     #[serde(
         default,
         with = "optional_spdx_expression",
@@ -457,11 +459,11 @@ include = ["*/*.ttf"]
 name = "example-font"
 display-name = "Example Font"
 version = "0.1.0"
-description = "example-font"
+description = "Example font family for UI and coding"
 aliases = ["Example Font UI"]
 faces = ["Example Font Regular", "Example Font Bold", "Example Font UI Regular", "Example Font UI Bold"]
-homepage = "https://example.com/homepage"
-repository = "https://example.com/repository"
+homepage = "https://example.com/example-font"
+repository = "https://github.com/example/example-font"
 license = "OFL-1.1"
 
 [[sources]]
@@ -475,7 +477,10 @@ include = ["*/*.ttf"]
         assert_eq!(manifest.name, "example-font");
         assert_eq!(manifest.display_name.as_deref(), Some("Example Font"));
         assert_eq!(manifest.version, "0.1.0".parse().unwrap());
-        assert_eq!(manifest.description.as_deref(), Some("example-font"));
+        assert_eq!(
+            manifest.description.as_deref(),
+            Some("Example font family for UI and coding")
+        );
         assert_eq!(manifest.aliases, ["Example Font UI"]);
         assert_eq!(
             manifest.faces,
@@ -488,11 +493,11 @@ include = ["*/*.ttf"]
         );
         assert_eq!(
             manifest.homepage.as_ref().map(Url::as_str),
-            Some("https://example.com/homepage")
+            Some("https://example.com/example-font")
         );
         assert_eq!(
             manifest.repository.as_ref().map(Url::as_str),
-            Some("https://example.com/repository")
+            Some("https://github.com/example/example-font")
         );
         assert_eq!(
             manifest.license.as_ref().map(ToString::to_string),

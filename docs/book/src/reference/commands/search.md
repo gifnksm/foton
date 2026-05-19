@@ -65,7 +65,7 @@ Example:
 
 ```text
 example-font@1.2.3 [example]
-  Example package description
+  Example font family for UI and coding
 ```
 
 ## Notes

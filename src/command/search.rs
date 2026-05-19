@@ -237,7 +237,7 @@ mod tests {
                 r#"
 name = "example-font"
 version = "1.0.0"
-description = "Example package description"
+description = "Example font family for UI and coding"
 
 [[sources]]
 url = "https://example.com/example-font-1.0.0.zip"
@@ -255,7 +255,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             String::from_utf8(output).unwrap(),
             concat!(
                 "example-font@1.0.0 [foton]\n",
-                "  Example package description\n",
+                "  Example font family for UI and coding\n",
             )
         );
     }
