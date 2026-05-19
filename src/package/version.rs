@@ -47,6 +47,10 @@ impl PackageVersion {
         );
         Ok(Self(version.into()))
     }
+
+    pub(crate) fn is_pre_release(&self) -> bool {
+        self.0.contains('-')
+    }
 }
 
 impl FromStr for PackageVersion {
@@ -249,6 +253,15 @@ mod tests {
             err.to_string(),
             "invalid package version `1-rc10`: must use dot-separated numeric parts with an optional final suffix; see Package Manifest Reference for details"
         );
+    }
+
+    #[test]
+    fn package_version_detects_pre_release_versions() {
+        let stable: PackageVersion = "1.2.3".parse().unwrap();
+        let pre_release: PackageVersion = "1.2.3-rc-1".parse().unwrap();
+
+        assert!(!stable.is_pre_release());
+        assert!(pre_release.is_pre_release());
     }
 
     #[test]

@@ -36,6 +36,12 @@ Skip interactive confirmation prompts.
 
 Treat warnings as errors, causing the command to fail if any warning is emitted.
 
+### `--pre-release`
+
+Allow matching pre-release versions when searching packages in registries.
+
+Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored.
+
 ## Examples
 
 ```console
@@ -64,8 +70,9 @@ example-font@1.2.3 [example]
 
 ## Notes
 
-- `search` looks at the latest available version of each package in each
-  selected package registry.
+- By default, `search` looks at the latest version of each package in each
+  selected package registry without considering pre-release versions.
+  Use `--pre-release` if you want pre-release versions to be included.
 - Search can match package names, display names, aliases, faces, and
   descriptions.
 - If no matching packages are found, the command fails.

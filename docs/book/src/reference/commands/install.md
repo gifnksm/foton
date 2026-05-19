@@ -32,7 +32,7 @@ This cannot be used together with `--manifest`.
 Install packages defined in the given manifest files.
 
 This option can be specified multiple times.
-It cannot be used together with `--registry` or `<PACKAGE>`.
+It cannot be used together with `--registry`, `--pre-release` or `<PACKAGE>`.
 
 ### `--registry <REGISTRY_ID>`
 
@@ -48,6 +48,14 @@ Skip interactive confirmation prompts.
 ### `--warnings-as-errors`
 
 Treat warnings as errors, causing the command to fail if any warning is emitted.
+
+### `--pre-release`
+
+Allow installing pre-release versions when resolving packages from registries.
+
+Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored
+unless an exact version is specified.
+This cannot be used together with `--manifest`.
 
 ## Examples
 

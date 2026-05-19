@@ -78,9 +78,10 @@ impl RegistryIndex {
     pub(crate) fn find_latest_package_by_spec(
         &self,
         pkg_spec: &PackageSpec,
+        include_pre_release: bool,
     ) -> Result<Option<Arc<PackageManifest>>, RegistryIndexError> {
         match pkg_spec {
-            PackageSpec::Name(name) => self.find_latest_package_by_name(name),
+            PackageSpec::Name(name) => self.find_latest_package_by_name(name, include_pre_release),
             PackageSpec::Id(pkg_id) => self.find_package_by_id(pkg_id),
         }
     }
@@ -114,6 +115,7 @@ impl RegistryIndex {
     pub(crate) fn find_latest_package_by_name(
         &self,
         name: &PackageName,
+        include_pre_release: bool,
     ) -> Result<Option<Arc<PackageManifest>>, RegistryIndexError> {
         let base_path = self.path.join(name);
         let Some(versions) = read_child_directories::<PackageVersion, _, _>(&base_path, |path| {
@@ -122,7 +124,12 @@ impl RegistryIndex {
         else {
             return Ok(None);
         };
-        let Some(version) = versions.collect::<Result<Vec<_>, _>>()?.into_iter().max() else {
+        let Some(version) = versions
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|version| include_pre_release || !version.is_pre_release())
+            .max()
+        else {
             return Ok(None);
         };
         let pkg_id = PackageId::new(name.clone(), version.clone());
@@ -131,6 +138,7 @@ impl RegistryIndex {
 
     pub(crate) fn all_latest_packages(
         &self,
+        include_pre_release: bool,
     ) -> Result<
         Option<impl Iterator<Item = Result<Arc<PackageManifest>, RegistryIndexError>>>,
         RegistryIndexError,
@@ -141,8 +149,8 @@ impl RegistryIndex {
         else {
             return Ok(None);
         };
-        Ok(Some(names.filter_map(|res| {
-            res.and_then(|name| self.find_latest_package_by_name(&name))
+        Ok(Some(names.filter_map(move |res| {
+            res.and_then(|name| self.find_latest_package_by_name(&name, include_pre_release))
                 .transpose()
         })))
     }
@@ -238,11 +246,45 @@ mod tests {
 
         let name: PackageName = "example-font".parse().unwrap();
         let manifest = registry
-            .find_latest_package_by_name(&name)
+            .find_latest_package_by_name(&name, false)
             .unwrap()
             .unwrap();
 
         assert_eq!(manifest.id().to_string(), "example-font@0.2.0");
+    }
+
+    #[test]
+    fn find_latest_package_by_name_skips_pre_release_by_default() {
+        let (registry_dir, registry) = testing::make_registry_index("test-registry");
+        testing::write_manifest(registry_dir.path(), "example-font@1.0.0");
+        testing::write_manifest(registry_dir.path(), "example-font@2.0.0-rc-1");
+
+        let name: PackageName = "example-font".parse().unwrap();
+        let stable = registry
+            .find_latest_package_by_name(&name, false)
+            .unwrap()
+            .unwrap();
+        let pre_release = registry
+            .find_latest_package_by_name(&name, true)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(stable.id().to_string(), "example-font@1.0.0");
+        assert_eq!(pre_release.id().to_string(), "example-font@2.0.0-rc-1");
+    }
+
+    #[test]
+    fn find_latest_package_by_spec_allows_exact_pre_release_id_without_flag() {
+        let (registry_dir, registry) = testing::make_registry_index("test-registry");
+        testing::write_manifest(registry_dir.path(), "example-font@2.0.0-rc-1");
+
+        let spec: PackageSpec = "example-font@2.0.0-rc-1".parse().unwrap();
+        let manifest = registry
+            .find_latest_package_by_spec(&spec, false)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(manifest.id().to_string(), "example-font@2.0.0-rc-1");
     }
 
     #[test]
@@ -268,7 +310,7 @@ mod tests {
         fs::create_dir_all(registry_dir.path().join("empty-font")).unwrap();
 
         let manifests = registry
-            .all_latest_packages()
+            .all_latest_packages(false)
             .unwrap()
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
@@ -280,5 +322,37 @@ mod tests {
         ids.sort();
 
         assert_eq!(ids, ["example-font@0.2.0", "other-font@1.0.0"]);
+    }
+
+    #[test]
+    fn all_latest_packages_skips_pre_release_only_packages_by_default() {
+        let (registry_dir, registry) = testing::make_registry_index("test-registry");
+        testing::write_manifest(registry_dir.path(), "alpha-font@1.0.0-rc-1");
+        testing::write_manifest(registry_dir.path(), "stable-font@1.0.0");
+        testing::write_manifest(registry_dir.path(), "stable-font@2.0.0-rc-1");
+
+        let stable_ids = registry
+            .all_latest_packages(false)
+            .unwrap()
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+            .into_iter()
+            .map(|manifest| manifest.id().to_string())
+            .collect::<Vec<_>>();
+        let all_ids = registry
+            .all_latest_packages(true)
+            .unwrap()
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+            .into_iter()
+            .map(|manifest| manifest.id().to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(stable_ids, ["stable-font@1.0.0"]);
+        assert_eq!(all_ids.len(), 2);
+        assert!(all_ids.contains(&"alpha-font@1.0.0-rc-1".to_owned()));
+        assert!(all_ids.contains(&"stable-font@2.0.0-rc-1".to_owned()));
     }
 }

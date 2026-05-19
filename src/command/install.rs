@@ -94,6 +94,7 @@ enum CheckedInstallTargets {
     PackageSpec {
         registries: Vec<RegistrySpec>,
         pkg_specs: Vec<PackageSpec>,
+        pre_release: bool,
     },
 }
 
@@ -110,11 +111,13 @@ impl CheckedInstallTargets {
             InstallTargets::PackageSpec {
                 registries,
                 pkg_specs,
+                pre_release,
             } => {
                 let registries = engine::resolve_registries_by_id(cx, registries.as_deref())?;
                 Ok(Self::PackageSpec {
                     registries,
                     pkg_specs,
+                    pre_release,
                 })
             }
         }
@@ -132,7 +135,10 @@ impl CheckedInstallTargets {
             CheckedInstallTargets::PackageSpec {
                 registries,
                 pkg_specs,
-            } => engine::resolve_install_targets_by_spec(cx, db, registries, pkg_specs),
+                pre_release,
+            } => {
+                engine::resolve_install_targets_by_spec(cx, db, registries, pkg_specs, *pre_release)
+            }
         }
     }
 }

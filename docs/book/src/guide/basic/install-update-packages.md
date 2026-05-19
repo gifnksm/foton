@@ -28,6 +28,8 @@ foton install <package-name>@<version>
 
 By default, `foton` resolves packages from the package registries enabled in
 your configuration.
+When resolving a package by name, it does not consider pre-release versions
+unless you pass `--pre-release`.
 To resolve packages only from specific package registries, pass `--registry`.
 
 ```console
@@ -44,7 +46,8 @@ foton install --manifest <manifest-path>
 ```
 
 You can specify `--manifest` multiple times.
-Do not combine `--manifest` with `--registry` or package names.
+Do not combine `--manifest` with `--registry`, `--pre-release`, or package
+names.
 
 For more details, see
 [Writing a Package Manifest](../advanced/write-package-manifest.md).
@@ -71,6 +74,8 @@ foton update <package-name>@<version>
 
 When you specify an exact version, `update` selects the matching installed
 package first, then looks for a newer version of the same package name.
+By default, `update` does not look for pre-release versions.
+Use `--pre-release` if you want pre-release updates to be considered.
 
 If you want to control which package registries are used to find updates, pass
 `--registry`.

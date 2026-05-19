@@ -81,6 +81,7 @@ pub(crate) fn search_packages(cx: &RootContext, args: &SearchArgs) -> Result<(),
         registries,
         limit,
         queries,
+        pre_release,
     } = args;
 
     let cx = SearchScope::start(cx);
@@ -89,32 +90,44 @@ pub(crate) fn search_packages(cx: &RootContext, args: &SearchArgs) -> Result<(),
     let indexes = engine::fetch_registries(&cx, &registries)?;
 
     let matcher = TextMatcher::new(queries.clone());
+    let manifests = collect_search_results(&indexes, &matcher, *limit, *pre_release)
+        .report_error(cx.reporter())?;
+    render_search_results(&mut io::stdout().lock(), manifests)
+        .context(WriteResultSnafu)
+        .report_error(cx.reporter())?;
+
+    Ok(())
+}
+
+fn collect_search_results(
+    indexes: &[crate::registry::RegistryIndex],
+    matcher: &TextMatcher,
+    limit: usize,
+    include_pre_release: bool,
+) -> Result<Vec<ScoredManifest>, SearchErrorReport> {
     let mut heap = BinaryHeap::new();
 
-    for index in &indexes {
+    for index in indexes {
         let Some(manifests) = index
-            .all_latest_packages()
+            .all_latest_packages(include_pre_release)
             .with_context(|_| AllLatestPackagesSnafu {
                 reg_id: index.id().clone(),
-            })
-            .report_error(cx.reporter())?
+            })?
         else {
             continue;
         };
         for manifest in manifests {
-            let manifest = manifest
-                .with_context(|_| ReadLatestPackageSnafu {
-                    reg_id: index.id().clone(),
-                })
-                .report_error(cx.reporter())?;
-            if let Some(score) = manifest.match_manifest(&matcher) {
+            let manifest = manifest.with_context(|_| ReadLatestPackageSnafu {
+                reg_id: index.id().clone(),
+            })?;
+            if let Some(score) = manifest.match_manifest(matcher) {
                 let reg_id = index.id().clone();
                 heap.push(Reverse(ScoredManifest {
                     score,
                     reg_id,
                     manifest,
                 }));
-                if heap.len() > *limit {
+                if heap.len() > limit {
                     heap.pop();
                 }
             }
@@ -122,20 +135,14 @@ pub(crate) fn search_packages(cx: &RootContext, args: &SearchArgs) -> Result<(),
     }
 
     if heap.is_empty() {
-        return Err(cx
-            .reporter()
-            .report_error(NoMatchingPackagesFoundSnafu.build()));
+        return Err(NoMatchingPackagesFoundSnafu.build());
     }
 
-    let manifests = heap.into_sorted_vec();
-    render_search_results(
-        &mut io::stdout().lock(),
-        manifests.into_iter().map(|Reverse(manifest)| manifest),
-    )
-    .context(WriteResultSnafu)
-    .report_error(cx.reporter())?;
-
-    Ok(())
+    Ok(heap
+        .into_sorted_vec()
+        .into_iter()
+        .map(|Reverse(manifest)| manifest)
+        .collect())
 }
 
 fn render_search_results<I>(writer: &mut dyn io::Write, manifests: I) -> io::Result<()>
@@ -187,7 +194,14 @@ impl Ord for ScoredManifest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{registry::RegistryId, util::testing};
+    use crate::{
+        registry::RegistryId,
+        util::{testing, text::QueryString},
+    };
+
+    fn make_matcher(query: &str) -> TextMatcher {
+        TextMatcher::new(vec![QueryString::try_new(query).unwrap()])
+    }
 
     fn make_scored_manifest(manifest: Arc<PackageManifest>) -> ScoredManifest {
         ScoredManifest {
@@ -243,6 +257,32 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                 "example-font@1.0.0 [foton]\n",
                 "  Example package description\n",
             )
+        );
+    }
+
+    #[test]
+    fn collect_search_results_excludes_pre_release_packages_by_default() {
+        let (registry_dir, registry) = testing::make_registry_index("foton");
+        testing::write_manifest(registry_dir.path(), "preview-font@1.0.0-rc-1");
+
+        let err =
+            collect_search_results(&[registry], &make_matcher("preview"), 10, false).unwrap_err();
+
+        assert!(matches!(err, SearchErrorReport::NoMatchingPackagesFound));
+    }
+
+    #[test]
+    fn collect_search_results_includes_pre_release_packages_when_requested() {
+        let (registry_dir, registry) = testing::make_registry_index("foton");
+        testing::write_manifest(registry_dir.path(), "preview-font@1.0.0-rc-1");
+
+        let results =
+            collect_search_results(&[registry], &make_matcher("preview"), 10, true).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].manifest.id().to_string(),
+            "preview-font@1.0.0-rc-1"
         );
     }
 }

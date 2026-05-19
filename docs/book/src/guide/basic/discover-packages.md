@@ -54,8 +54,10 @@ example-font@1.2.3 [example]
   Example package description
 ```
 
-`search` considers the latest available version of each package in each
-selected registry.
+By default, `search` does not include pre-release versions when it
+selects the latest version of each package in each selected registry.
+Use `--pre-release` if you want search results to include pre-release
+versions.
 Once you have found a package you want, install it with `foton install`.
 
 ## Related pages
