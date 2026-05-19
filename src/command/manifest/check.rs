@@ -19,7 +19,10 @@ use crate::{
     },
     engine::{self, ExtractDetail},
     package::{self, Package, PackageDirs, PackageId, PackageManifest, PackageManifestError},
-    util::{fs::FsError, glob::PathPattern, path::AbsolutePath, text::NormalizedString},
+    util::{
+        fs::FsError, glob::PathPattern, macros::concat_line, path::AbsolutePath,
+        text::NormalizedString,
+    },
 };
 
 #[derive(Debug)]
@@ -47,17 +50,17 @@ enum CheckManifestWarnReport {
     #[snafu(display("`description` field is missing in manifest"))]
     MissingDescription,
     #[snafu(display(
-        concat!(
-            "`homepage` and `repository` fields have the same URL: {url}\n",
+        concat_line!(
+            "`homepage` and `repository` fields have the same URL: {url}",
             "if there is no distinct upstream homepage, omit `homepage` rather than repeating `repository`",
         ),
         url = url,
     ))]
     SameHomepageAndRepository { url: Url },
     #[snafu(display(
-        concat!(
-            "following fields have the same normalized display name: {normalized}\n",
-            "{values}\n",
+        concat_line!(
+            "following fields have the same normalized display name: {normalized}",
+            "{values}",
             "consider removing one of the values to avoid duplication",
         ),
         normalized = normalized,
@@ -68,9 +71,9 @@ enum CheckManifestWarnReport {
         values: Vec<ValueWithSource>,
     },
     #[snafu(display(
-        concat!(
-            "following fields have the same normalized font face: {normalized}\n",
-            "{values}\n",
+        concat_line!(
+            "following fields have the same normalized font face: {normalized}",
+            "{values}",
             "consider removing one of the values to avoid duplication",
         ),
         normalized = normalized,
@@ -83,10 +86,10 @@ enum CheckManifestWarnReport {
     #[snafu(display("`faces` does not list the included font face: {face}"))]
     UnlistedFace { face: String },
     #[snafu(display(
-        concat!(
-            "`sources[{source_index}].include` contains wildcard pattern: {pattern}\n",
-            "this pattern matches the following paths:\n",
-            "{extracted}\n",
+        concat_line!(
+            "`sources[{source_index}].include` contains wildcard pattern: {pattern}",
+            "this pattern matches the following paths:",
+            "{extracted}",
             "consider replacing them with fixed strings to avoid unexpected matches",
         ),
         source_index = source_index,
@@ -99,8 +102,8 @@ enum CheckManifestWarnReport {
         extracted: BTreeSet<PathBuf>,
     },
     #[snafu(display(
-        concat!(
-            "`{pattern}` in `sources[{source_index}].include` does not match any paths\n",
+        concat_line!(
+            "`{pattern}` in `sources[{source_index}].include` does not match any paths",
             "consider removing it or replacing it with a pattern that matches the intended paths",
         ),
         source_index = source_index,
@@ -111,9 +114,9 @@ enum CheckManifestWarnReport {
         pattern: PathPattern,
     },
     #[snafu(display(
-        concat!(
-            "`sources[{source_index}].include` contains multiple patterns that match the same path: {path}\n",
-            "{patterns}\n",
+        concat_line!(
+            "`sources[{source_index}].include` contains multiple patterns that match the same path: {path}",
+            "{patterns}",
             "consider removing redundant patterns",
         ),
         source_index = source_index,
@@ -126,8 +129,8 @@ enum CheckManifestWarnReport {
         patterns: Vec<PathPattern>,
     },
     #[snafu(display(
-        concat!(
-            "`{pattern}` in `sources[{source_index}].exclude` does not match any paths\n",
+        concat_line!(
+            "`{pattern}` in `sources[{source_index}].exclude` does not match any paths",
             "consider removing it or replacing it with a pattern that matches the intended paths",
         ),
         source_index = source_index,
@@ -138,9 +141,9 @@ enum CheckManifestWarnReport {
         pattern: PathPattern,
     },
     #[snafu(display(
-        concat!(
-            "`sources[{source_index}]` contains font-like paths that match neither `include` nor `exclude`\n",
-            "{skipped}\n",
+        concat_line!(
+            "`sources[{source_index}]` contains font-like paths that match neither `include` nor `exclude`",
+            "{skipped}",
             "consider adding them to `include` or `exclude` explicitly, depending on the intended behavior",
         ),
         source_index = source_index,

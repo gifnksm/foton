@@ -196,7 +196,7 @@ mod tests {
     use super::*;
     use crate::{
         registry::RegistryId,
-        util::{testing, text::QueryString},
+        util::{macros::concat_line, testing, text::QueryString},
     };
 
     fn make_matcher(query: &str) -> TextMatcher {
@@ -253,9 +253,10 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
         assert_eq!(
             String::from_utf8(output).unwrap(),
-            concat!(
-                "example-font@1.0.0 [foton]\n",
-                "  Example font family for UI and coding\n",
+            concat_line!(
+                "example-font@1.0.0 [foton]",
+                "  Example font family for UI and coding",
+                "",
             )
         );
     }

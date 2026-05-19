@@ -10,6 +10,7 @@ use crate::{
     },
     db::PackageDatabase,
     package::{PackageId, PackageSpec},
+    util::macros::concat_line,
 };
 
 #[derive(Debug)]
@@ -41,8 +42,8 @@ where
 #[derive(Debug, Snafu)]
 enum UninstallResolveErrorReport {
     #[snafu(display(
-    concat!(
-        "multiple packages match the specified package `{pkg_spec}`:\n",
+    concat_line!(
+        "multiple packages match the specified package `{pkg_spec}`:",
         "{pkg_ids}",
     ),
     pkg_spec = pkg_spec,

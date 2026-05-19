@@ -12,6 +12,7 @@ use crate::{
         },
     },
     registry::{self, FetchRegistryError, RegistryId, RegistryIndex, RegistrySpec},
+    util::macros::concat_line,
 };
 
 #[derive(Debug)]
@@ -43,9 +44,9 @@ where
 #[derive(Debug, Snafu)]
 enum RegistryErrorReport {
     #[snafu(display(
-        concat!(
-            "specified registry `{reg_id}` not found in configuration\n",
-            "available registries:\n",
+        concat_line!(
+            "specified registry `{reg_id}` not found in configuration",
+            "available registries:",
             "{registry_ids}",
         ),
         reg_id = reg_id,

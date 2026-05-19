@@ -15,6 +15,7 @@ use crate::{
         registry::{self, RegisteredFont, RegistryError},
         session::{self, SessionError},
     },
+    util::macros::concat_line,
 };
 
 #[derive(Debug)]
@@ -46,16 +47,16 @@ where
 #[derive(Debug, Snafu)]
 enum RegistrationNoticeReport {
     #[snafu(display(
-        concat!(
-            "failed to load font into current session: {path}\n",
+        concat_line!(
+            "failed to load font into current session: {path}",
             "the font was registered persistently but may not be available until next logon",
         ),
         path = path.display(),
     ))]
     LoadFont { path: PathBuf, source: SessionError },
     #[snafu(display(
-        concat!(
-            "failed to broadcast font change after install\n",
+        concat_line!(
+            "failed to broadcast font change after install",
             "applications may not see the new font immediately"
         ),
     ))]

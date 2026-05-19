@@ -19,6 +19,7 @@ use crate::{
     engine::{ResolvedInstallTarget, resolve::registry},
     package::{PackageId, PackageManifest, PackageName, PackageSpec},
     registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySpec},
+    util::macros::concat_line,
 };
 
 use super::InstallTargetSource;
@@ -54,8 +55,8 @@ enum UpdateResolveErrorReport {
     #[snafu(display("no installed package matches the specified package `{pkg_spec}`"))]
     NoMatchingPackage { pkg_spec: PackageSpec },
     #[snafu(display(
-    concat!(
-        "multiple installed packages match the specified package `{pkg_spec}`:\n",
+    concat_line!(
+        "multiple installed packages match the specified package `{pkg_spec}`:",
         "{pkg_ids}",
     ),
     pkg_spec = pkg_spec,
@@ -72,9 +73,9 @@ enum UpdateResolveErrorReport {
         source: RegistryIndexError,
     },
     #[snafu(display(
-        concat!(
-            "multiple packages match the specified package `{name}`:\n",
-            "{pkg_ids}\n",
+        concat_line!(
+            "multiple packages match the specified package `{name}`:",
+            "{pkg_ids}",
             "specify one of the matching package IDs or registry IDs listed above explicitly to disambiguate",
         ),
         name = name,

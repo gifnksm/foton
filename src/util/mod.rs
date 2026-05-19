@@ -3,6 +3,7 @@ pub(crate) mod error;
 pub(crate) mod fs;
 pub(crate) mod glob;
 pub(crate) mod hash;
+pub(crate) mod macros;
 pub(crate) mod path;
 pub(crate) mod text;
 

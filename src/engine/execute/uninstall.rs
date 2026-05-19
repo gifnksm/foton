@@ -15,7 +15,7 @@ use crate::{
     db::{PackageDatabase, PackageDatabaseError},
     package::{self, PackageDirs, PackageId, PackageState},
     platform::windows::steps::unregistration,
-    util::fs::FsError,
+    util::{fs::FsError, macros::concat_line},
 };
 
 #[derive(Debug)]
@@ -47,17 +47,17 @@ where
 #[derive(Debug, Snafu)]
 enum UninstallExecutionErrorReport {
     #[snafu(display(
-        concat!(
-            "failed to remove package files for package {pkg_id}\n",
+        concat_line!(
+            "failed to remove package files for package {pkg_id}",
             "manual cleanup may be required",
         ),
         pkg_id = pkg_id,
     ))]
     RemovePackageFiles { pkg_id: PackageId, source: FsError },
     #[snafu(display(
-        concat!(
-            "failed to finalize uninstall transaction for package {pkg_id}\n",
-            "font unregistration and package file removal may already have been applied\n",
+        concat_line!(
+            "failed to finalize uninstall transaction for package {pkg_id}",
+            "font unregistration and package file removal may already have been applied",
             "rerunning the uninstall command or manual database cleanup may be required"
         ),
         pkg_id = pkg_id,

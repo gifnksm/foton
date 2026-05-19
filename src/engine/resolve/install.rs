@@ -19,6 +19,7 @@ use crate::{
     db::PackageDatabase,
     package::{PackageId, PackageManifest, PackageName, PackageSpec, PackageState},
     registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySpec},
+    util::macros::concat_line,
 };
 
 use super::registry;
@@ -58,9 +59,9 @@ enum InstallResolveErrorReport {
         source: Box<RegistryIndexError>,
     },
     #[snafu(display(
-        concat!(
-            "multiple packages match the specified package `{pkg_spec}`:\n",
-            "{pkg_ids}\n",
+        concat_line!(
+            "multiple packages match the specified package `{pkg_spec}`:",
+            "{pkg_ids}",
             "specify one of the matching package IDs or registry IDs listed above explicitly to disambiguate",
         ),
         pkg_spec = pkg_spec,
@@ -73,10 +74,10 @@ enum InstallResolveErrorReport {
     #[snafu(display("no package found for `{pkg_spec}`"))]
     PackageNotFoundForSpec { pkg_spec: PackageSpec },
     #[snafu(display(
-        concat!(
-            "conflicting packages are being installed:\n",
-            "{pkg_ids}\n",
-            "this may cause unexpected behavior; consider installing only one version of the package\n",
+        concat_line!(
+            "conflicting packages are being installed:",
+            "{pkg_ids}",
+            "this may cause unexpected behavior; consider installing only one version of the package",
         ),
         pkg_ids = BulletList(&pkg_ids.iter().map(|(source, pkg_id)| format!("{pkg_id} (from {source})")).collect::<Vec<_>>()),
     ))]

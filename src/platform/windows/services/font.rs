@@ -5,7 +5,7 @@ use snafu::{OptionExt as _, ResultExt as _, Snafu};
 use crate::{
     package::FontEntry,
     platform::windows::primitives::font_inspector::{FontInspector, FontInspectorError},
-    util::path::FileName,
+    util::{macros::concat_line, path::FileName},
 };
 
 #[derive(Debug, Snafu)]
@@ -28,8 +28,8 @@ pub(crate) enum FontValidatorError {
         source: Box<FontInspectorError>,
     },
     #[snafu(display(
-        concat!(
-            "failed to convert font title to string for file: {path}\n",
+        concat_line!(
+            "failed to convert font title to string for file: {path}",
             "the title may contain invalid UTF-8",
         ),
         path = path.display(),
