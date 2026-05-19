@@ -139,7 +139,7 @@ impl EntryRender for InstalledEntryRender {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::testing;
+    use crate::util::{macros::concat_line, testing};
 
     fn make_entries() -> Vec<(PackageState, Arc<PackageManifest>)> {
         vec![
@@ -179,10 +179,11 @@ mod tests {
         let output = String::from_utf8(output).unwrap();
         assert_eq!(
             output,
-            concat!(
-                "installed-font@1.0.0 (installed)\n",
-                "pending-install-font@1.1.0 (pending-install)\n",
-                "pending-uninstall-font@1.2.0 (pending-uninstall)\n",
+            concat_line!(
+                "installed-font@1.0.0 (installed)",
+                "pending-install-font@1.1.0 (pending-install)",
+                "pending-uninstall-font@1.2.0 (pending-uninstall)",
+                "",
             )
         );
     }

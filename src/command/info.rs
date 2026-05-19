@@ -170,7 +170,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::testing;
+    use crate::util::{macros::concat_line, testing};
 
     #[test]
     fn render_package_info_prints_all_present_fields() {
@@ -182,18 +182,19 @@ mod tests {
         let output = String::from_utf8(output).unwrap();
         assert_eq!(
             output,
-            concat!(
-                "Name: example-font\n",
-                "Version: 0.1.0\n",
-                "State: installed\n",
-                "Sources[0]:\n",
-                "  - URL: https://example.com/example-font-0.1.0.zip\n",
-                "  - Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
-                "  - Includes:\n",
-                "    - **/*.ttf\n",
-                "    - **/*.otf\n",
-                "    - **/*.ttc\n",
-                "\n",
+            concat_line!(
+                "Name: example-font",
+                "Version: 0.1.0",
+                "State: installed",
+                "Sources[0]:",
+                "  - URL: https://example.com/example-font-0.1.0.zip",
+                "  - Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "  - Includes:",
+                "    - **/*.ttf",
+                "    - **/*.otf",
+                "    - **/*.ttc",
+                "",
+                "",
             )
         );
     }
@@ -227,30 +228,31 @@ exclude = ["fonts/exclude.ttf"]
         let output = String::from_utf8(output).unwrap();
         assert_eq!(
             output,
-            concat!(
-                "Name: example-font\n",
-                "Display Name: Example Font\n",
-                "Version: 0.1.0\n",
-                "State: pending-install\n",
-                "Description: Example font family for UI and coding\n",
-                "Aliases:\n",
-                "  - Example Font UI\n",
-                "Faces:\n",
-                "  - Example Font Regular\n",
-                "  - Example Font Bold\n",
-                "  - Example Font UI Regular\n",
-                "  - Example Font UI Bold\n",
-                "Homepage: https://example.com/example-font\n",
-                "Repository: https://github.com/example/example-font\n",
-                "License: OFL-1.1\n",
-                "Sources[0]:\n",
-                "  - URL: https://example.com/example-font-0.1.0.zip\n",
-                "  - Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
-                "  - Includes:\n",
-                "    - fonts/*.ttf\n",
-                "  - Excludes:\n",
-                "    - fonts/exclude.ttf\n",
-                "\n",
+            concat_line!(
+                "Name: example-font",
+                "Display Name: Example Font",
+                "Version: 0.1.0",
+                "State: pending-install",
+                "Description: Example font family for UI and coding",
+                "Aliases:",
+                "  - Example Font UI",
+                "Faces:",
+                "  - Example Font Regular",
+                "  - Example Font Bold",
+                "  - Example Font UI Regular",
+                "  - Example Font UI Bold",
+                "Homepage: https://example.com/example-font",
+                "Repository: https://github.com/example/example-font",
+                "License: OFL-1.1",
+                "Sources[0]:",
+                "  - URL: https://example.com/example-font-0.1.0.zip",
+                "  - Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "  - Includes:",
+                "    - fonts/*.ttf",
+                "  - Excludes:",
+                "    - fonts/exclude.ttf",
+                "",
+                "",
             )
         );
     }

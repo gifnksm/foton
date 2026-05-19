@@ -14,6 +14,7 @@ use crate::{
     },
     db::{PackageDatabase, PackageDatabaseError},
     package::{PackageId, PackageManifest, PackageState},
+    util::macros::concat_line,
 };
 
 #[derive(Debug)]
@@ -50,8 +51,8 @@ enum InstallDbGuardErrorReport {
         source: PackageDatabaseError,
     },
     #[snafu(display(
-        concat!(
-            "failed to roll back install transaction for package {pkg_id}\n",
+        concat_line!(
+            "failed to roll back install transaction for package {pkg_id}",
             "manual database cleanup may be required"
         ),
         pkg_id = pkg_id,

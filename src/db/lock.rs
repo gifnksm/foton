@@ -3,7 +3,7 @@ use std::{fs::File, io, path::PathBuf};
 use fd_lock::{RwLock, RwLockWriteGuard};
 use snafu::{IntoError as _, ResultExt as _, Snafu};
 
-use crate::util::{app_dirs::AppDirs, path::AbsolutePath};
+use crate::util::{app_dirs::AppDirs, macros::concat_line, path::AbsolutePath};
 
 #[derive(Debug)]
 pub(crate) struct DbLockFile {
@@ -23,8 +23,8 @@ pub(crate) enum DbLockFileError {
     #[snafu(display("failed to acquire database lock: {path}", path = path.display()))]
     Acquire { path: PathBuf, source: io::Error },
     #[snafu(display(
-        concat!(
-            "database is already locked: {path}\n",
+        concat_line!(
+            "database is already locked: {path}",
             "another operation is already in progress",
         ),
         path = path.display()

@@ -14,6 +14,7 @@ use crate::{
     platform::windows::services::font::{FontValidator, FontValidatorError},
     util::{
         fs as fs_util,
+        macros::concat_line,
         path::{AbsolutePath, FileName},
     },
 };
@@ -49,8 +50,8 @@ enum ValidationWarnReport {
     #[snafu(display("unsupported font file found: {path}", path = path.display()))]
     UnsupportedFontFile { path: PathBuf },
     #[snafu(display(
-        concat!(
-            "failed to remove unsupported font file: {path}\n",
+        concat_line!(
+            "failed to remove unsupported font file: {path}",
             "manual cleanup may be required",
         ),
         path = path.display(),

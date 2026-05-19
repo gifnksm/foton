@@ -16,7 +16,7 @@ use crate::{
     engine::{execute::install::db_guard::InstallDbGuard, support},
     package::{self, PackageDirs, PackageId, PackageManifest},
     platform::windows::steps::unregistration,
-    util::fs::FsError,
+    util::{fs::FsError, macros::concat_line},
 };
 
 mod db_guard;
@@ -58,8 +58,8 @@ impl From<InstallExecutionErrorReport> for ReportValue<'static> {
 #[derive(Debug, Snafu)]
 enum InstallExecutionErrorReport {
     #[snafu(display(
-        concat!(
-            "failed to remove package files for package {pkg_id}\n",
+        concat_line!(
+            "failed to remove package files for package {pkg_id}",
             "manual cleanup may be required",
         ),
         pkg_id = pkg_id,

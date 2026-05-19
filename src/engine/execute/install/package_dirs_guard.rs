@@ -11,7 +11,7 @@ use crate::{
         },
     },
     package::{self, PackageDirs, PackageId},
-    util::fs::FsError,
+    util::{fs::FsError, macros::concat_line},
 };
 
 #[derive(Debug)]
@@ -43,8 +43,8 @@ where
 #[derive(Debug, Snafu)]
 enum PackageDirNoticeReport {
     #[snafu(display(
-        concat!(
-            "failed to remove package directory after install failure\n",
+        concat_line!(
+            "failed to remove package directory after install failure",
             "manual cleanup may be required",
         )
     ))]

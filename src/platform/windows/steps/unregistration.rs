@@ -15,6 +15,7 @@ use crate::{
         registry::{self, RegistryError},
         session::{self, SessionError},
     },
+    util::macros::concat_line,
 };
 
 #[derive(Debug)]
@@ -48,8 +49,8 @@ enum UnregistrationNoticeReport {
     #[snafu(display("failed to list registered package fonts for the package"))]
     ListInstalledFonts { source: RegistryError },
     #[snafu(display(
-        concat!(
-            "failed to broadcast font change after uninstall\n",
+        concat_line!(
+            "failed to broadcast font change after uninstall",
             "applications may continue to use stale font information until refresh",
         )
     ))]
