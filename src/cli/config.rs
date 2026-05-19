@@ -10,6 +10,7 @@ use crate::{
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) struct FotonConfig {
     pub(crate) install: InstallConfig,
     #[serde(default)]
@@ -19,6 +20,7 @@ pub(crate) struct FotonConfig {
 #[derive(Debug, Deserialize, Serialize)]
 #[expect(clippy::struct_field_names)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) struct InstallConfig {
     pub(crate) max_archive_size_bytes: u64,
     pub(crate) max_extracted_files: usize,
@@ -27,6 +29,7 @@ pub(crate) struct InstallConfig {
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) struct RegistryConfig {
     pub(crate) source: RegistrySource,
     #[serde(default = "default_true")]
@@ -61,7 +64,7 @@ fn default_registries() -> BTreeMap<RegistryId, RegistryConfig> {
 impl Default for InstallConfig {
     fn default() -> Self {
         Self {
-            max_archive_size_bytes: 100 * 1024 * 1024, // 100 MiB
+            max_archive_size_bytes: 512 * 1024 * 1024, // 512 MiB
             max_extracted_files: 1000,
             max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
         }
@@ -112,9 +115,9 @@ mod tests {
             app_dirs.config_file(),
             r#"
 [install]
-max_archive_size_bytes = 123
-max_extracted_files = 456
-max_extracted_file_size_bytes = 789
+max-archive-size-bytes = 123
+max-extracted-files = 456
+max-extracted-file-size-bytes = 789
 
 [registries.foton]
 source = "git+https://example.com/custom.git"
@@ -150,7 +153,7 @@ source = "local+C:/registry"
             app_dirs.config_file(),
             r#"
 [install]
-max_archive_size_bytes = "invalid"
+max-archive-size-bytes = "invalid"
 "#,
         )
         .unwrap();
@@ -158,7 +161,7 @@ max_archive_size_bytes = "invalid"
         let err = load_config(&app_dirs).unwrap_err();
         let err = err.to_string();
 
-        assert!(err.contains("max_archive_size_bytes"));
+        assert!(err.contains("max-archive-size-bytes"));
     }
 
     #[test]
@@ -167,7 +170,7 @@ max_archive_size_bytes = "invalid"
         fs::write(
             app_dirs.config_file(),
             r"
-foton_unknown_key = 123
+foton-unknown-key = 123
 ",
         )
         .unwrap();
@@ -175,7 +178,7 @@ foton_unknown_key = 123
         let err = load_config(&app_dirs).unwrap_err();
         let err = err.to_string();
 
-        assert!(err.contains("foton_unknown_key"));
+        assert!(err.contains("foton-unknown-key"));
     }
 
     #[test]
@@ -185,7 +188,7 @@ foton_unknown_key = 123
             app_dirs.config_file(),
             r"
 [install]
-foton_unknown_key = 123
+foton-unknown-key = 123
 ",
         )
         .unwrap();
@@ -193,7 +196,7 @@ foton_unknown_key = 123
         let err = load_config(&app_dirs).unwrap_err();
         let err = err.to_string();
 
-        assert!(err.contains("foton_unknown_key"));
+        assert!(err.contains("foton-unknown-key"));
     }
 
     #[test]
@@ -239,7 +242,7 @@ source = "https://example.com/registry.git"
             r#"
 [registries.foton]
 source = "git+https://example.com/custom.git"
-foton_unknown_key = true
+foton-unknown-key = true
 "#,
         )
         .unwrap();
@@ -247,6 +250,6 @@ foton_unknown_key = true
         let err = load_config(&app_dirs).unwrap_err();
         let err = err.to_string();
 
-        assert!(err.contains("foton_unknown_key"));
+        assert!(err.contains("foton-unknown-key"));
     }
 }
