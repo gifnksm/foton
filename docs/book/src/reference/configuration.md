@@ -33,9 +33,9 @@ This means:
 
 ```toml
 [install]
-max_archive_size_bytes = 104857600
-max_extracted_files = 1000
-max_extracted_file_size_bytes = 52428800
+max-archive-size-bytes = 536870912
+max-extracted-files = 1000
+max-extracted-file-size-bytes = 52428800
 
 [registries.foton]
 source = "git+https://github.com/gifnksm/foton-registry.git"
@@ -66,9 +66,9 @@ sources.
 
   ```toml
   [install]
-  max_archive_size_bytes = 104857600
-  max_extracted_files = 1000
-  max_extracted_file_size_bytes = 52428800
+  max-archive-size-bytes = 536870912
+  max-extracted-files = 1000
+  max-extracted-file-size-bytes = 52428800
   ```
 
 ### `registries` (optional)
@@ -91,20 +91,20 @@ search or install from.
 
 ## Install section fields
 
-### `install.max_archive_size_bytes` (optional)
+### `install.max-archive-size-bytes` (optional)
 
 The maximum allowed size, in bytes, of a downloaded archive or source file.
 
 - **Type**: unsigned integer
-- **Default**: `104857600` (100MiB)
+- **Default**: `536870912` (512MiB)
 - **Example**:
 
   ```toml
   [install]
-  max_archive_size_bytes = 104857600
+  max-archive-size-bytes = 536870912
   ```
 
-### `install.max_extracted_files` (optional)
+### `install.max-extracted-files` (optional)
 
 The maximum number of files that may be extracted from a source archive.
 
@@ -114,10 +114,10 @@ The maximum number of files that may be extracted from a source archive.
 
   ```toml
   [install]
-  max_extracted_files = 1000
+  max-extracted-files = 1000
   ```
 
-### `install.max_extracted_file_size_bytes` (optional)
+### `install.max-extracted-file-size-bytes` (optional)
 
 The maximum allowed size, in bytes, of a single extracted file.
 
@@ -127,7 +127,7 @@ The maximum allowed size, in bytes, of a single extracted file.
 
   ```toml
   [install]
-  max_extracted_file_size_bytes = 52428800
+  max-extracted-file-size-bytes = 52428800
   ```
 
 ## Registry entry fields
