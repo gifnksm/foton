@@ -40,8 +40,7 @@ foton info <package-name>@<version>
 
 - package name and display name
 - version and current package state
-- description, aliases, and faces
-- homepage, repository, and license
+- description, aliases, faces, homepage, repository, and license
 - source URLs, hashes, and include or exclude patterns
 
 If a package name matches multiple packages recorded in the local package

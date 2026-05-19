@@ -19,7 +19,7 @@ A practical workflow for authoring a package is:
 name = "example-font"
 display-name = "Example Font"
 version = "1.2.3"
-description = "Example package description"
+description = "Example font family for UI and coding"
 aliases = [
   "Example Font UI",
   "Example Font Console",
@@ -31,8 +31,8 @@ faces = [
   "Example Font UI Bold",
 ]
 homepage = "https://example.com/example-font"
-repository = "https://example.com/example-font/repository"
-license = "MIT"
+repository = "https://github.com/example/example-font"
+license = "OFL-1.1"
 
 [[sources]]
 url = "https://example.com/downloads/example-font-1.2.3.zip"
@@ -94,9 +94,9 @@ For the exact package-version syntax and ordering rules, see
 ## Recommended fields
 
 These fields are optional, but they are strongly recommended because they help
-users discover and understand the package.
-See [Package Manifest Reference](../../reference/package-manifest.md) for the complete
-field definitions and constraints.
+users discover and understand the fonts provided by the package.
+See [Package Manifest Reference](../../reference/package-manifest.md) for the
+complete field definitions and constraints.
 
 These fields are recommended:
 
@@ -107,6 +107,14 @@ These fields are recommended:
 - `faces`
 - `homepage`
 - `repository`
+
+These metadata fields describe the fonts provided by the package, not the
+package definition itself. In particular, `homepage`, `repository`, and
+`license` should refer to the upstream font project or the upstream font files
+included in the package.
+
+If there is no suitable upstream homepage or repository, omit that field. Do
+not repeat `repository` in `homepage` just to fill both fields.
 
 `foton manifest check` warns if `display-name`, `description`, or `license` is
 missing.

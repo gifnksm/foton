@@ -5,6 +5,7 @@ use std::{
 };
 
 use snafu::{OptionExt as _, ResultExt as _, Snafu};
+use url::Url;
 
 use crate::{
     cli::{
@@ -47,9 +48,17 @@ enum CheckManifestWarnReport {
     MissingDescription,
     #[snafu(display(
         concat!(
+            "`homepage` and `repository` fields have the same URL: {url}\n",
+            "if there is no distinct upstream homepage, omit `homepage` rather than repeating `repository`",
+        ),
+        url = url,
+    ))]
+    SameHomepageAndRepository { url: Url },
+    #[snafu(display(
+        concat!(
             "following fields have the same normalized display name: {normalized}\n",
-            "{values}",
-            "consider removing one of the values to avoid duplication\n",
+            "{values}\n",
+            "consider removing one of the values to avoid duplication",
         ),
         normalized = normalized,
         values = BulletList(values),
@@ -61,8 +70,8 @@ enum CheckManifestWarnReport {
     #[snafu(display(
         concat!(
             "following fields have the same normalized font face: {normalized}\n",
-            "{values}",
-            "consider removing one of the values to avoid duplication\n",
+            "{values}\n",
+            "consider removing one of the values to avoid duplication",
         ),
         normalized = normalized,
         values = BulletList(values),
@@ -78,7 +87,7 @@ enum CheckManifestWarnReport {
             "`sources[{source_index}].include` contains wildcard pattern: {pattern}\n",
             "this pattern matches the following paths:\n",
             "{extracted}\n",
-            "consider replacing them with fixed strings to avoid unexpected matches\n",
+            "consider replacing them with fixed strings to avoid unexpected matches",
         ),
         source_index = source_index,
         pattern = pattern,
@@ -92,7 +101,7 @@ enum CheckManifestWarnReport {
     #[snafu(display(
         concat!(
             "`{pattern}` in `sources[{source_index}].include` does not match any paths\n",
-            "consider removing it or replacing it with a pattern that matches the intended paths\n",
+            "consider removing it or replacing it with a pattern that matches the intended paths",
         ),
         source_index = source_index,
         pattern = pattern,
@@ -119,7 +128,7 @@ enum CheckManifestWarnReport {
     #[snafu(display(
         concat!(
             "`{pattern}` in `sources[{source_index}].exclude` does not match any paths\n",
-            "consider removing it or replacing it with a pattern that matches the intended paths\n",
+            "consider removing it or replacing it with a pattern that matches the intended paths",
         ),
         source_index = source_index,
         pattern = pattern,
@@ -233,16 +242,9 @@ fn check_manifest_fields(
     extract_details: &[ExtractDetail],
 ) -> Result<(), CheckManifestError> {
     let mut reports = vec![];
-    if manifest.display_name.is_none() {
-        reports.push(MissingDisplayNameSnafu.build());
-    }
-    if manifest.license.is_none() {
-        reports.push(MissingLicenseSnafu.build());
-    }
-    if manifest.description.is_none() {
-        reports.push(MissingDescriptionSnafu.build());
-    }
 
+    check_missing_fields(manifest, &mut reports);
+    check_homepage_and_repository_url(manifest, &mut reports);
     check_display_name_duplication(manifest, &mut reports);
     check_face_duplication(manifest, &mut reports);
     check_face_completeness(manifest, package, &mut reports);
@@ -260,6 +262,29 @@ fn check_manifest_fields(
         return Err(err);
     }
     Ok(())
+}
+
+fn check_missing_fields(manifest: &PackageManifest, reports: &mut Vec<CheckManifestWarnReport>) {
+    if manifest.display_name.is_none() {
+        reports.push(MissingDisplayNameSnafu.build());
+    }
+    if manifest.license.is_none() {
+        reports.push(MissingLicenseSnafu.build());
+    }
+    if manifest.description.is_none() {
+        reports.push(MissingDescriptionSnafu.build());
+    }
+}
+
+fn check_homepage_and_repository_url(
+    manifest: &PackageManifest,
+    reports: &mut Vec<CheckManifestWarnReport>,
+) {
+    if let Some(url) = &manifest.homepage
+        && manifest.repository == manifest.homepage
+    {
+        reports.push(SameHomepageAndRepositorySnafu { url: url.clone() }.build());
+    }
 }
 
 fn check_display_name_duplication(
@@ -496,6 +521,56 @@ mod tests {
             excluded: to_extract_entries(excluded),
             suspicious_skips: to_extract_entries(suspicious_skips),
         }
+    }
+
+    #[test]
+    fn check_missing_fields_reports_all_missing_fields() {
+        let manifest = parse_manifest(
+            r#"
+name = "example-font"
+version = "0.1.0"
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+"#,
+        );
+        let mut reports = vec![];
+
+        check_missing_fields(&manifest, &mut reports);
+
+        assert!(matches!(
+            reports.as_slice(),
+            [
+                CheckManifestWarnReport::MissingDisplayName,
+                CheckManifestWarnReport::MissingLicense,
+                CheckManifestWarnReport::MissingDescription,
+            ]
+        ));
+    }
+
+    #[test]
+    fn check_homepage_and_repository_url_reports_same_url() {
+        let manifest = parse_manifest(
+            r#"
+name = "example-font"
+version = "0.1.0"
+homepage = "https://example.com/repo"
+repository = "https://example.com/repo"
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+"#,
+        );
+        let mut reports = vec![];
+
+        check_homepage_and_repository_url(&manifest, &mut reports);
+
+        assert!(matches!(
+            reports.as_slice(),
+            [CheckManifestWarnReport::SameHomepageAndRepository { url }] if url.as_str() == "https://example.com/repo"
+        ));
     }
 
     #[test]

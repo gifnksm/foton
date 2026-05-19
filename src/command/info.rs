@@ -205,12 +205,12 @@ mod tests {
 name = "example-font"
 display-name = "Example Font"
 version = "0.1.0"
-description = "Example font"
+description = "Example font family for UI and coding"
 aliases = ["Example Font UI"]
 faces = ["Example Font Regular", "Example Font Bold", "Example Font UI Regular", "Example Font UI Bold"]
-homepage = "https://example.com/home"
-repository = "https://example.com/repo"
-license = "MIT"
+homepage = "https://example.com/example-font"
+repository = "https://github.com/example/example-font"
+license = "OFL-1.1"
 
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
@@ -232,7 +232,7 @@ exclude = ["fonts/exclude.ttf"]
                 "Display Name: Example Font\n",
                 "Version: 0.1.0\n",
                 "State: pending-install\n",
-                "Description: Example font\n",
+                "Description: Example font family for UI and coding\n",
                 "Aliases:\n",
                 "  - Example Font UI\n",
                 "Faces:\n",
@@ -240,9 +240,9 @@ exclude = ["fonts/exclude.ttf"]
                 "  - Example Font Bold\n",
                 "  - Example Font UI Regular\n",
                 "  - Example Font UI Bold\n",
-                "Homepage: https://example.com/home\n",
-                "Repository: https://example.com/repo\n",
-                "License: MIT\n",
+                "Homepage: https://example.com/example-font\n",
+                "Repository: https://github.com/example/example-font\n",
+                "License: OFL-1.1\n",
                 "Sources[0]:\n",
                 "  - URL: https://example.com/example-font-0.1.0.zip\n",
                 "  - Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
