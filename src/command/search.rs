@@ -193,6 +193,8 @@ impl Ord for ScoredManifest {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use super::*;
     use crate::{
         registry::RegistryId,
@@ -269,7 +271,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         let err =
             collect_search_results(&[registry], &make_matcher("preview"), 10, false).unwrap_err();
 
-        assert!(matches!(err, SearchErrorReport::NoMatchingPackagesFound));
+        assert_matches!(err, SearchErrorReport::NoMatchingPackagesFound);
     }
 
     #[test]

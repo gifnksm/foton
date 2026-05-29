@@ -479,7 +479,7 @@ fn check_suspicious_skips(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::LazyLock;
+    use std::{assert_matches, sync::LazyLock};
 
     use super::*;
     use crate::{
@@ -542,14 +542,14 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
         check_missing_fields(&manifest, &mut reports);
 
-        assert!(matches!(
+        assert_matches!(
             reports.as_slice(),
             [
                 CheckManifestWarnReport::MissingDisplayName,
                 CheckManifestWarnReport::MissingLicense,
                 CheckManifestWarnReport::MissingDescription,
             ]
-        ));
+        );
     }
 
     #[test]
@@ -570,10 +570,10 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
         check_homepage_and_repository_url(&manifest, &mut reports);
 
-        assert!(matches!(
+        assert_matches!(
             reports.as_slice(),
             [CheckManifestWarnReport::SameHomepageAndRepository { url }] if url.as_str() == "https://example.com/repo"
-        ));
+        );
     }
 
     #[test]
@@ -594,11 +594,11 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
         check_display_name_duplication(&manifest, &mut reports);
 
-        assert!(matches!(
+        assert_matches!(
             reports.as_slice(),
             [CheckManifestWarnReport::DuplicatedDisplayName { normalized, values }]
                 if normalized == "udpgothic" && values.len() == 2
-        ));
+        );
     }
 
     #[test]
@@ -618,11 +618,11 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
         check_face_duplication(&manifest, &mut reports);
 
-        assert!(matches!(
+        assert_matches!(
             reports.as_slice(),
             [CheckManifestWarnReport::DuplicatedFace { normalized, values }]
                 if normalized == "hackgenregular" && values.len() == 2
-        ));
+        );
     }
 
     #[test]
@@ -643,10 +643,10 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
         check_face_completeness(&manifest, &package, &mut reports);
 
-        assert!(matches!(
+        assert_matches!(
             reports.as_slice(),
             [CheckManifestWarnReport::UnlistedFace { face }] if face == "Actual Face"
-        ));
+        );
     }
 
     #[test]
@@ -667,11 +667,11 @@ include = ["fonts/missing.ttf"]
 
         check_include_extraction(&manifest, &extract_details, &mut reports);
 
-        assert!(matches!(
+        assert_matches!(
             reports.as_slice(),
             [CheckManifestWarnReport::IncludePatternMatchesNothing { source_index, pattern }]
                 if *source_index == 0 && pattern.as_str() == "fonts/missing.ttf"
-        ));
+        );
     }
 
     #[test]
@@ -700,14 +700,14 @@ include = ["fonts/c.ttf"]
 
         check_include_extraction(&manifest, &extract_details, &mut reports);
 
-        assert!(matches!(
+        assert_matches!(
             reports.as_slice(),
             [CheckManifestWarnReport::WildcardPattern { source_index, pattern, extracted }]
                 if *source_index == 0
                     && pattern.as_str() == "fonts/*.ttf"
                     && extracted
                         == &BTreeSet::from([PathBuf::from("fonts/a.ttf"), PathBuf::from("fonts/b.ttf")])
-        ));
+        );
     }
 
     #[test]
@@ -728,7 +728,7 @@ include = ["fonts/a.ttf", "fonts/a.ttf"]
 
         check_include_extraction(&manifest, &extract_details, &mut reports);
 
-        assert!(matches!(
+        assert_matches!(
             reports.as_slice(),
             [CheckManifestWarnReport::MultipleIncludePatternsMatchSamePath {
                 source_index,
@@ -738,7 +738,7 @@ include = ["fonts/a.ttf", "fonts/a.ttf"]
                 && path == &PathBuf::from("fonts/a.ttf")
                 && patterns.iter().map(PathPattern::as_str).collect::<Vec<_>>()
                     == vec!["fonts/a.ttf", "fonts/a.ttf"]
-        ));
+        );
     }
 
     #[test]
@@ -800,11 +800,11 @@ exclude = ["fonts/missing.ttf"]
 
         check_exclude_extraction(&manifest, &extract_details, &mut reports);
 
-        assert!(matches!(
+        assert_matches!(
             reports.as_slice(),
             [CheckManifestWarnReport::ExcludePatternMatchesNothing { source_index, pattern }]
                 if *source_index == 0 && pattern.as_str() == "fonts/missing.ttf"
-        ));
+        );
     }
 
     #[test]
@@ -843,7 +843,7 @@ exclude = ["fonts/skip.ttf"]
 
         check_suspicious_skips(&extract_details, &mut reports);
 
-        assert!(matches!(
+        assert_matches!(
             reports.as_slice(),
             [CheckManifestWarnReport::SuspiciousSkip { source_index, skipped }]
                 if *source_index == 0
@@ -851,6 +851,6 @@ exclude = ["fonts/skip.ttf"]
                         PathBuf::from("fonts/SKIP.TTF"),
                         PathBuf::from("fonts/skip.otf"),
                     ])
-        ));
+        );
     }
 }

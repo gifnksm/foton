@@ -170,6 +170,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use futures_util::stream;
     use indicatif::ProgressBar;
     use sha2::{Digest as _, Sha256};
@@ -194,9 +196,6 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(matches!(
-            err,
-            DownloadErrorReport::DownloadedSizeExceedsMax { .. }
-        ));
+        assert_matches!(err, DownloadErrorReport::DownloadedSizeExceedsMax { .. });
     }
 }

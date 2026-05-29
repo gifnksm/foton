@@ -147,6 +147,8 @@ impl FromStr for Sha256Digest {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use super::*;
 
     #[test]
@@ -169,7 +171,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(matches!(err, GenericDigestParseError::NoAlgorithmPrefix));
+        assert_matches!(err, GenericDigestParseError::NoAlgorithmPrefix);
     }
 
     #[test]
@@ -179,10 +181,10 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(matches!(
+        assert_matches!(
             err,
             GenericDigestParseError::NotSupported { algorithm } if algorithm == "sha512"
-        ));
+        );
     }
 
     #[test]

@@ -222,7 +222,7 @@ fn check_dir_presence(path: &Path) -> Result<DirPresence, RegistryIndexError> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{assert_matches, fs};
 
     use super::*;
     use crate::util::testing;
@@ -298,7 +298,7 @@ mod tests {
 
         let pkg_id: PackageId = "example-font@0.1.0".parse().unwrap();
         let err = registry.find_package_by_id(&pkg_id).unwrap_err();
-        assert!(matches!(err, RegistryIndexError::PackageIdMismatch { .. }));
+        assert_matches!(err, RegistryIndexError::PackageIdMismatch { .. });
     }
 
     #[test]

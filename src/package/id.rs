@@ -115,6 +115,8 @@ impl<'de> Deserialize<'de> for PackageId {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use serde::de::value::{Error as ValueError, StrDeserializer};
 
     use super::*;
@@ -131,23 +133,23 @@ mod tests {
     #[test]
     fn package_id_rejects_invalid_format() {
         for input in ["example-font", "example-font@", "example-font@0.1.0@latest"] {
-            assert!(matches!(
+            assert_matches!(
                 PackageId::from_str(input),
                 Err(ParsePackageIdError::InvalidFormat)
-            ));
+            );
         }
     }
 
     #[test]
     fn package_id_reports_invalid_name() {
         let err = PackageId::from_str("0example-font@0.1.0").unwrap_err();
-        assert!(matches!(err, ParsePackageIdError::InvalidName { .. }));
+        assert_matches!(err, ParsePackageIdError::InvalidName { .. });
     }
 
     #[test]
     fn package_id_reports_invalid_version() {
         let err = PackageId::from_str("example-font@latest").unwrap_err();
-        assert!(matches!(err, ParsePackageIdError::InvalidVersion { .. }));
+        assert_matches!(err, ParsePackageIdError::InvalidVersion { .. });
     }
 
     #[test]

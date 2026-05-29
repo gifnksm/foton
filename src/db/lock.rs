@@ -65,6 +65,8 @@ impl DbLockFile {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use super::*;
     use crate::util::testing;
 
@@ -77,7 +79,7 @@ mod tests {
         let _first_guard = first.try_acquire().unwrap();
         let err = second.try_acquire().unwrap_err();
 
-        assert!(matches!(err, DbLockFileError::AlreadyLocked { .. }));
+        assert_matches!(err, DbLockFileError::AlreadyLocked { .. });
     }
 
     #[test]
@@ -89,7 +91,7 @@ mod tests {
         {
             let _first_guard = first.try_acquire().unwrap();
             let err = second.try_acquire().unwrap_err();
-            assert!(matches!(err, DbLockFileError::AlreadyLocked { .. }));
+            assert_matches!(err, DbLockFileError::AlreadyLocked { .. });
         }
 
         let _second_guard = second.try_acquire().unwrap();

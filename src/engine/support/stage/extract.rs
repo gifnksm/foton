@@ -217,7 +217,7 @@ fn extract_archive_impl(
 
 #[cfg(test)]
 mod tests {
-    use std::io::Seek as _;
+    use std::{assert_matches, io::Seek as _};
 
     use tempfile::TempDir;
     use zip::{ZipWriter, write::SimpleFileOptions};
@@ -348,10 +348,7 @@ mod tests {
             &FotonConfig::default(),
         )
         .unwrap_err();
-        assert!(matches!(
-            *err,
-            ExtractErrorReport::ExtractedFileAlreadyExists { .. }
-        ));
+        assert_matches!(*err, ExtractErrorReport::ExtractedFileAlreadyExists { .. });
     }
 
     #[test]
@@ -388,10 +385,7 @@ mod tests {
 
         let err = extract_to_tempdir(archive, &default_include(), &default_exclude(), &config)
             .unwrap_err();
-        assert!(matches!(
-            *err,
-            ExtractErrorReport::TooManyExtractableFiles { .. }
-        ));
+        assert_matches!(*err, ExtractErrorReport::TooManyExtractableFiles { .. });
     }
 
     #[test]
@@ -407,10 +401,7 @@ mod tests {
 
         let err = extract_to_tempdir(archive, &default_include(), &default_exclude(), &config)
             .unwrap_err();
-        assert!(matches!(
-            *err,
-            ExtractErrorReport::ExtractedFileExceedsMaxSize { .. }
-        ));
+        assert_matches!(*err, ExtractErrorReport::ExtractedFileExceedsMaxSize { .. });
     }
 
     #[test]

@@ -125,7 +125,7 @@ fn dedup_targets(targets: &mut Vec<ResolvedUninstallTarget>) {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr as _;
+    use std::{assert_matches, str::FromStr as _};
 
     use super::*;
     use crate::{
@@ -146,9 +146,7 @@ mod tests {
             ];
             for spec in &pkg_specs {
                 let target = resolve_spec(&scope_cx, &db, spec).unwrap();
-                assert!(
-                    matches!(target, ResolvedUninstallTarget::Unresolved { pkg_spec } if pkg_spec == *spec)
-                );
+                assert_matches!(target, ResolvedUninstallTarget::Unresolved { pkg_spec } if pkg_spec == *spec);
             }
 
             let targets = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap();
@@ -172,9 +170,7 @@ mod tests {
                 PackageSpec::from_str("example-font").unwrap(),
             ] {
                 let target = resolve_spec(&cx, &db, &spec).unwrap();
-                assert!(
-                    matches!(target, ResolvedUninstallTarget::Resolved  { pkg_id } if pkg_id == expected)
-                );
+                assert_matches!(target, ResolvedUninstallTarget::Resolved  { pkg_id } if pkg_id == expected);
             }
         });
     }
@@ -194,7 +190,7 @@ mod tests {
             testing::mark_as_installed(&mut db, &manifest2);
 
             let err = resolve_spec(&cx, &db, &spec).unwrap_err();
-            assert!(matches!(err, TestError::Failed));
+            assert_matches!(err, TestError::Failed);
         });
     }
 
@@ -215,7 +211,7 @@ mod tests {
             testing::mark_as_installed(&mut db, &manifest2);
 
             let err = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap_err();
-            assert!(matches!(err, TestError::Failed));
+            assert_matches!(err, TestError::Failed);
         });
     }
 
@@ -236,9 +232,7 @@ mod tests {
             let targets = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap();
 
             assert_eq!(targets.len(), 1);
-            assert!(
-                matches!(&targets[0], ResolvedUninstallTarget::Resolved { pkg_id } if pkg_id == &expected_pkg_id)
-            );
+            assert_matches!(&targets[0], ResolvedUninstallTarget::Resolved { pkg_id } if pkg_id == &expected_pkg_id);
         });
     }
 
@@ -257,17 +251,13 @@ mod tests {
             testing::mark_as_pending_installed(&mut db, &manifest);
 
             let target = resolve_spec(&cx, &db, &spec).unwrap();
-            assert!(
-                matches!(target, ResolvedUninstallTarget::Resolved { pkg_id: target_id } if target_id == pkg_id)
-            );
+            assert_matches!(target, ResolvedUninstallTarget::Resolved { pkg_id: target_id } if target_id == pkg_id);
 
             let plan = testing::make_uninstall_plan(&pkg_id);
             db.apply_plan_transaction(&plan).unwrap();
 
             let target = resolve_spec(&cx, &db, &spec).unwrap();
-            assert!(
-                matches!(target, ResolvedUninstallTarget::Resolved { pkg_id: target_id } if target_id == pkg_id)
-            );
+            assert_matches!(target, ResolvedUninstallTarget::Resolved { pkg_id: target_id } if target_id == pkg_id);
         });
     }
 
@@ -286,7 +276,7 @@ mod tests {
             testing::mark_as_pending_uninstalled(&mut db, &manifest2);
 
             let err = resolve_spec(&cx, &db, &spec).unwrap_err();
-            assert!(matches!(err, TestError::Failed));
+            assert_matches!(err, TestError::Failed);
         });
     }
 }
