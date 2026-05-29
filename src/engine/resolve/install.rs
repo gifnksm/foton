@@ -299,7 +299,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr as _;
+    use std::{assert_matches, str::FromStr as _};
 
     use tempfile::TempDir;
 
@@ -322,9 +322,7 @@ mod tests {
             testing::mark_as_installed(&mut db, &manifest);
 
             let target = resolve_installed_package(&db, &spec);
-            assert!(
-                matches!(target, ResolveState::Resolved { manifest: resolved_manifest, .. } if Arc::ptr_eq(&resolved_manifest, &manifest))
-            );
+            assert_matches!(target, ResolveState::Resolved { manifest: resolved_manifest, .. } if Arc::ptr_eq(&resolved_manifest, &manifest));
         });
     }
 
@@ -341,10 +339,10 @@ mod tests {
             testing::mark_as_pending_installed(&mut db, &manifest);
 
             let target = resolve_installed_package(&db, &spec);
-            assert!(matches!(
+            assert_matches!(
                 target,
                 ResolveState::Unresolved { pkg_spec } if pkg_spec == spec
-            ));
+            );
         });
     }
 
@@ -361,9 +359,10 @@ mod tests {
             testing::mark_as_installed(&mut db, &installed_manifest);
 
             let target = resolve_installed_package(&db, &missing_spec);
-            assert!(matches!(
+            assert_matches!(
                 target,
-                ResolveState::Unresolved { pkg_spec } if pkg_spec == missing_spec));
+                ResolveState::Unresolved { pkg_spec } if pkg_spec == missing_spec
+            );
         });
     }
 
@@ -410,7 +409,7 @@ mod tests {
         testing::with_db(&cx, |db| {
             let err = resolve_install_targets_by_spec(&cx, &db, &[registry], &pkg_specs, false)
                 .unwrap_err();
-            assert!(matches!(err, TestError::Failed));
+            assert_matches!(err, TestError::Failed);
         });
     }
 
@@ -426,13 +425,13 @@ mod tests {
                 .unwrap();
 
         assert_eq!(targets.len(), 1);
-        assert!(matches!(
+        assert_matches!(
             &targets[0],
             ResolvedInstallTarget {
                 source: InstallTargetSource::File(source_path),
                 manifest: resolved_manifest,
             } if source_path == &path && Arc::ptr_eq(resolved_manifest, &manifest)
-        ));
+        );
     }
 
     #[test]
@@ -453,7 +452,7 @@ mod tests {
 
         let err = resolve_install_targets_by_manifest(&cx, &manifests).unwrap_err();
 
-        assert!(matches!(err, TestError::Failed));
+        assert_matches!(err, TestError::Failed);
     }
 
     #[test]
@@ -533,7 +532,7 @@ mod tests {
 
         let spec: PackageSpec = "example-font".parse().unwrap();
         let err = resolve_spec_from_registry(&cx, &indexes, &spec, false).unwrap_err();
-        assert!(matches!(err, TestError::Failed));
+        assert_matches!(err, TestError::Failed);
     }
 
     #[test]
@@ -554,7 +553,7 @@ mod tests {
         ];
 
         let err = check_conflicts(&cx, &targets).unwrap_err();
-        assert!(matches!(err, TestError::Failed));
+        assert_matches!(err, TestError::Failed);
     }
 
     #[test]
@@ -575,8 +574,6 @@ mod tests {
         dedup_by_id(&mut targets);
 
         assert_eq!(targets.len(), 1);
-        assert!(
-            matches!(&targets[0], ResolvedInstallTarget { manifest, .. } if manifest.id() == expected_pkg_id)
-        );
+        assert_matches!(&targets[0], ResolvedInstallTarget { manifest, .. } if manifest.id() == expected_pkg_id);
     }
 }

@@ -241,7 +241,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr as _;
+    use std::{assert_matches, str::FromStr as _};
 
     use super::*;
     use crate::{
@@ -344,7 +344,7 @@ mod tests {
 
             let err = resolve_update_targets(&cx, &db, &registries, &pkg_specs, false).unwrap_err();
 
-            assert!(matches!(err, TestError::Failed));
+            assert_matches!(err, TestError::Failed);
         });
     }
 

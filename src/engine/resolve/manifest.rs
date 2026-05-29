@@ -72,7 +72,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{assert_matches, fs};
 
     use tempfile::TempDir;
 
@@ -109,6 +109,6 @@ mod tests {
 
         let err = resolve_manifests(&cx, &[path]).unwrap_err();
 
-        assert!(matches!(err, TestError::Failed));
+        assert_matches!(err, TestError::Failed);
     }
 }

@@ -387,7 +387,7 @@ pub(crate) struct ManifestMatchResult {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{assert_matches, fs};
 
     use tempfile::TempDir;
 
@@ -858,7 +858,7 @@ exclude = ["fonts/exclude.ttf", "fonts/legacy/*.ttf"]
 
         let err = PackageManifest::read(&path).unwrap_err();
 
-        assert!(matches!(err, PackageManifestError::NotFound { .. }));
+        assert_matches!(err, PackageManifestError::NotFound { .. });
     }
 
     #[test]
@@ -867,7 +867,7 @@ exclude = ["fonts/exclude.ttf", "fonts/legacy/*.ttf"]
 
         let err = PackageManifest::read(tempdir.path()).unwrap_err();
 
-        assert!(matches!(err, PackageManifestError::ReadManifest { .. }));
+        assert_matches!(err, PackageManifestError::ReadManifest { .. });
     }
 
     #[test]
@@ -878,9 +878,6 @@ exclude = ["fonts/exclude.ttf", "fonts/legacy/*.ttf"]
 
         let err = PackageManifest::read(&path).unwrap_err();
 
-        assert!(matches!(
-            err,
-            PackageManifestError::DeserializeManifest { .. }
-        ));
+        assert_matches!(err, PackageManifestError::DeserializeManifest { .. });
     }
 }

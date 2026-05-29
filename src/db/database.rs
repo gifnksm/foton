@@ -353,6 +353,7 @@ pub(crate) enum Uninstallability {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
 
     use super::*;
     use crate::{db::DbLockFile, engine::UninstallReason, util::testing};
@@ -525,7 +526,7 @@ mod tests {
                 ]);
                 db.simulate_save_failure = true;
                 let err = db.apply_plan_transaction(&plan).unwrap_err();
-                assert!(matches!(err, PackageDatabaseError::SimulatedSaveFailure));
+                assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
             },
         );
     }
@@ -598,7 +599,7 @@ mod tests {
             |db| {
                 db.simulate_save_failure = true;
                 let err = db.complete_install(&pkg_id).unwrap_err();
-                assert!(matches!(err, PackageDatabaseError::SimulatedSaveFailure));
+                assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
             },
         );
     }
@@ -623,7 +624,7 @@ mod tests {
             |db| {
                 db.simulate_save_failure = true;
                 let err = db.cancel_install(&pkg_id).unwrap_err();
-                assert!(matches!(err, PackageDatabaseError::SimulatedSaveFailure));
+                assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
             },
         );
     }
@@ -648,7 +649,7 @@ mod tests {
             |db| {
                 db.simulate_save_failure = true;
                 let err = db.complete_uninstall(&pkg_id).unwrap_err();
-                assert!(matches!(err, PackageDatabaseError::SimulatedSaveFailure));
+                assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
             },
         );
     }
