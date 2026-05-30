@@ -23,9 +23,23 @@ pub(crate) enum FetchRegistryError {
     GitOperation {
         id: RegistryId,
         path: PathBuf,
-        operation: &'static str,
+        operation: String,
         #[snafu(source(from(git2::Error, Box::new)))]
         source: Box<git2::Error>,
+    },
+    #[snafu(display(
+        concat_line!(
+            "registry `{id}` has an empty {property} in HEAD: {path}",
+            "remove the cached registry directory and retry",
+        ),
+        id = id,
+        property = property,
+        path = path.display(),
+    ))]
+    GitEmptyHeadProperty {
+        id: RegistryId,
+        path: PathBuf,
+        property: &'static str,
     },
     #[snafu(display("registry `{id}` has uncommitted changes: {path}", path = path.display()))]
     GitUncommittedChanges { id: RegistryId, path: PathBuf },
