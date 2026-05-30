@@ -1,0 +1,17 @@
+targets = [
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+]
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Unicode-3.0",
+]
+
+private = { ignore = true }
+
+option-ext.accepted = [ "MPL-2.0" ]
+libbz2-rs-sys.accepted = [ "bzip2-1.0.6" ]
+zlib-rs.accepted = [ "Zlib" ]
+ppmd-rust.accepted = [ "MIT-0" ]
+encoding_rs.accepted = [ "BSD-3-Clause" ]
