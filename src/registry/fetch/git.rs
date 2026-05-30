@@ -10,8 +10,8 @@ use crate::{
     registry::{
         RegistryId, RegistryIndex,
         fetch::{
-            GitOperationSnafu, GitRemoteUrlMismatchSnafu, GitUncommittedChangesSnafu,
-            OpenIndexSnafu,
+            GitEmptyHeadPropertySnafu, GitOperationSnafu, GitRemoteUrlMismatchSnafu,
+            GitUncommittedChangesSnafu, OpenIndexSnafu,
         },
     },
     util::{app_dirs::AppDirs, path::AbsolutePath},
@@ -49,32 +49,40 @@ pub(in crate::registry) fn fetch_existing(
         path,
         operation,
     };
+    let op_snafu_owned = |operation: String| GitOperationSnafu {
+        id,
+        path,
+        operation,
+    };
     let custom = git2::Error::from_str;
+    let empty_head_prop = |property| GitEmptyHeadPropertySnafu { id, path, property };
 
-    let repo = Repository::open(path).context(op_snafu("open repository"))?;
+    let repo = Repository::open(path).with_context(|_| op_snafu("open repository"))?;
     let statuses = repo
         .statuses(None)
-        .context(op_snafu("get repository status"))?;
+        .with_context(|_| op_snafu("get repository status"))?;
     snafu::ensure!(statuses.is_empty(), GitUncommittedChangesSnafu { id, path });
 
-    let head = repo.head().context(op_snafu("get repository head"))?;
+    let head = repo.head().with_context(|_| op_snafu("get HEAD"))?;
     let branch_full_name = head
         .name()
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| custom("repository head reference name is empty or not valid UTF-8 string"))
-        .context(op_snafu("get repository head name"))?;
+        .with_context(|_| op_snafu("get HEAD reference name"))?;
+    snafu::ensure!(
+        !branch_full_name.is_empty(),
+        empty_head_prop("reference name")
+    );
     let branch_short_name = head
         .shorthand()
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| custom("repository head shorthand is empty or not a valid UTF-8 string"))
-        .context(op_snafu("get repository head name"))?;
+        .with_context(|_| op_snafu("get HEAD shorthand"))?;
+    snafu::ensure!(!branch_short_name.is_empty(), empty_head_prop("shorthand"));
 
     let mut remote = repo
         .find_remote(REMOTE_NAME)
-        .context(op_snafu("find git remote"))?;
+        .with_context(|_| op_snafu_owned(format!("find remote '{REMOTE_NAME}'")))?;
+    let remote_url = remote.url().with_context(|_| op_snafu("get remote URL"))?;
 
     snafu::ensure!(
-        remote.url() == Some(url.as_str()),
+        remote_url == url.as_str(),
         GitRemoteUrlMismatchSnafu { id, path }
     );
 
@@ -82,27 +90,27 @@ pub(in crate::registry) fn fetch_existing(
     fetch_opts.depth(1);
     remote
         .fetch(<&[&str]>::default(), Some(&mut fetch_opts), None)
-        .context(op_snafu("fetch from git remote"))?;
+        .with_context(|_| op_snafu_owned(format!("fetch from remote '{REMOTE_NAME}'")))?;
 
     let remote_ref = format!("refs/remotes/{REMOTE_NAME}/{branch_short_name}");
     let remote_oid = repo
         .find_reference(&remote_ref)
-        .context(op_snafu("find remote branch reference"))?
+        .with_context(|_| op_snafu("find remote branch reference"))?
         .target()
         .ok_or_else(|| custom("remote branch reference does not point to a commit"))
-        .context(op_snafu("find remote branch reference"))?;
+        .with_context(|_| op_snafu("find remote branch reference"))?;
 
     let mut reference = repo
         .find_reference(branch_full_name)
-        .context(op_snafu("find head reference"))?;
+        .with_context(|_| op_snafu("find HEAD reference"))?;
     reference
         .set_target(remote_oid, "fast-forward")
-        .context(op_snafu("update head reference"))?;
+        .with_context(|_| op_snafu("update HEAD reference"))?;
 
     let mut checkout_builder = CheckoutBuilder::new();
     checkout_builder.force();
     repo.checkout_head(Some(&mut checkout_builder))
-        .context(op_snafu("checkout head"))?;
+        .with_context(|_| op_snafu("checkout HEAD"))?;
 
     Ok(())
 }
@@ -124,6 +132,6 @@ pub(in crate::registry) fn fetch_new(
     let _repo = RepoBuilder::new()
         .fetch_options(fetch_opts)
         .clone(url.as_str(), path.as_path())
-        .context(op_snafu("clone git repository"))?;
+        .with_context(|_| op_snafu("clone git repository"))?;
     Ok(())
 }
