@@ -253,7 +253,7 @@ mod tests {
             let target = resolve_spec(&cx, &db, &spec).unwrap();
             assert_matches!(target, ResolvedUninstallTarget::Resolved { pkg_id: target_id } if target_id == pkg_id);
 
-            let plan = testing::make_uninstall_plan(&pkg_id);
+            let plan = testing::make_uninstall_plan(&pkg_id, vec![]);
             db.apply_plan_transaction(&plan).unwrap();
 
             let target = resolve_spec(&cx, &db, &spec).unwrap();

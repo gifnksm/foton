@@ -13,7 +13,7 @@ use crate::{
         },
     },
     db::PackageDatabase,
-    engine::{execute::install::db_guard::InstallDbGuard, support},
+    engine::{ExecutionResult, execute::install::db_guard::InstallDbGuard, support},
     package::{self, PackageDirs, PackageId, PackageManifest},
     platform::windows::steps::unregistration,
     util::{fs::FsError, macros::concat_line},
@@ -84,8 +84,9 @@ where
         cx: &ReportContext<S>,
         db: Arc<Mutex<PackageDatabase<'db>>>,
         manifest: Arc<PackageManifest>,
+        replacing_pkg_ids: Vec<PackageId>,
     ) -> Self {
-        let db_guard = db_guard::begin_install(cx, db, &manifest);
+        let db_guard = db_guard::begin_install(cx, db, &manifest, replacing_pkg_ids);
         Self { db_guard, manifest }
     }
 
@@ -111,5 +112,22 @@ where
         registration_guard.disarm();
 
         Ok(())
+    }
+
+    pub(in crate::engine) fn target_id(&self) -> PackageId {
+        self.manifest.id()
+    }
+
+    #[expect(clippy::unused_self)]
+    pub(in crate::engine) fn can_execute(&self) -> bool {
+        true
+    }
+
+    #[expect(clippy::unused_self)]
+    pub(in crate::engine) fn notify_result(
+        &mut self,
+        _pkg_id: &PackageId,
+        _result: ExecutionResult,
+    ) {
     }
 }

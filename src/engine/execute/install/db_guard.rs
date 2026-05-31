@@ -73,6 +73,7 @@ pub(super) fn begin_install<'db, S>(
     cx: &ReportContext<S>,
     db: Arc<Mutex<PackageDatabase<'db>>>,
     manifest: &PackageManifest,
+    replacing_pkg_ids: Vec<PackageId>,
 ) -> InstallDbGuard<'db, S>
 where
     S: ReportScope,
@@ -93,6 +94,7 @@ where
         cx: cx.clone(),
         db,
         pkg_id,
+        replacing_pkg_ids,
     }
 }
 
@@ -105,6 +107,7 @@ where
     cx: ReportContext<InstallDbGuardScope<S>>,
     db: Arc<Mutex<PackageDatabase<'db>>>,
     pkg_id: PackageId,
+    replacing_pkg_ids: Vec<PackageId>,
 }
 
 impl<S> InstallDbGuard<'_, S>
@@ -113,7 +116,7 @@ where
 {
     pub(super) fn complete_install(mut self) -> Result<(), S::Error> {
         let mut db = self.db.lock().unwrap();
-        db.complete_install(&self.pkg_id)
+        db.complete_install(&self.pkg_id, &self.replacing_pkg_ids)
             .context(CompleteInstallSnafu {
                 pkg_id: &self.pkg_id,
             })
@@ -167,12 +170,13 @@ mod tests {
 
         let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.id();
+        let replacing_pkg_ids = vec![];
 
         testing::with_db(&cx, |mut db| {
-            let plan = testing::make_install_plan(&manifest);
+            let plan = testing::make_install_plan(&manifest, vec![]);
             db.apply_plan_transaction(&plan).unwrap();
             let db = Arc::new(Mutex::new(db));
-            let guard = begin_install(&cx, Arc::clone(&db), &manifest);
+            let guard = begin_install(&cx, Arc::clone(&db), &manifest, replacing_pkg_ids);
             {
                 let mut db = db.lock().unwrap();
                 // Reload from disk while keeping the install guard alive so this assertion verifies
@@ -195,15 +199,16 @@ mod tests {
 
         let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.id();
+        let replacing_pkg_ids = vec![];
 
         let mut db_lock_file = engine::open_db_lock_file(&cx).unwrap();
 
         {
             let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            let plan = testing::make_install_plan(&manifest);
+            let plan = testing::make_install_plan(&manifest, vec![]);
             db.apply_plan_transaction(&plan).unwrap();
             let db = Arc::new(Mutex::new(db));
-            let guard = begin_install(&cx, db, &manifest);
+            let guard = begin_install(&cx, db, &manifest, replacing_pkg_ids);
             drop(guard);
         }
 
@@ -220,15 +225,16 @@ mod tests {
 
         let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.id();
+        let replacing_pkg_ids = vec![];
 
         let mut db_lock_file = engine::open_db_lock_file(&cx).unwrap();
 
         {
             let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            let plan = testing::make_install_plan(&manifest);
+            let plan = testing::make_install_plan(&manifest, vec![]);
             db.apply_plan_transaction(&plan).unwrap();
             let db = Arc::new(Mutex::new(db));
-            let guard = begin_install(&cx, db, &manifest);
+            let guard = begin_install(&cx, db, &manifest, replacing_pkg_ids);
             guard.complete_install().unwrap();
         }
 

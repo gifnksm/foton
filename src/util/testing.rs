@@ -11,8 +11,9 @@ use crate::{
     },
     db::PackageDatabase,
     engine::{
-        self, ExecutionPlan, ExecutionPlanOp, InstallOp, InstallReason, InstallTargetSource,
-        ResolvedInstallTarget, ResolvedUninstallTarget, SkipOp, UninstallOp, UninstallReason,
+        self, ExecutionCondition, ExecutionPlan, ExecutionPlanOp, InstallOp, InstallReason,
+        InstallTargetSource, ResolvedInstallTarget, ResolvedUninstallTarget, SkipOp, UninstallOp,
+        UninstallReason,
     },
     package::{PackageDirs, PackageId, PackageManifest, PackageState},
     registry::{RegistryId, RegistryIndex, RegistrySource, RegistrySpec},
@@ -205,18 +206,26 @@ where
     }
 }
 
-pub(crate) fn make_install_plan(manifest: &Arc<PackageManifest>) -> ExecutionPlan {
+pub(crate) fn make_install_plan(
+    manifest: &Arc<PackageManifest>,
+    replacing_pkg_ids: Vec<PackageId>,
+) -> ExecutionPlan {
     ExecutionPlan::new_for_test([InstallOp {
         manifest: Arc::clone(manifest),
         reason: InstallReason::RequestedByUser,
+        replacing_pkg_ids,
     }
     .into()])
 }
 
-pub(crate) fn make_uninstall_plan(pkg_id: &PackageId) -> ExecutionPlan {
+pub(crate) fn make_uninstall_plan(
+    pkg_id: &PackageId,
+    conditions: Vec<ExecutionCondition>,
+) -> ExecutionPlan {
     ExecutionPlan::new_for_test([UninstallOp {
         pkg_id: pkg_id.clone(),
         reason: UninstallReason::RequestedByUser,
+        conditions,
     }
     .into()])
 }
@@ -238,7 +247,7 @@ pub(crate) fn mark_as_pending_installed(
     manifest: &Arc<PackageManifest>,
 ) {
     let pkg_id = manifest.id();
-    let plan = make_install_plan(manifest);
+    let plan = make_install_plan(manifest, vec![]);
     db.apply_plan_transaction(&plan).unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().0,
@@ -248,9 +257,9 @@ pub(crate) fn mark_as_pending_installed(
 
 pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &Arc<PackageManifest>) {
     let pkg_id = manifest.id();
-    let plan = make_install_plan(manifest);
+    let plan = make_install_plan(manifest, vec![]);
     db.apply_plan_transaction(&plan).unwrap();
-    db.complete_install(&pkg_id).unwrap();
+    db.complete_install(&pkg_id, &[]).unwrap();
     assert_eq!(db.entry_by_id(&pkg_id).unwrap().0, PackageState::Installed);
 }
 
@@ -259,10 +268,10 @@ pub(crate) fn mark_as_pending_uninstalled(
     manifest: &Arc<PackageManifest>,
 ) {
     let pkg_id = manifest.id();
-    let plan = make_install_plan(manifest);
+    let plan = make_install_plan(manifest, vec![]);
     db.apply_plan_transaction(&plan).unwrap();
-    db.complete_install(&pkg_id).unwrap();
-    let plan = make_uninstall_plan(&manifest.id());
+    db.complete_install(&pkg_id, &[]).unwrap();
+    let plan = make_uninstall_plan(&manifest.id(), vec![]);
     db.apply_plan_transaction(&plan).unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().0,
@@ -285,27 +294,33 @@ pub(crate) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
                 ExecutionPlanOp::Install(InstallOp {
                     manifest: actual_manifest,
                     reason: actual_reason,
+                    replacing_pkg_ids: actual_replacing_pkg_ids,
                 }),
                 ExecutionPlanOp::Install(InstallOp {
                     manifest: expected_manifest,
                     reason: expected_reason,
+                    replacing_pkg_ids: expected_replacing_pkg_ids,
                 }),
             ) => {
                 assert!(Arc::ptr_eq(actual_manifest, expected_manifest));
                 assert_eq!(actual_reason, expected_reason);
+                assert_eq!(actual_replacing_pkg_ids, expected_replacing_pkg_ids);
             }
             (
                 ExecutionPlanOp::Uninstall(UninstallOp {
                     pkg_id: actual_pkg_id,
                     reason: actual_reason,
+                    conditions: actual_conditions,
                 }),
                 ExecutionPlanOp::Uninstall(UninstallOp {
                     pkg_id: expected_pkg_id,
                     reason: expected_reason,
+                    conditions: expected_conditions,
                 }),
             ) => {
                 assert_eq!(actual_pkg_id, expected_pkg_id);
                 assert_eq!(actual_reason, expected_reason);
+                assert_eq!(actual_conditions, expected_conditions);
             }
             (
                 ExecutionPlanOp::Skip(SkipOp {

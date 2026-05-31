@@ -3,10 +3,10 @@ use std::sync::Arc;
 use crate::{
     db::{Installability, PackageDatabase},
     engine::{
-        ExecutionPlan, ExecutionPlanOp, InstallOp, InstallReason, ResolvedInstallTarget, SkipOp,
-        UninstallOp, UninstallReason, plan::SkipReason,
+        ExecutionCondition, ExecutionPlan, ExecutionPlanOp, InstallOp, InstallReason,
+        ResolvedInstallTarget, SkipOp, UninstallOp, UninstallReason, plan::SkipReason,
     },
-    package::PackageManifest,
+    package::{PackageId, PackageManifest},
 };
 
 pub(crate) fn plan_install(
@@ -23,7 +23,10 @@ pub(crate) fn plan_install(
                 pending_installs,
                 pending_uninstalls,
             } => {
-                ops.push(install_target_op(manifest));
+                ops.push(install_target_op(
+                    manifest,
+                    installed_other_versions.clone(),
+                ));
                 let mut uninstall_ops = vec![];
                 for pkg_id in installed_other_versions {
                     uninstall_ops.push(UninstallOp {
@@ -31,18 +34,21 @@ pub(crate) fn plan_install(
                         reason: UninstallReason::ConflictWithInstall {
                             pkg_id: target_id.clone(),
                         },
+                        conditions: vec![ExecutionCondition::AfterSuccess(target_id.clone())],
                     });
                 }
                 for pkg_id in pending_uninstalls {
                     uninstall_ops.push(UninstallOp {
                         pkg_id,
                         reason: UninstallReason::CleanupPendingUninstall,
+                        conditions: vec![],
                     });
                 }
                 for pkg_id in pending_installs {
                     uninstall_ops.push(UninstallOp {
                         pkg_id,
                         reason: UninstallReason::CleanupPendingInstall,
+                        conditions: vec![],
                     });
                 }
                 uninstall_ops.sort_by(|a, b| a.pkg_id.cmp(&b.pkg_id));
@@ -60,10 +66,14 @@ pub(crate) fn plan_install(
     ExecutionPlan { ops }
 }
 
-fn install_target_op(manifest: &Arc<PackageManifest>) -> ExecutionPlanOp {
+fn install_target_op(
+    manifest: &Arc<PackageManifest>,
+    replacing_pkg_ids: Vec<PackageId>,
+) -> ExecutionPlanOp {
     InstallOp {
         manifest: Arc::clone(manifest),
         reason: InstallReason::RequestedByUser,
+        replacing_pkg_ids,
     }
     .into()
 }
@@ -103,16 +113,19 @@ mod tests {
                 InstallOp {
                     manifest: Arc::clone(&install_target_manifest),
                     reason: InstallReason::RequestedByUser,
+                    replacing_pkg_ids: vec![installed_manifest.id()],
                 }
                 .into(),
                 UninstallOp {
                     pkg_id: pending_install_manifest.id(),
                     reason: UninstallReason::CleanupPendingInstall,
+                    conditions: vec![],
                 }
                 .into(),
                 UninstallOp {
                     pkg_id: pending_uninstall_manifest.id(),
                     reason: UninstallReason::CleanupPendingUninstall,
+                    conditions: vec![],
                 }
                 .into(),
                 UninstallOp {
@@ -120,6 +133,9 @@ mod tests {
                     reason: UninstallReason::ConflictWithInstall {
                         pkg_id: install_target_manifest.id(),
                     },
+                    conditions: vec![ExecutionCondition::AfterSuccess(
+                        install_target_manifest.id(),
+                    )],
                 }
                 .into(),
             ]),
@@ -171,6 +187,7 @@ mod tests {
                 &ExecutionPlan::new_for_test([InstallOp {
                     manifest: Arc::clone(&manifest),
                     reason: InstallReason::RequestedByUser,
+                    replacing_pkg_ids: vec![],
                 }
                 .into()]),
             );

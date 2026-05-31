@@ -62,16 +62,24 @@ impl ExecutionPlanOp {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ExecutionCondition {
+    AfterSuccess(PackageId),
+    Never,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct InstallOp {
     pub(crate) manifest: Arc<PackageManifest>,
     pub(crate) reason: InstallReason,
+    pub(crate) replacing_pkg_ids: Vec<PackageId>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct UninstallOp {
     pub(crate) pkg_id: PackageId,
     pub(crate) reason: UninstallReason,
+    pub(crate) conditions: Vec<ExecutionCondition>,
 }
 
 #[derive(Debug, Clone)]
