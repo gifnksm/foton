@@ -18,6 +18,7 @@ pub(crate) fn plan_uninstall(
                     UninstallOp {
                         pkg_id: pkg_id.clone(),
                         reason: UninstallReason::RequestedByUser,
+                        conditions: vec![],
                     }
                     .into(),
                 ),
@@ -76,6 +77,7 @@ mod tests {
             &ExecutionPlan::new_for_test([UninstallOp {
                 pkg_id: uninstall_pkg_id,
                 reason: UninstallReason::RequestedByUser,
+                conditions: vec![],
             }
             .into()]),
         );

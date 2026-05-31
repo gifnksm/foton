@@ -249,13 +249,15 @@ impl<'a> PackageDatabase<'a> {
                 ExecutionPlanOp::Install(InstallOp { manifest, .. }) => {
                     self.insert_entry(PackageState::PendingInstall, Arc::clone(manifest));
                 }
-                ExecutionPlanOp::Uninstall(UninstallOp { pkg_id, .. }) => {
+                ExecutionPlanOp::Uninstall(UninstallOp {
+                    pkg_id, conditions, ..
+                }) if conditions.is_empty() => {
                     let entry = self
                         .entry_mut(pkg_id)
                         .context(EntryNotFoundSnafu { pkg_id })?;
                     entry.state = PackageState::PendingUninstall;
                 }
-                ExecutionPlanOp::Skip(_) => {}
+                ExecutionPlanOp::Uninstall(_) | ExecutionPlanOp::Skip(_) => {}
             }
         }
         self.save()?;
@@ -265,12 +267,10 @@ impl<'a> PackageDatabase<'a> {
     pub(crate) fn complete_install(
         &mut self,
         pkg_id: &PackageId,
+        replacing_pkg_ids: &[PackageId],
     ) -> Result<(), PackageDatabaseError> {
         let entry = self
-            .persist_db
-            .packages
-            .get_mut(pkg_id.name())
-            .and_then(|version_map| version_map.versions.get_mut(pkg_id.version()))
+            .entry_mut(pkg_id)
             .context(EntryNotFoundSnafu { pkg_id })?;
         snafu::ensure!(
             entry.state == PackageState::PendingInstall,
@@ -280,7 +280,27 @@ impl<'a> PackageDatabase<'a> {
                 actual: entry.state,
             }
         );
-        entry.state = PackageState::Installed;
+        for replacing_pkg_id in replacing_pkg_ids {
+            let entry = self
+                .entry_mut(replacing_pkg_id)
+                .context(EntryNotFoundSnafu {
+                    pkg_id: replacing_pkg_id,
+                })?;
+            snafu::ensure!(
+                entry.state == PackageState::Installed,
+                UnexpectedStateSnafu {
+                    pkg_id: replacing_pkg_id,
+                    expected: PackageState::Installed,
+                    actual: entry.state,
+                }
+            );
+        }
+
+        self.entry_mut(pkg_id).unwrap().state = PackageState::Installed;
+        for replacing_pkg_id in replacing_pkg_ids {
+            self.entry_mut(replacing_pkg_id).unwrap().state = PackageState::PendingUninstall;
+        }
+
         self.save()?;
         Ok(())
     }
@@ -427,23 +447,34 @@ mod tests {
     }
 
     #[test]
-    fn complete_install_persists_installed_state() {
+    fn complete_install_persists_installed_state_and_marks_replaced_versions_pending_uninstall() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-font@0.1.0");
+        let installed_manifest = testing::make_manifest("example-font@0.1.0");
+        let installed_pkg_id = installed_manifest.id();
+        let manifest = testing::make_manifest("example-font@0.2.0");
         let pkg_id = manifest.id();
+        let replacing_pkg_ids = vec![installed_pkg_id.clone()];
 
-        assert_status_change(
+        with_db(&app_dirs, &mut lock_file, |db| {
+            testing::mark_as_installed(db, &installed_manifest);
+        });
+        assert_statuses_change(
             &app_dirs,
             &mut lock_file,
-            &pkg_id,
-            None,
-            Some(PackageState::Installed),
+            &[
+                (
+                    &installed_pkg_id,
+                    Some(PackageState::Installed),
+                    Some(PackageState::PendingUninstall),
+                ),
+                (&pkg_id, None, Some(PackageState::Installed)),
+            ],
             |db| {
-                let plan = testing::make_install_plan(&manifest);
+                let plan = testing::make_install_plan(&manifest, replacing_pkg_ids.clone());
                 db.apply_plan_transaction(&plan).unwrap();
-                db.complete_install(&pkg_id).unwrap();
+                db.complete_install(&pkg_id, &replacing_pkg_ids).unwrap();
             },
         );
     }
@@ -466,7 +497,7 @@ mod tests {
             Some(PackageState::PendingInstall),
             Some(PackageState::PendingInstall),
             |db| {
-                let plan = testing::make_install_plan(&manifest);
+                let plan = testing::make_install_plan(&manifest, vec![]);
                 db.apply_plan_transaction(&plan).unwrap();
             },
         );
@@ -511,16 +542,19 @@ mod tests {
                     UninstallOp {
                         pkg_id: installed_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
+                        conditions: vec![],
                     }
                     .into(),
                     UninstallOp {
                         pkg_id: pending_install_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
+                        conditions: vec![],
                     }
                     .into(),
                     UninstallOp {
                         pkg_id: pending_uninstall_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
+                        conditions: vec![],
                     }
                     .into(),
                 ]);
@@ -572,7 +606,7 @@ mod tests {
             Some(PackageState::Installed),
             None,
             |db| {
-                let plan = testing::make_uninstall_plan(&pkg_id);
+                let plan = testing::make_uninstall_plan(&pkg_id, vec![]);
                 db.apply_plan_transaction(&plan).unwrap();
                 db.complete_uninstall(&pkg_id).unwrap();
             },
@@ -580,25 +614,41 @@ mod tests {
     }
 
     #[test]
-    fn complete_install_save_failure_restores_pending_install_state() {
+    fn complete_install_save_failure_restores_previous_states() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
-        let manifest = testing::make_manifest("example-font@0.1.0");
+        let installed_manifest = testing::make_manifest("example-font@0.1.0");
+        let installed_pkg_id = installed_manifest.id();
+        let manifest = testing::make_manifest("example-font@0.2.0");
         let pkg_id = manifest.id();
+        let replacing_pkg_ids = vec![installed_pkg_id.clone()];
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_pending_installed(db, &manifest);
+            testing::mark_as_installed(db, &installed_manifest);
+            let plan = testing::make_install_plan(&manifest, replacing_pkg_ids.clone());
+            db.apply_plan_transaction(&plan).unwrap();
         });
-        assert_status_change(
+        assert_statuses_change(
             &app_dirs,
             &mut lock_file,
-            &pkg_id,
-            Some(PackageState::PendingInstall),
-            Some(PackageState::PendingInstall),
+            &[
+                (
+                    &installed_pkg_id,
+                    Some(PackageState::Installed),
+                    Some(PackageState::Installed),
+                ),
+                (
+                    &pkg_id,
+                    Some(PackageState::PendingInstall),
+                    Some(PackageState::PendingInstall),
+                ),
+            ],
             |db| {
                 db.simulate_save_failure = true;
-                let err = db.complete_install(&pkg_id).unwrap_err();
+                let err = db
+                    .complete_install(&pkg_id, &replacing_pkg_ids)
+                    .unwrap_err();
                 assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
             },
         );

@@ -13,6 +13,7 @@ use crate::{
         },
     },
     db::{PackageDatabase, PackageDatabaseError},
+    engine::{ExecutionCondition, ExecutionResult},
     package::{self, PackageDirs, PackageId, PackageState},
     platform::windows::steps::unregistration,
     util::{fs::FsError, macros::concat_line},
@@ -78,11 +79,20 @@ impl From<UninstallExecutionErrorReport> for ReportValue<'static> {
 pub(in crate::engine) struct UninstallExecution<'db> {
     db: Arc<Mutex<PackageDatabase<'db>>>,
     pkg_id: PackageId,
+    conditions: Vec<ExecutionCondition>,
 }
 
 impl<'db> UninstallExecution<'db> {
-    pub(in crate::engine) fn new(db: Arc<Mutex<PackageDatabase<'db>>>, pkg_id: PackageId) -> Self {
-        Self { db, pkg_id }
+    pub(in crate::engine) fn new(
+        db: Arc<Mutex<PackageDatabase<'db>>>,
+        pkg_id: PackageId,
+        conditions: Vec<ExecutionCondition>,
+    ) -> Self {
+        Self {
+            db,
+            pkg_id,
+            conditions,
+        }
     }
 
     pub(in crate::engine) fn execute<S>(self, cx: &ReportContext<S>) -> Result<(), S::Error>
@@ -90,6 +100,27 @@ impl<'db> UninstallExecution<'db> {
         S: ReportScope,
     {
         execute_uninstall(cx, &self.db, &self.pkg_id)
+    }
+
+    pub(in crate::engine) fn target_id(&self) -> PackageId {
+        self.pkg_id.clone()
+    }
+
+    pub(in crate::engine) fn can_execute(&self) -> bool {
+        self.conditions.is_empty()
+    }
+
+    pub(in crate::engine) fn notify_result(&mut self, pkg_id: &PackageId, result: ExecutionResult) {
+        self.conditions.retain_mut(|exec| match exec {
+            ExecutionCondition::AfterSuccess(cond_id) if cond_id == pkg_id => match result {
+                ExecutionResult::Success => false,
+                ExecutionResult::Failure => {
+                    *exec = ExecutionCondition::Never;
+                    true
+                }
+            },
+            ExecutionCondition::AfterSuccess(_) | ExecutionCondition::Never => true,
+        });
     }
 }
 
