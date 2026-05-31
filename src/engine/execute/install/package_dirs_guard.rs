@@ -10,6 +10,7 @@ use crate::{
             ScopeResultNoticeExt as _, SubReportScope,
         },
     },
+    engine::execute::install::CleanupTracker,
     package::{self, PackageDirs, PackageId},
     util::{fs::FsError, macros::concat_line},
 };
@@ -71,6 +72,7 @@ impl From<PackageDirErrorReport> for ReportValue<'static> {
 
 pub(super) fn create_new_package_dirs<S>(
     cx: &ReportContext<S>,
+    cleanup_tracker: CleanupTracker,
     pkg_id: &PackageId,
 ) -> Result<PackageDirsGuard<S>, S::Error>
 where
@@ -79,14 +81,18 @@ where
     let cx = PackageDirsScope::start(cx);
     let reporter = cx.reporter();
     let pkg_dirs = PackageDirs::new(cx.app_dirs(), pkg_id);
-    package::create_new_package_dirs(&pkg_dirs)
+    let mut guard = PackageDirsGuard {
+        armed: true,
+        dir_created: false,
+        cx: cx.clone(),
+        cleanup_tracker,
+        pkg_dirs,
+    };
+    package::create_new_package_dirs(&guard.pkg_dirs)
         .context(CreatePackageDirsSnafu { pkg_id })
         .report_error(reporter)?;
-    Ok(PackageDirsGuard {
-        armed: true,
-        cx: cx.clone(),
-        pkg_dirs,
-    })
+    guard.dir_created = true;
+    Ok(guard)
 }
 
 #[must_use]
@@ -96,7 +102,9 @@ where
     S: ReportScope,
 {
     armed: bool,
+    dir_created: bool,
     cx: ReportContext<PackageDirsScope<S>>,
+    cleanup_tracker: CleanupTracker,
     pkg_dirs: PackageDirs,
 }
 
@@ -120,11 +128,20 @@ where
             return;
         }
 
+        if !self.dir_created {
+            // Directory creation failed before this install attempt fully owned the
+            // package directory. Avoid removing pre-existing contents here, but
+            // keep the DB entry in a cleanup-required state.
+            self.cleanup_tracker.request_cleanup();
+            return;
+        }
+
         self.cx
             .reporter()
             .report_info(format_args!("rolling back package fonts directories..."));
 
-        package::remove_package_dirs(&self.pkg_dirs)
+        self.cleanup_tracker
+            .do_rollback_cleanup(|| package::remove_package_dirs(&self.pkg_dirs))
             .context(RemovePackageDirectoryAfterInstallFailureSnafu)
             .report_notice(self.cx.reporter());
     }
@@ -156,14 +173,16 @@ mod tests {
     fn create_new_package_dirs_does_not_remove_existing_package_on_failure() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
+        let cleanup_tracker = CleanupTracker::default();
 
         let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
         fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
         let existing_font = pkg_dirs.fonts_dir().join("existing.ttf");
         fs::write(&existing_font, b"font").unwrap();
 
-        create_new_package_dirs(&cx, &PKG_ID).unwrap_err();
+        create_new_package_dirs(&cx, cleanup_tracker.clone(), &PKG_ID).unwrap_err();
 
+        assert!(cleanup_tracker.cleanup_required());
         assert!(pkg_dirs.version_dir().exists());
         assert!(pkg_dirs.fonts_dir().exists());
         assert!(existing_font.exists());
@@ -173,16 +192,35 @@ mod tests {
     fn package_dirs_guard_removes_created_directories_on_drop() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
+        let cleanup_tracker = CleanupTracker::default();
         let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
 
         {
-            let _guard = create_new_package_dirs(&cx, &PKG_ID).unwrap();
+            let _guard = create_new_package_dirs(&cx, cleanup_tracker.clone(), &PKG_ID).unwrap();
             assert!(pkg_dirs.fonts_dir().exists());
             assert!(pkg_dirs.version_dir().exists());
         }
 
+        assert!(!cleanup_tracker.cleanup_required());
         assert!(!pkg_dirs.fonts_dir().exists());
         assert!(!pkg_dirs.version_dir().exists());
         assert!(!pkg_dirs.name_dir().exists());
+    }
+
+    #[test]
+    fn package_dirs_guard_marks_cleanup_failed_when_drop_cleanup_fails() {
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+        let cleanup_tracker = CleanupTracker::default();
+        let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
+
+        {
+            let _guard = create_new_package_dirs(&cx, cleanup_tracker.clone(), &PKG_ID).unwrap();
+            fs::write(pkg_dirs.version_dir().join("leftover.txt"), b"leftover").unwrap();
+        }
+
+        assert!(cleanup_tracker.cleanup_required());
+        assert!(pkg_dirs.version_dir().exists());
+        assert!(pkg_dirs.name_dir().exists());
     }
 }

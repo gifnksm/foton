@@ -235,4 +235,40 @@ mod tests {
             assert!(!pkg_dirs.name_dir().exists());
         }
     }
+
+    #[test]
+    #[cfg_attr(
+        not(build_for_sandbox),
+        ignore = "registry should be isolated in sandbox tests. use `cargo xtask sandbox run --test` instead."
+    )]
+    fn execute_uninstall_keeps_pending_uninstall_when_version_directory_has_leftovers() {
+        let cx = TempdirContext::with_app_id(test_app_id());
+        let cx = TestScope::start(&cx);
+        let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
+        fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
+        fs::write(pkg_dirs.fonts_dir().join("example.ttf"), b"font").unwrap();
+        let leftover = pkg_dirs.version_dir().join("leftover.txt");
+        fs::write(&leftover, b"leftover").unwrap();
+
+        let mut db_lock_file = engine::open_db_lock_file(&cx).unwrap();
+        let manifest = testing::make_manifest(&*PKG_ID);
+        {
+            let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
+            testing::mark_as_pending_uninstalled(&mut db, &manifest);
+            let db = Arc::new(Mutex::new(db));
+            execute_uninstall(&cx, &db, &PKG_ID).unwrap_err();
+        }
+
+        {
+            let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
+            assert_eq!(
+                get_entry_state(&db, &PKG_ID),
+                Some(PackageState::PendingUninstall)
+            );
+            assert!(!pkg_dirs.fonts_dir().exists());
+            assert!(pkg_dirs.version_dir().exists());
+            assert!(pkg_dirs.name_dir().exists());
+            assert!(leftover.exists());
+        }
+    }
 }

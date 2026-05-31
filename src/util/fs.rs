@@ -28,6 +28,17 @@ where
     Ok(())
 }
 
+pub(crate) fn remove_dir_if_exists<P>(path: P) -> Result<(), FsError>
+where
+    P: AsRef<Path>,
+{
+    let path = path.as_ref();
+    fs::remove_dir(path)
+        .ignore_not_found()
+        .context(RemoveDirectorySnafu { path })?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::IsVariant)]
 pub(crate) enum RemoveDirIfEmptyResult {
     RemovedOrNotPresent,
