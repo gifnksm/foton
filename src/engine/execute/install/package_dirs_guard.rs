@@ -46,10 +46,12 @@ enum PackageDirNoticeReport {
     #[snafu(display(
         concat_line!(
             "failed to remove package directory after install failure",
-            "manual cleanup may be required",
-        )
+            "run `foton repair {pkg_id}` to retry cleanup",
+            "if repair does not resolve the problem, manual cleanup may be required",
+        ),
+        pkg_id = pkg_id,
     ))]
-    RemovePackageDirectoryAfterInstallFailure { source: FsError },
+    RemovePackageDirectoryAfterInstallFailure { pkg_id: PackageId, source: FsError },
 }
 
 impl From<PackageDirNoticeReport> for ReportValue<'static> {
@@ -142,7 +144,9 @@ where
 
         self.cleanup_tracker
             .do_rollback_cleanup(|| package::remove_package_dirs(&self.pkg_dirs))
-            .context(RemovePackageDirectoryAfterInstallFailureSnafu)
+            .context(RemovePackageDirectoryAfterInstallFailureSnafu {
+                pkg_id: self.pkg_dirs.pkg_id().clone(),
+            })
             .report_notice(self.cx.reporter());
     }
 }

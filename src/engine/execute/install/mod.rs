@@ -59,8 +59,9 @@ impl From<InstallExecutionErrorReport> for ReportValue<'static> {
 enum InstallExecutionErrorReport {
     #[snafu(display(
         concat_line!(
-            "failed to remove package files for package {pkg_id}",
-            "manual cleanup may be required",
+            "failed to remove files from the installation path for package {pkg_id}",
+            "run `foton repair {pkg_id}` to retry removing those files",
+            "if repair does not resolve the problem, manual cleanup may be required",
         ),
         pkg_id = pkg_id,
     ))]

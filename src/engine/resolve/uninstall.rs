@@ -63,8 +63,8 @@ impl From<UninstallResolveErrorReport> for ReportValue<'static> {
 
 #[derive(Debug, Clone, derive_more::IsVariant)]
 pub(crate) enum ResolvedUninstallTarget {
-    Resolved { pkg_id: PackageId },
-    Unresolved { pkg_spec: PackageSpec },
+    Uninstall { pkg_id: PackageId },
+    AlreadyUninstalled { pkg_spec: PackageSpec },
 }
 
 pub(crate) fn resolve_uninstall_targets<S>(
@@ -95,10 +95,10 @@ where
 {
     let candidates = db.entries_by_spec(pkg_spec).collect::<Vec<_>>();
     match &candidates[..] {
-        [] => Ok(ResolvedUninstallTarget::Unresolved {
+        [] => Ok(ResolvedUninstallTarget::AlreadyUninstalled {
             pkg_spec: pkg_spec.clone(),
         }),
-        [(_state, manifest)] => Ok(ResolvedUninstallTarget::Resolved {
+        [(_state, manifest)] => Ok(ResolvedUninstallTarget::Uninstall {
             pkg_id: manifest.id(),
         }),
         _ => Err(cx.reporter().report_error(
@@ -118,8 +118,10 @@ fn dedup_targets(targets: &mut Vec<ResolvedUninstallTarget>) {
     let mut seen_pkg_id = BTreeSet::new();
     let mut seen_pkg_spec = BTreeSet::new();
     targets.retain(|target| match target {
-        ResolvedUninstallTarget::Resolved { pkg_id } => seen_pkg_id.insert(pkg_id.clone()),
-        ResolvedUninstallTarget::Unresolved { pkg_spec } => seen_pkg_spec.insert(pkg_spec.clone()),
+        ResolvedUninstallTarget::Uninstall { pkg_id } => seen_pkg_id.insert(pkg_id.clone()),
+        ResolvedUninstallTarget::AlreadyUninstalled { pkg_spec } => {
+            seen_pkg_spec.insert(pkg_spec.clone())
+        }
     });
 }
 
@@ -146,7 +148,7 @@ mod tests {
             ];
             for spec in &pkg_specs {
                 let target = resolve_spec(&scope_cx, &db, spec).unwrap();
-                assert_matches!(target, ResolvedUninstallTarget::Unresolved { pkg_spec } if pkg_spec == *spec);
+                assert_matches!(target, ResolvedUninstallTarget::AlreadyUninstalled { pkg_spec } if pkg_spec == *spec);
             }
 
             let targets = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap();
@@ -170,7 +172,7 @@ mod tests {
                 PackageSpec::from_str("example-font").unwrap(),
             ] {
                 let target = resolve_spec(&cx, &db, &spec).unwrap();
-                assert_matches!(target, ResolvedUninstallTarget::Resolved  { pkg_id } if pkg_id == expected);
+                assert_matches!(target, ResolvedUninstallTarget::Uninstall  { pkg_id } if pkg_id == expected);
             }
         });
     }
@@ -232,7 +234,7 @@ mod tests {
             let targets = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap();
 
             assert_eq!(targets.len(), 1);
-            assert_matches!(&targets[0], ResolvedUninstallTarget::Resolved { pkg_id } if pkg_id == &expected_pkg_id);
+            assert_matches!(&targets[0], ResolvedUninstallTarget::Uninstall { pkg_id } if pkg_id == &expected_pkg_id);
         });
     }
 
@@ -251,13 +253,13 @@ mod tests {
             testing::mark_as_pending_installed(&mut db, &manifest);
 
             let target = resolve_spec(&cx, &db, &spec).unwrap();
-            assert_matches!(target, ResolvedUninstallTarget::Resolved { pkg_id: target_id } if target_id == pkg_id);
+            assert_matches!(target, ResolvedUninstallTarget::Uninstall { pkg_id: target_id } if target_id == pkg_id);
 
             let plan = testing::make_uninstall_plan(&pkg_id, vec![]);
             db.apply_plan_transaction(&plan).unwrap();
 
             let target = resolve_spec(&cx, &db, &spec).unwrap();
-            assert_matches!(target, ResolvedUninstallTarget::Resolved { pkg_id: target_id } if target_id == pkg_id);
+            assert_matches!(target, ResolvedUninstallTarget::Uninstall { pkg_id: target_id } if target_id == pkg_id);
         });
     }
 

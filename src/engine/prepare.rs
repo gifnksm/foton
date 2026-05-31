@@ -233,6 +233,41 @@ mod tests {
     }
 
     #[test]
+    fn prepare_normalizes_pending_install_uninstall_target_to_pending_uninstall() {
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+
+        let manifest = testing::make_manifest("repair-font@0.1.0");
+        let pkg_id = manifest.id();
+
+        testing::with_db(&cx, |mut db| {
+            testing::mark_as_pending_installed(&mut db, &manifest);
+            let db = Arc::new(Mutex::new(db));
+            let plan = ExecutionPlan::new_for_test([UninstallOp {
+                pkg_id: pkg_id.clone(),
+                reason: UninstallReason::RequestedByUser,
+                conditions: vec![],
+            }
+            .into()]);
+
+            let prepared_plan = prepare(&cx, &db, &plan).unwrap();
+
+            assert_eq!(prepared_plan.executions.len(), 1);
+            assert!(matches!(
+                prepared_plan.executions[0],
+                Execution::Uninstall(_)
+            ));
+            assert_eq!(
+                db.lock()
+                    .unwrap()
+                    .entry_by_id(&pkg_id)
+                    .map(|(state, _)| state),
+                Some(PackageState::PendingUninstall),
+            );
+        });
+    }
+
+    #[test]
     fn prepared_executions_unblocks_dependent_execution_after_success() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);

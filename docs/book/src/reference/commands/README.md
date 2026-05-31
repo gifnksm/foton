@@ -29,6 +29,7 @@ Treat warnings as errors, causing the command to fail if any warning is emitted.
 - [`install`](install.md)
 - [`update`](update.md)
 - [`uninstall`](uninstall.md)
+- [`repair`](repair.md)
 - [`list`](list.md)
 - [`info`](info.md)
 - [`search`](search.md)

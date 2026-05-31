@@ -2,6 +2,7 @@
 
 This chapter covers the commands you use after packages have already been
 installed: `list`, `info`, and `uninstall`.
+It also explains how to recover from incomplete operations with `repair`.
 
 In the examples below, replace placeholders such as `<package-name>` and
 `<version>` with real values.
@@ -16,21 +17,18 @@ foton list
 
 By default, `list` shows packages in the `installed` state.
 
-If you also want to see packages in pending states, pass `--show-pending`.
+If you also want to see packages left by incomplete operations, pass
+`--show-incomplete`.
 
 ```console
-foton list --show-pending
+foton list --show-incomplete
 ```
 
-With `--show-pending`, each entry includes its state, such as `installed`,
-`pending-install`, or `pending-uninstall`.
+With `--show-incomplete`, each entry includes its state, such as `installed`,
+`install-incomplete`, or `uninstall-incomplete`.
 
-`pending-install` and `pending-uninstall` are transitional states recorded in
-the local package database.
-If you see packages in pending states, it usually means that an earlier
-install or uninstall was interrupted or failed before it finished cleanly.
-If you see such packages, you can inspect them with `foton info` and remove
-them with `foton uninstall` if needed.
+If you see such packages, inspect them with `foton info`, then clean them up
+with `foton repair`.
 Most of the time, you will work only with `installed` packages.
 
 ## Inspect a package in detail
@@ -47,9 +45,30 @@ foton info <package-name>@<version>
 
 `info` prints the package name, version, state, metadata, and source
 information for matching packages recorded in the local package database.
-This can include packages still recorded in the local package database after an
-interrupted or failed install or uninstall.
+This can include packages left by incomplete operations.
 Use this command when you want to confirm exactly what is recorded in the local package database.
+
+## Recover from incomplete operations
+
+If `list --show-incomplete` shows packages left by incomplete operations, use
+`repair` to clean them up:
+
+```console
+foton repair
+```
+
+You can also target a specific package:
+
+```console
+foton repair <package-name>
+```
+
+```console
+foton repair <package-name>@<version>
+```
+
+`repair` cleans up those packages. It does not resume an interrupted install
+or update.
 
 ## Remove a package
 
@@ -65,8 +84,8 @@ foton uninstall <package-name-1> <package-name-2>
 
 Like `install` and `update`, `uninstall` asks for confirmation before applying
 changes.
-`uninstall` can also remove packages still recorded in the local package
-database after an interrupted or failed install or uninstall.
+If an uninstall does not complete cleanly, use `foton repair` to clean up any
+packages it leaves behind.
 If you want to skip the prompt, pass the global `--no-confirm` option.
 
 ```console
@@ -85,4 +104,5 @@ A common workflow is:
 
 - [list command reference](../../reference/commands/list.md)
 - [info command reference](../../reference/commands/info.md)
+- [repair command reference](../../reference/commands/repair.md)
 - [uninstall command reference](../../reference/commands/uninstall.md)

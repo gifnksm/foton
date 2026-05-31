@@ -192,4 +192,4 @@ See [Setting Up Your Own Package Registry](setup-package-registry.md).
 ## Related pages
 
 - [Package Manifest Reference](../../reference/package-manifest.md)
-- [manifest check](../../reference/commands/manifest/check.md)
+- [manifest check command reference](../../reference/commands/manifest/check.md)

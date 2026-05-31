@@ -10,14 +10,13 @@ foton list [OPTIONS]
 
 ## Options
 
-### `--show-pending`
+### `--show-incomplete`
 
-Include packages in pending states such as `pending-install` and
-`pending-uninstall`.
+Include packages left by incomplete installs, uninstalls, or updates.
 
 Without this option, only packages in the `installed` state are shown.
-If you see packages in pending states, it usually means that an earlier
-install or uninstall was interrupted or failed before it finished cleanly.
+With this option, leftover packages are shown with states such as
+`install-incomplete` and `uninstall-incomplete`.
 
 ### `--no-confirm`
 
@@ -35,25 +34,26 @@ Show installed packages:
 foton list
 ```
 
-Show installed packages together with packages in pending states and their states:
+Show installed packages together with leftover packages from incomplete
+installs, uninstalls, or updates, and their states:
 
 ```console
-foton list --show-pending
+foton list --show-incomplete
 ```
 
 ## Output
 
-Without `--show-pending`, each line contains a package name and version:
+Without `--show-incomplete`, each line contains a package name and version:
 
 ```text
 example-font@1.2.3
 ```
 
-With `--show-pending`, each line also includes the package state:
+With `--show-incomplete`, each line also includes the package state:
 
 ```text
 example-font@1.2.3 (installed)
-another-font@0.1.0 (pending-install)
+another-font@0.1.0 (install-incomplete)
 ```
 
 ## Notes
@@ -64,4 +64,5 @@ another-font@0.1.0 (pending-install)
 ## Related pages
 
 - [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
-- [info](info.md)
+- [info command reference](info.md)
+- [repair command reference](repair.md)

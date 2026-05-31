@@ -254,7 +254,7 @@ mod tests {
         let (registry_dir, registry) = testing::make_registry_spec("test-registry");
         testing::write_manifest(registry_dir.path(), "update-font@2.0.0");
         testing::write_manifest(registry_dir.path(), "current-font@1.0.0");
-        testing::write_manifest(registry_dir.path(), "pending-font@2.0.0");
+        testing::write_manifest(registry_dir.path(), "incomplete-font@2.0.0");
 
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
@@ -262,7 +262,7 @@ mod tests {
         testing::with_db(&cx, |mut db| {
             let update_manifest = testing::make_manifest("update-font@1.0.0");
             let current_manifest = testing::make_manifest("current-font@1.0.0");
-            let pending_manifest = testing::make_manifest("pending-font@1.0.0");
+            let pending_manifest = testing::make_manifest("incomplete-font@1.0.0");
 
             testing::mark_as_installed(&mut db, &update_manifest);
             testing::mark_as_installed(&mut db, &current_manifest);

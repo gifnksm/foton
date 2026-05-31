@@ -232,7 +232,7 @@ exclude = ["fonts/exclude.ttf"]
                 "Name: example-font",
                 "Display Name: Example Font",
                 "Version: 0.1.0",
-                "State: pending-install",
+                "State: install-incomplete",
                 "Description: Example font family for UI and coding",
                 "Aliases:",
                 "  - Example Font UI",

@@ -8,8 +8,8 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-#[expect(clippy::struct_field_names)]
 pub(crate) struct PackageDirs {
+    pkg_id: PackageId,
     name_dir: AbsolutePath,
     version_dir: AbsolutePath,
     fonts_dir: AbsolutePath,
@@ -26,10 +26,15 @@ impl PackageDirs {
         let version_dir = name_dir.join(pkg_id.version().to_string());
         let fonts_dir = version_dir.join("fonts");
         Self {
+            pkg_id: pkg_id.clone(),
             name_dir,
             version_dir,
             fonts_dir,
         }
+    }
+
+    pub(crate) fn pkg_id(&self) -> &PackageId {
+        &self.pkg_id
     }
 
     pub(crate) fn name_dir(&self) -> &AbsolutePath {

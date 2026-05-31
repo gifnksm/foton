@@ -38,13 +38,14 @@ foton uninstall <package-name-1> <package-name-2>
 
 - If the selected package is already absent, `foton` reports that there is
   nothing to do.
+- If an uninstall does not complete cleanly, use `repair` to clean up any
+  packages it leaves behind.
 - `uninstall` operates on packages recorded in the local package database and
   does not access package registries.
-- `uninstall` can also target packages still recorded in the local package
-  database after an interrupted or failed install or uninstall.
 
 ## Related pages
 
 - [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
-- [list](list.md)
-- [info](info.md)
+- [repair command reference](repair.md)
+- [list command reference](list.md)
+- [info command reference](info.md)

@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use crate::package::{PackageId, PackageManifest, PackageSpec};
 
-pub(crate) use self::{install::*, uninstall::*};
+pub(crate) use self::{install::*, repair::*, uninstall::*};
 
 mod install;
+mod repair;
 mod uninstall;
 
 #[derive(Debug)]
@@ -112,4 +113,8 @@ pub(crate) enum SkipReason {
     AlreadyInstalled,
     #[display("already uninstalled")]
     AlreadyUninstalled,
+    #[display("not broken")]
+    NotBroken,
+    #[display("already repaired")]
+    AlreadyRepaired,
 }

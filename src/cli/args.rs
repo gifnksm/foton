@@ -29,6 +29,13 @@ pub(crate) enum Command {
     Update(UpdateArgs),
     /// Uninstall packages recorded in the local package database.
     Uninstall(UninstallArgs),
+    /// Clean up packages in the local package database that were left by
+    /// incomplete installs, uninstalls, or updates.
+    ///
+    /// Installed packages are not changed by `repair`.
+    /// `repair` only performs cleanup; it does not resume an interrupted
+    /// install or update.
+    Repair(RepairArgs),
     /// List installed packages.
     List(ListArgs),
     /// Show detailed information about packages recorded in the local package database.
@@ -153,15 +160,23 @@ pub(crate) struct UninstallArgs {
 }
 
 #[derive(Debug, clap::Args)]
+pub(crate) struct RepairArgs {
+    /// Package names, optionally with an exact version as `<package-name>@<version>`.
+    ///
+    /// If not specified, every package that needs cleanup will be cleaned up.
+    #[clap(value_name = "PACKAGE")]
+    pub(crate) pkg_specs: Vec<PackageSpec>,
+}
+
+#[derive(Debug, clap::Args)]
 pub(crate) struct ListArgs {
-    /// Include packages in pending states such as `pending-install` and
-    /// `pending-uninstall`.
+    /// Include packages left by incomplete installs, uninstalls, or updates.
     ///
     /// Without this option, only packages in the `installed` state are shown.
-    /// If you see packages in pending states, it usually means that an earlier
-    /// install or uninstall was interrupted or failed before it finished cleanly.
+    /// With this option, leftover packages are shown with states such as
+    /// `install-incomplete` and `uninstall-incomplete`.
     #[clap(long)]
-    pub(crate) show_pending: bool,
+    pub(crate) show_incomplete: bool,
 }
 
 #[derive(Debug, clap::Args)]

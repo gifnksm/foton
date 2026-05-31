@@ -77,5 +77,5 @@ For the exact configuration format, see
 
 - [Setting Up Your Own Package Registry](../guide/advanced/setup-package-registry.md)
 - [Configuration File Reference](configuration.md)
-- [search](commands/search.md)
-- [install](commands/install.md)
+- [search command reference](commands/search.md)
+- [install command reference](commands/install.md)

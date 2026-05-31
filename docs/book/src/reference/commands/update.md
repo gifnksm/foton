@@ -58,6 +58,8 @@ foton update --registry <registry-id-1>,<registry-id-2> <package-name>
 
 - If no newer version is available for the selected packages, `foton` reports
   that they are already up to date.
+- If an update does not complete cleanly, use `repair` to clean up any
+  packages it leaves behind.
 - Update resolution uses package names and package registry IDs, not manifest files.
 - If multiple selected package registries provide newer versions of the same package,
   `update` does not choose one automatically; it fails and asks you to
@@ -66,4 +68,5 @@ foton update --registry <registry-id-1>,<registry-id-2> <package-name>
 ## Related pages
 
 - [Installing and Updating Packages](../../guide/basic/install-update-packages.md)
+- [repair command reference](repair.md)
 - [Package Registry Reference](../package-registry.md)

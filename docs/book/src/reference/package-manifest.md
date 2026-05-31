@@ -375,4 +375,4 @@ If a path matches both `include` and `exclude`, `exclude` takes precedence.
 
 - [Writing a Package Manifest](../guide/advanced/write-package-manifest.md)
 - [Package Registry Reference](package-registry.md)
-- [manifest check](commands/manifest/check.md)
+- [manifest check command reference](commands/manifest/check.md)
