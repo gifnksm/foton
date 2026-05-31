@@ -55,15 +55,12 @@ pub(crate) fn create_new_package_dirs(pkg_dirs: &PackageDirs) -> Result<(), FsEr
 
 pub(crate) fn remove_package_dirs(pkg_dirs: &PackageDirs) -> Result<(), FsError> {
     fs_util::remove_dir_all_if_exists(pkg_dirs.fonts_dir())?;
-
-    let ancestors = [pkg_dirs.version_dir(), pkg_dirs.name_dir()];
-    for ancestor in ancestors {
-        let res = fs_util::remove_dir_if_empty(ancestor)?;
-        if res.is_not_empty() {
-            return Ok(());
-        }
+    fs_util::remove_dir_if_exists(pkg_dirs.version_dir())?;
+    // only remove the name_dir if it's empty, to avoid deleting other versions of the package
+    let res = fs_util::remove_dir_if_empty(pkg_dirs.name_dir())?;
+    if res.is_not_empty() {
+        return Ok(());
     }
-
     Ok(())
 }
 
@@ -142,5 +139,21 @@ mod tests {
         assert!(!pkg_dirs.fonts_dir().exists());
         assert!(!pkg_dirs.version_dir().exists());
         assert!(!pkg_dirs.name_dir().exists());
+    }
+
+    #[test]
+    fn remove_package_dirs_errors_when_version_directory_contains_unexpected_files() {
+        let (_tempdir, _app_dirs, pkg_dirs) = testing::make_package_dirs(&PKG_ID);
+        fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
+        let leftover = pkg_dirs.version_dir().join("leftover.txt");
+        fs::write(&leftover, b"leftover").unwrap();
+
+        let err = remove_package_dirs(&pkg_dirs).unwrap_err();
+
+        assert!(matches!(err, FsError::RemoveDirectory { .. }));
+        assert!(!pkg_dirs.fonts_dir().exists());
+        assert!(pkg_dirs.version_dir().exists());
+        assert!(pkg_dirs.name_dir().exists());
+        assert!(leftover.exists());
     }
 }

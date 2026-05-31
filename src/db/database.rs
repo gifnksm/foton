@@ -308,6 +308,7 @@ impl<'a> PackageDatabase<'a> {
     pub(crate) fn cancel_install(
         &mut self,
         pkg_id: &PackageId,
+        cleanup_required: bool,
     ) -> Result<(), PackageDatabaseError> {
         let version_map = self
             .persist_db
@@ -326,9 +327,13 @@ impl<'a> PackageDatabase<'a> {
                 actual: entry.state,
             }
         );
-        version_map.versions.remove(pkg_id.version()).unwrap();
-        if version_map.versions.is_empty() {
-            self.persist_db.packages.remove(pkg_id.name());
+        if cleanup_required {
+            entry.state = PackageState::PendingUninstall;
+        } else {
+            version_map.versions.remove(pkg_id.version()).unwrap();
+            if version_map.versions.is_empty() {
+                self.persist_db.packages.remove(pkg_id.name());
+            }
         }
         self.save()?;
         Ok(())
@@ -583,7 +588,30 @@ mod tests {
             Some(PackageState::PendingInstall),
             None,
             |db| {
-                db.cancel_install(&pkg_id).unwrap();
+                db.cancel_install(&pkg_id, false).unwrap();
+            },
+        );
+    }
+
+    #[test]
+    fn cancel_install_marks_entry_pending_uninstall_when_cleanup_failed() {
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
+        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+
+        let manifest = testing::make_manifest("example-font@0.1.0");
+        let pkg_id = manifest.id();
+
+        with_db(&app_dirs, &mut lock_file, |db| {
+            testing::mark_as_pending_installed(db, &manifest);
+        });
+        assert_status_change(
+            &app_dirs,
+            &mut lock_file,
+            &pkg_id,
+            Some(PackageState::PendingInstall),
+            Some(PackageState::PendingUninstall),
+            |db| {
+                db.cancel_install(&pkg_id, true).unwrap();
             },
         );
     }
@@ -673,7 +701,32 @@ mod tests {
             Some(PackageState::PendingInstall),
             |db| {
                 db.simulate_save_failure = true;
-                let err = db.cancel_install(&pkg_id).unwrap_err();
+                let err = db.cancel_install(&pkg_id, false).unwrap_err();
+                assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
+            },
+        );
+    }
+
+    #[test]
+    fn cancel_install_with_cleanup_failure_save_failure_restores_pending_install_state() {
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
+        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+
+        let manifest = testing::make_manifest("example-font@0.1.0");
+        let pkg_id = manifest.id();
+
+        with_db(&app_dirs, &mut lock_file, |db| {
+            testing::mark_as_pending_installed(db, &manifest);
+        });
+        assert_status_change(
+            &app_dirs,
+            &mut lock_file,
+            &pkg_id,
+            Some(PackageState::PendingInstall),
+            Some(PackageState::PendingInstall),
+            |db| {
+                db.simulate_save_failure = true;
+                let err = db.cancel_install(&pkg_id, true).unwrap_err();
                 assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
             },
         );
