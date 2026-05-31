@@ -174,7 +174,7 @@ pub(crate) struct ListArgs {
     ///
     /// Without this option, only packages in the `installed` state are shown.
     /// With this option, leftover packages are shown with states such as
-    /// `install-incomplete` and `uninstall-incomplete`.
+    /// `incomplete-install` and `incomplete-uninstall`.
     #[clap(long)]
     pub(crate) show_incomplete: bool,
 }

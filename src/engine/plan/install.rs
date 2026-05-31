@@ -20,8 +20,8 @@ pub(crate) fn plan_install(
         match db.check_installability(manifest) {
             Installability::Installable {
                 installed_other_versions,
-                pending_installs,
-                pending_uninstalls,
+                incomplete_installs,
+                incomplete_uninstalls,
             } => {
                 ops.push(install_target_op(
                     manifest,
@@ -37,17 +37,17 @@ pub(crate) fn plan_install(
                         conditions: vec![ExecutionCondition::AfterSuccess(target_id.clone())],
                     });
                 }
-                for pkg_id in pending_uninstalls {
+                for pkg_id in incomplete_uninstalls {
                     uninstall_ops.push(UninstallOp {
                         pkg_id,
-                        reason: UninstallReason::CleanupPendingUninstall,
+                        reason: UninstallReason::CleanupIncompleteUninstall,
                         conditions: vec![],
                     });
                 }
-                for pkg_id in pending_installs {
+                for pkg_id in incomplete_installs {
                     uninstall_ops.push(UninstallOp {
                         pkg_id,
-                        reason: UninstallReason::CleanupPendingInstall,
+                        reason: UninstallReason::CleanupIncompleteInstall,
                         conditions: vec![],
                     });
                 }
@@ -94,15 +94,15 @@ mod tests {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let pending_install_manifest = testing::make_manifest("example-font@0.1.0");
-        let pending_uninstall_manifest = testing::make_manifest("example-font@0.2.0");
+        let incomplete_install_manifest = testing::make_manifest("example-font@0.1.0");
+        let incomplete_uninstall_manifest = testing::make_manifest("example-font@0.2.0");
         let installed_manifest = testing::make_manifest("example-font@0.3.0");
         let install_target_manifest = testing::make_manifest("example-font@0.4.0");
         let install_target = testing::make_resolved_install_target(&install_target_manifest);
 
         let plan = testing::with_db(&cx, |mut db| {
-            testing::mark_as_pending_installed(&mut db, &pending_install_manifest);
-            testing::mark_as_pending_uninstalled(&mut db, &pending_uninstall_manifest);
+            testing::mark_as_incomplete_install(&mut db, &incomplete_install_manifest);
+            testing::mark_as_incomplete_uninstall(&mut db, &incomplete_uninstall_manifest);
             testing::mark_as_installed(&mut db, &installed_manifest);
             plan_install(&db, &[install_target])
         });
@@ -117,14 +117,14 @@ mod tests {
                 }
                 .into(),
                 UninstallOp {
-                    pkg_id: pending_install_manifest.id(),
-                    reason: UninstallReason::CleanupPendingInstall,
+                    pkg_id: incomplete_install_manifest.id(),
+                    reason: UninstallReason::CleanupIncompleteInstall,
                     conditions: vec![],
                 }
                 .into(),
                 UninstallOp {
-                    pkg_id: pending_uninstall_manifest.id(),
-                    reason: UninstallReason::CleanupPendingUninstall,
+                    pkg_id: incomplete_uninstall_manifest.id(),
+                    reason: UninstallReason::CleanupIncompleteUninstall,
                     conditions: vec![],
                 }
                 .into(),
@@ -166,13 +166,13 @@ mod tests {
     }
 
     #[test]
-    fn plan_install_overwrites_same_version_pending_states() {
+    fn plan_install_overwrites_same_version_incomplete_states() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
         let pairs = [
-            (PackageState::PendingUninstall, "example-font-pu@0.1.0"),
-            (PackageState::PendingInstall, "example-font-pi@0.1.0"),
+            (PackageState::IncompleteUninstall, "example-font-pu@0.1.0"),
+            (PackageState::IncompleteInstall, "example-font-pi@0.1.0"),
         ];
         for (state, pkg_id) in pairs {
             let manifest = testing::make_manifest(pkg_id);

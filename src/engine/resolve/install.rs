@@ -327,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_installed_package_returns_unresolved_when_matching_package_is_pending_install() {
+    fn resolve_installed_package_returns_unresolved_when_matching_package_is_incomplete_install() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         let cx = InstallResolveScope::start(&cx);
@@ -336,7 +336,7 @@ mod tests {
         let spec = PackageSpec::from_str("example-font").unwrap();
 
         testing::with_db(&cx, |mut db| {
-            testing::mark_as_pending_installed(&mut db, &manifest);
+            testing::mark_as_incomplete_install(&mut db, &manifest);
 
             let target = resolve_installed_package(&db, &spec);
             assert_matches!(

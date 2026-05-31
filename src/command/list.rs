@@ -148,12 +148,12 @@ mod tests {
                 testing::make_manifest("installed-font@1.0.0"),
             ),
             (
-                PackageState::PendingInstall,
-                testing::make_manifest("install-incomplete-font@1.1.0"),
+                PackageState::IncompleteInstall,
+                testing::make_manifest("incomplete-install-font@1.1.0"),
             ),
             (
-                PackageState::PendingUninstall,
-                testing::make_manifest("uninstall-incomplete-font@1.2.0"),
+                PackageState::IncompleteUninstall,
+                testing::make_manifest("incomplete-uninstall-font@1.2.0"),
             ),
         ]
     }
@@ -181,8 +181,8 @@ mod tests {
             output,
             concat_line!(
                 "installed-font@1.0.0 (installed)",
-                "install-incomplete-font@1.1.0 (install-incomplete)",
-                "uninstall-incomplete-font@1.2.0 (uninstall-incomplete)",
+                "incomplete-install-font@1.1.0 (incomplete-install)",
+                "incomplete-uninstall-font@1.2.0 (incomplete-uninstall)",
                 "",
             )
         );

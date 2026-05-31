@@ -262,11 +262,11 @@ mod tests {
         testing::with_db(&cx, |mut db| {
             let update_manifest = testing::make_manifest("update-font@1.0.0");
             let current_manifest = testing::make_manifest("current-font@1.0.0");
-            let pending_manifest = testing::make_manifest("incomplete-font@1.0.0");
+            let incomplete_manifest = testing::make_manifest("incomplete-font@1.0.0");
 
             testing::mark_as_installed(&mut db, &update_manifest);
             testing::mark_as_installed(&mut db, &current_manifest);
-            testing::mark_as_pending_installed(&mut db, &pending_manifest);
+            testing::mark_as_incomplete_install(&mut db, &incomplete_manifest);
 
             let targets = resolve_update_targets(&cx, &db, &[registry], &[], false).unwrap();
             let target_ids = targets

@@ -205,26 +205,26 @@ impl<'a> PackageDatabase<'a> {
         let pkg_name = manifest.name.clone();
         let pkg_version = manifest.version.clone();
         let mut installed_other_versions = vec![];
-        let mut pending_installs = vec![];
-        let mut pending_uninstalls = vec![];
+        let mut incomplete_installs = vec![];
+        let mut incomplete_uninstalls = vec![];
         for (state, m) in self.entries_by_name(&pkg_name) {
             if m.version == pkg_version {
                 match state {
                     PackageState::Installed => return Installability::AlreadyInstalled,
-                    PackageState::PendingInstall | PackageState::PendingUninstall => {}
+                    PackageState::IncompleteInstall | PackageState::IncompleteUninstall => {}
                 }
             } else {
                 match state {
                     PackageState::Installed => installed_other_versions.push(m.id()),
-                    PackageState::PendingInstall => pending_installs.push(m.id()),
-                    PackageState::PendingUninstall => pending_uninstalls.push(m.id()),
+                    PackageState::IncompleteInstall => incomplete_installs.push(m.id()),
+                    PackageState::IncompleteUninstall => incomplete_uninstalls.push(m.id()),
                 }
             }
         }
         Installability::Installable {
             installed_other_versions,
-            pending_installs,
-            pending_uninstalls,
+            incomplete_installs,
+            incomplete_uninstalls,
         }
     }
 
@@ -247,7 +247,7 @@ impl<'a> PackageDatabase<'a> {
         for op in plan.ops() {
             match op {
                 ExecutionPlanOp::Install(InstallOp { manifest, .. }) => {
-                    self.insert_entry(PackageState::PendingInstall, Arc::clone(manifest));
+                    self.insert_entry(PackageState::IncompleteInstall, Arc::clone(manifest));
                 }
                 ExecutionPlanOp::Uninstall(UninstallOp {
                     pkg_id, conditions, ..
@@ -255,7 +255,7 @@ impl<'a> PackageDatabase<'a> {
                     let entry = self
                         .entry_mut(pkg_id)
                         .context(EntryNotFoundSnafu { pkg_id })?;
-                    entry.state = PackageState::PendingUninstall;
+                    entry.state = PackageState::IncompleteUninstall;
                 }
                 ExecutionPlanOp::Uninstall(_) | ExecutionPlanOp::Skip(_) => {}
             }
@@ -273,10 +273,10 @@ impl<'a> PackageDatabase<'a> {
             .entry_mut(pkg_id)
             .context(EntryNotFoundSnafu { pkg_id })?;
         snafu::ensure!(
-            entry.state == PackageState::PendingInstall,
+            entry.state == PackageState::IncompleteInstall,
             UnexpectedStateSnafu {
                 pkg_id,
-                expected: PackageState::PendingInstall,
+                expected: PackageState::IncompleteInstall,
                 actual: entry.state,
             }
         );
@@ -298,7 +298,7 @@ impl<'a> PackageDatabase<'a> {
 
         self.entry_mut(pkg_id).unwrap().state = PackageState::Installed;
         for replacing_pkg_id in replacing_pkg_ids {
-            self.entry_mut(replacing_pkg_id).unwrap().state = PackageState::PendingUninstall;
+            self.entry_mut(replacing_pkg_id).unwrap().state = PackageState::IncompleteUninstall;
         }
 
         self.save()?;
@@ -320,15 +320,15 @@ impl<'a> PackageDatabase<'a> {
             .get_mut(pkg_id.version())
             .context(EntryNotFoundSnafu { pkg_id })?;
         snafu::ensure!(
-            entry.state == PackageState::PendingInstall,
+            entry.state == PackageState::IncompleteInstall,
             UnexpectedStateSnafu {
                 pkg_id,
-                expected: PackageState::PendingInstall,
+                expected: PackageState::IncompleteInstall,
                 actual: entry.state,
             }
         );
         if cleanup_required {
-            entry.state = PackageState::PendingUninstall;
+            entry.state = PackageState::IncompleteUninstall;
         } else {
             version_map.versions.remove(pkg_id.version()).unwrap();
             if version_map.versions.is_empty() {
@@ -347,10 +347,10 @@ impl<'a> PackageDatabase<'a> {
             return Err(EntryNotFoundSnafu { pkg_id }.build());
         };
         snafu::ensure!(
-            entry.state == PackageState::PendingUninstall,
+            entry.state == PackageState::IncompleteUninstall,
             UnexpectedStateSnafu {
                 pkg_id,
-                expected: PackageState::PendingUninstall,
+                expected: PackageState::IncompleteUninstall,
                 actual: entry.state,
             }
         );
@@ -364,8 +364,8 @@ impl<'a> PackageDatabase<'a> {
 pub(crate) enum Installability {
     Installable {
         installed_other_versions: Vec<PackageId>,
-        pending_installs: Vec<PackageId>,
-        pending_uninstalls: Vec<PackageId>,
+        incomplete_installs: Vec<PackageId>,
+        incomplete_uninstalls: Vec<PackageId>,
     },
     AlreadyInstalled,
 }
@@ -452,7 +452,8 @@ mod tests {
     }
 
     #[test]
-    fn complete_install_persists_installed_state_and_marks_replaced_versions_pending_uninstall() {
+    fn complete_install_persists_installed_state_and_marks_replaced_versions_incomplete_uninstall()
+    {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
@@ -472,7 +473,7 @@ mod tests {
                 (
                     &installed_pkg_id,
                     Some(PackageState::Installed),
-                    Some(PackageState::PendingUninstall),
+                    Some(PackageState::IncompleteUninstall),
                 ),
                 (&pkg_id, None, Some(PackageState::Installed)),
             ],
@@ -485,7 +486,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_plan_transaction_keeps_same_version_pending_install() {
+    fn apply_plan_transaction_keeps_same_version_incomplete_install() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
@@ -493,14 +494,14 @@ mod tests {
         let pkg_id = manifest.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_pending_installed(db, &manifest);
+            testing::mark_as_incomplete_install(db, &manifest);
         });
         assert_status_change(
             &app_dirs,
             &mut lock_file,
             &pkg_id,
-            Some(PackageState::PendingInstall),
-            Some(PackageState::PendingInstall),
+            Some(PackageState::IncompleteInstall),
+            Some(PackageState::IncompleteInstall),
             |db| {
                 let plan = testing::make_install_plan(&manifest, vec![]);
                 db.apply_plan_transaction(&plan).unwrap();
@@ -514,13 +515,13 @@ mod tests {
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let installed_manifest = testing::make_manifest("example-font@0.1.0");
-        let pending_install_manifest = testing::make_manifest("example-font@0.2.0");
-        let pending_uninstall_manifest = testing::make_manifest("example-font@0.3.0");
+        let incomplete_install_manifest = testing::make_manifest("example-font@0.2.0");
+        let incomplete_uninstall_manifest = testing::make_manifest("example-font@0.3.0");
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_installed(db, &installed_manifest);
-            testing::mark_as_pending_installed(db, &pending_install_manifest);
-            testing::mark_as_pending_uninstalled(db, &pending_uninstall_manifest);
+            testing::mark_as_incomplete_install(db, &incomplete_install_manifest);
+            testing::mark_as_incomplete_uninstall(db, &incomplete_uninstall_manifest);
         });
         assert_statuses_change(
             &app_dirs,
@@ -532,14 +533,14 @@ mod tests {
                     Some(PackageState::Installed),
                 ),
                 (
-                    &pending_install_manifest.id(),
-                    Some(PackageState::PendingInstall),
-                    Some(PackageState::PendingInstall),
+                    &incomplete_install_manifest.id(),
+                    Some(PackageState::IncompleteInstall),
+                    Some(PackageState::IncompleteInstall),
                 ),
                 (
-                    &pending_uninstall_manifest.id(),
-                    Some(PackageState::PendingUninstall),
-                    Some(PackageState::PendingUninstall),
+                    &incomplete_uninstall_manifest.id(),
+                    Some(PackageState::IncompleteUninstall),
+                    Some(PackageState::IncompleteUninstall),
                 ),
             ],
             |db| {
@@ -551,13 +552,13 @@ mod tests {
                     }
                     .into(),
                     UninstallOp {
-                        pkg_id: pending_install_manifest.id(),
+                        pkg_id: incomplete_install_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
                         conditions: vec![],
                     }
                     .into(),
                     UninstallOp {
-                        pkg_id: pending_uninstall_manifest.id(),
+                        pkg_id: incomplete_uninstall_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
                         conditions: vec![],
                     }
@@ -571,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_install_removes_pending_entry() {
+    fn cancel_install_removes_incomplete_entry() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
@@ -579,13 +580,13 @@ mod tests {
         let pkg_id = manifest.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_pending_installed(db, &manifest);
+            testing::mark_as_incomplete_install(db, &manifest);
         });
         assert_status_change(
             &app_dirs,
             &mut lock_file,
             &pkg_id,
-            Some(PackageState::PendingInstall),
+            Some(PackageState::IncompleteInstall),
             None,
             |db| {
                 db.cancel_install(&pkg_id, false).unwrap();
@@ -594,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_install_marks_entry_pending_uninstall_when_cleanup_failed() {
+    fn cancel_install_marks_entry_incomplete_uninstall_when_cleanup_failed() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
@@ -602,14 +603,14 @@ mod tests {
         let pkg_id = manifest.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_pending_installed(db, &manifest);
+            testing::mark_as_incomplete_install(db, &manifest);
         });
         assert_status_change(
             &app_dirs,
             &mut lock_file,
             &pkg_id,
-            Some(PackageState::PendingInstall),
-            Some(PackageState::PendingUninstall),
+            Some(PackageState::IncompleteInstall),
+            Some(PackageState::IncompleteUninstall),
             |db| {
                 db.cancel_install(&pkg_id, true).unwrap();
             },
@@ -668,8 +669,8 @@ mod tests {
                 ),
                 (
                     &pkg_id,
-                    Some(PackageState::PendingInstall),
-                    Some(PackageState::PendingInstall),
+                    Some(PackageState::IncompleteInstall),
+                    Some(PackageState::IncompleteInstall),
                 ),
             ],
             |db| {
@@ -683,7 +684,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_install_save_failure_restores_pending_install_state() {
+    fn cancel_install_save_failure_restores_incomplete_install_state() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
@@ -691,14 +692,14 @@ mod tests {
         let pkg_id = manifest.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_pending_installed(db, &manifest);
+            testing::mark_as_incomplete_install(db, &manifest);
         });
         assert_status_change(
             &app_dirs,
             &mut lock_file,
             &pkg_id,
-            Some(PackageState::PendingInstall),
-            Some(PackageState::PendingInstall),
+            Some(PackageState::IncompleteInstall),
+            Some(PackageState::IncompleteInstall),
             |db| {
                 db.simulate_save_failure = true;
                 let err = db.cancel_install(&pkg_id, false).unwrap_err();
@@ -708,7 +709,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_install_with_cleanup_failure_save_failure_restores_pending_install_state() {
+    fn cancel_install_with_cleanup_failure_save_failure_restores_incomplete_install_state() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
@@ -716,14 +717,14 @@ mod tests {
         let pkg_id = manifest.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_pending_installed(db, &manifest);
+            testing::mark_as_incomplete_install(db, &manifest);
         });
         assert_status_change(
             &app_dirs,
             &mut lock_file,
             &pkg_id,
-            Some(PackageState::PendingInstall),
-            Some(PackageState::PendingInstall),
+            Some(PackageState::IncompleteInstall),
+            Some(PackageState::IncompleteInstall),
             |db| {
                 db.simulate_save_failure = true;
                 let err = db.cancel_install(&pkg_id, true).unwrap_err();
@@ -733,7 +734,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_uninstall_save_failure_restores_pending_uninstall_state() {
+    fn complete_uninstall_save_failure_restores_incomplete_uninstall_state() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
@@ -741,14 +742,14 @@ mod tests {
         let pkg_id = manifest.id();
 
         with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_pending_uninstalled(db, &manifest);
+            testing::mark_as_incomplete_uninstall(db, &manifest);
         });
         assert_status_change(
             &app_dirs,
             &mut lock_file,
             &pkg_id,
-            Some(PackageState::PendingUninstall),
-            Some(PackageState::PendingUninstall),
+            Some(PackageState::IncompleteUninstall),
+            Some(PackageState::IncompleteUninstall),
             |db| {
                 db.simulate_save_failure = true;
                 let err = db.complete_uninstall(&pkg_id).unwrap_err();
