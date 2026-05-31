@@ -82,6 +82,8 @@ foton install --manifest <manifest-path>
 - When installing by package name, if a matching package is already installed
   locally, `foton` keeps that installed package as the selected result.
   Use `foton update` when you want to look for newer versions in package registries.
+- If an install does not complete cleanly, use `repair` to clean up any
+  packages it leaves behind.
 - If multiple selected package registries provide a matching package, `install` does
   not choose one automatically; it fails and asks you to disambiguate.
 - Installing from a manifest file is useful for local testing before adding it
@@ -90,4 +92,5 @@ foton install --manifest <manifest-path>
 ## Related pages
 
 - [Installing and Updating Packages](../../guide/basic/install-update-packages.md)
+- [repair command reference](repair.md)
 - [Writing a Package Manifest](../../guide/advanced/write-package-manifest.md)

@@ -50,7 +50,8 @@ enum UninstallExecutionErrorReport {
     #[snafu(display(
         concat_line!(
             "failed to remove package files for package {pkg_id}",
-            "manual cleanup may be required",
+            "run `foton repair {pkg_id}` to retry cleanup",
+            "if repair does not resolve the problem, manual cleanup may be required",
         ),
         pkg_id = pkg_id,
     ))]
@@ -59,7 +60,8 @@ enum UninstallExecutionErrorReport {
         concat_line!(
             "failed to finalize uninstall transaction for package {pkg_id}",
             "font unregistration and package file removal may already have been applied",
-            "rerunning the uninstall command or manual database cleanup may be required"
+            "run `foton repair {pkg_id}` to restore a consistent state",
+            "if repair does not resolve the problem, manual database cleanup may be required",
         ),
         pkg_id = pkg_id,
     ))]

@@ -104,6 +104,8 @@ foton --no-confirm update
   package is already installed.
 - If an update request does not require any changes, `foton` reports that the
   selected packages are already up to date.
+- If an install or update does not complete cleanly, use `foton repair` to
+  clean up any packages left behind.
 - Package installation and update operate on package definitions, not on
   individual font files.
 
@@ -113,3 +115,4 @@ foton --no-confirm update
 - [Managing Installed Packages](manage-installed-packages.md)
 - [install command reference](../../reference/commands/install.md)
 - [update command reference](../../reference/commands/update.md)
+- [repair command reference](../../reference/commands/repair.md)

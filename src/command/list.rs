@@ -62,7 +62,7 @@ impl OperationError for ListError {
 }
 
 pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), ListError> {
-    let ListArgs { show_pending } = args;
+    let ListArgs { show_incomplete } = args;
 
     let cx = ListScope::start(cx);
     let reporter = cx.reporter();
@@ -70,7 +70,7 @@ pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), List
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
     let db = engine::load_database(&cx, &mut db_lock_file)?;
 
-    let renderer = if *show_pending {
+    let renderer = if *show_incomplete {
         (&AllEntryRender {}) as &dyn EntryRender
     } else {
         &InstalledEntryRender {} as &dyn EntryRender
@@ -149,11 +149,11 @@ mod tests {
             ),
             (
                 PackageState::PendingInstall,
-                testing::make_manifest("pending-install-font@1.1.0"),
+                testing::make_manifest("install-incomplete-font@1.1.0"),
             ),
             (
                 PackageState::PendingUninstall,
-                testing::make_manifest("pending-uninstall-font@1.2.0"),
+                testing::make_manifest("uninstall-incomplete-font@1.2.0"),
             ),
         ]
     }
@@ -181,8 +181,8 @@ mod tests {
             output,
             concat_line!(
                 "installed-font@1.0.0 (installed)",
-                "pending-install-font@1.1.0 (pending-install)",
-                "pending-uninstall-font@1.2.0 (pending-uninstall)",
+                "install-incomplete-font@1.1.0 (install-incomplete)",
+                "uninstall-incomplete-font@1.2.0 (uninstall-incomplete)",
                 "",
             )
         );

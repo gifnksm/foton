@@ -72,4 +72,4 @@ foton --warnings-as-errors manifest check <manifest-path>
 
 - [Writing a Package Manifest](../../../guide/advanced/write-package-manifest.md)
 - [Package Manifest Reference](../../package-manifest.md)
-- [manifest](README.md)
+- [manifest command reference](README.md)

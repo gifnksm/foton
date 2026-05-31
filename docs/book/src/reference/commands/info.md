@@ -45,19 +45,21 @@ foton info <package-name>@<version>
 
 If a package name matches multiple packages recorded in the local package
 database, `info` prints all of them.
-This can include packages still recorded in the local package database after an
-interrupted or failed install or uninstall.
+This can include packages left by incomplete operations.
 
 ## Notes
 
 - `info` reads the local package database and does not search package registries.
 - If no package recorded in the local package database matches the specified
   package name, the command fails.
+- Use `repair` when you want to clean up packages left by incomplete
+  operations.
 - Use `search` when you want to inspect packages that are available in a
   package registry but not yet installed.
 
 ## Related pages
 
 - [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
-- [list](list.md)
-- [search](search.md)
+- [list command reference](list.md)
+- [repair command reference](repair.md)
+- [search command reference](search.md)

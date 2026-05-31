@@ -54,7 +54,8 @@ enum InstallDbGuardErrorReport {
     #[snafu(display(
         concat_line!(
             "failed to roll back install transaction for package {pkg_id}",
-            "manual database cleanup may be required"
+            "run `foton repair {pkg_id}` to retry cleanup",
+            "if repair does not resolve the problem, manual database cleanup may be required",
         ),
         pkg_id = pkg_id,
     ))]

@@ -201,7 +201,7 @@ pub(crate) fn make_resolved_uninstall_target<I>(pkg_id: I) -> ResolvedUninstallT
 where
     I: TryInto<PackageId, Error: Debug>,
 {
-    ResolvedUninstallTarget::Resolved {
+    ResolvedUninstallTarget::Uninstall {
         pkg_id: pkg_id.try_into().unwrap(),
     }
 }

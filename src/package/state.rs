@@ -12,9 +12,11 @@ use serde::{Deserialize, Serialize};
     derive_more::IsVariant,
 )]
 #[serde(rename_all = "kebab-case")]
-#[display(rename_all = "kebab-case")]
 pub(crate) enum PackageState {
+    #[display("installed")]
     Installed,
+    #[display("install-incomplete")]
     PendingInstall,
+    #[display("uninstall-incomplete")]
     PendingUninstall,
 }

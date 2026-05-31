@@ -12,25 +12,26 @@ pub(crate) fn plan_uninstall(
     let mut ops = vec![];
     for target in targets {
         match target {
-            ResolvedUninstallTarget::Resolved { pkg_id } => match db.check_uninstallability(pkg_id)
-            {
-                Uninstallability::Uninstallable => ops.push(
-                    UninstallOp {
-                        pkg_id: pkg_id.clone(),
-                        reason: UninstallReason::RequestedByUser,
-                        conditions: vec![],
-                    }
-                    .into(),
-                ),
-                Uninstallability::AlreadyUninstalled => ops.push(
-                    SkipOp {
-                        pkg_spec: pkg_id.clone().into(),
-                        reason: SkipReason::AlreadyUninstalled,
-                    }
-                    .into(),
-                ),
-            },
-            ResolvedUninstallTarget::Unresolved { pkg_spec } => {
+            ResolvedUninstallTarget::Uninstall { pkg_id } => {
+                match db.check_uninstallability(pkg_id) {
+                    Uninstallability::Uninstallable => ops.push(
+                        UninstallOp {
+                            pkg_id: pkg_id.clone(),
+                            reason: UninstallReason::RequestedByUser,
+                            conditions: vec![],
+                        }
+                        .into(),
+                    ),
+                    Uninstallability::AlreadyUninstalled => ops.push(
+                        SkipOp {
+                            pkg_spec: pkg_id.clone().into(),
+                            reason: SkipReason::AlreadyUninstalled,
+                        }
+                        .into(),
+                    ),
+                }
+            }
+            ResolvedUninstallTarget::AlreadyUninstalled { pkg_spec } => {
                 ops.push(
                     SkipOp {
                         pkg_spec: pkg_spec.clone(),

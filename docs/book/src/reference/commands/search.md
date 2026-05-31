@@ -80,4 +80,4 @@ example-font@1.2.3 [example]
 ## Related pages
 
 - [Discovering Packages](../../guide/basic/discover-packages.md)
-- [install](install.md)
+- [install command reference](install.md)

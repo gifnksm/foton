@@ -9,8 +9,8 @@ use crate::{
     },
     command::{
         generate_man::GenerateManError, info::InfoError, install::InstallError, list::ListError,
-        manifest::CheckManifestError, print_completion::PrintCompletionError, search::SearchError,
-        uninstall::UninstallError, update::UpdateError,
+        manifest::CheckManifestError, print_completion::PrintCompletionError, repair::RepairError,
+        search::SearchError, uninstall::UninstallError, update::UpdateError,
     },
 };
 
@@ -20,6 +20,7 @@ mod install;
 mod list;
 mod manifest;
 mod print_completion;
+mod repair;
 mod search;
 mod uninstall;
 mod update;
@@ -40,6 +41,8 @@ pub(crate) enum CommandError {
     Update { source: UpdateError },
     #[snafu(transparent)]
     Uninstall { source: UninstallError },
+    #[snafu(transparent)]
+    Repair { source: RepairError },
     #[snafu(transparent)]
     List { source: ListError },
     #[snafu(transparent)]
@@ -72,6 +75,7 @@ pub(crate) async fn run_command(cx: &RootContext, command: Command) -> Result<()
         Command::Install(args) => install::install_package(cx, &args).await?,
         Command::Update(args) => update::update_package(cx, &args).await?,
         Command::Uninstall(args) => uninstall::uninstall_package(cx, &args).await?,
+        Command::Repair(args) => repair::repair_package(cx, &args).await?,
         Command::List(args) => list::list_package(cx, &args)?,
         Command::Info(args) => info::info_package(cx, &args)?,
         Command::Search(args) => search::search_packages(cx, &args)?,
