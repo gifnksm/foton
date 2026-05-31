@@ -25,7 +25,7 @@ foton list --show-incomplete
 ```
 
 With `--show-incomplete`, each entry includes its state, such as `installed`,
-`install-incomplete`, or `uninstall-incomplete`.
+`incomplete-install`, or `incomplete-uninstall`.
 
 If you see such packages, inspect them with `foton info`, then clean them up
 with `foton repair`.

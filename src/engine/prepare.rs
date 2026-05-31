@@ -212,14 +212,14 @@ mod tests {
                     .unwrap()
                     .entry_by_id(&install_pkg_id)
                     .map(|(state, _)| state),
-                Some(PackageState::PendingInstall),
+                Some(PackageState::IncompleteInstall),
             );
             assert_eq!(
                 db.lock()
                     .unwrap()
                     .entry_by_id(&uninstall_pkg_id)
                     .map(|(state, _)| state),
-                Some(PackageState::PendingUninstall),
+                Some(PackageState::IncompleteUninstall),
             );
             assert_eq!(
                 db.lock()
@@ -233,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn prepare_normalizes_pending_install_uninstall_target_to_pending_uninstall() {
+    fn prepare_normalizes_incomplete_install_uninstall_target_to_incomplete_uninstall() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
@@ -241,7 +241,7 @@ mod tests {
         let pkg_id = manifest.id();
 
         testing::with_db(&cx, |mut db| {
-            testing::mark_as_pending_installed(&mut db, &manifest);
+            testing::mark_as_incomplete_install(&mut db, &manifest);
             let db = Arc::new(Mutex::new(db));
             let plan = ExecutionPlan::new_for_test([UninstallOp {
                 pkg_id: pkg_id.clone(),
@@ -262,7 +262,7 @@ mod tests {
                     .unwrap()
                     .entry_by_id(&pkg_id)
                     .map(|(state, _)| state),
-                Some(PackageState::PendingUninstall),
+                Some(PackageState::IncompleteUninstall),
             );
         });
     }

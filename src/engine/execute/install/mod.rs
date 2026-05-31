@@ -70,7 +70,7 @@ enum InstallExecutionErrorReport {
 
 // Tracks whether a failed install can be treated as cleanly rolled back.
 // If any step may have left registry or filesystem state behind, the DB entry
-// should stay recoverable as `PendingUninstall` instead of being removed.
+// should stay recoverable as `IncompleteUninstall` instead of being removed.
 #[derive(Debug, Default, Clone)]
 struct CleanupTracker {
     inner: Arc<Mutex<CleanupTrackerInner>>,

@@ -237,12 +237,12 @@ pub(crate) fn mark_as_state(
 ) {
     match state {
         PackageState::Installed => mark_as_installed(db, manifest),
-        PackageState::PendingInstall => mark_as_pending_installed(db, manifest),
-        PackageState::PendingUninstall => mark_as_pending_uninstalled(db, manifest),
+        PackageState::IncompleteInstall => mark_as_incomplete_install(db, manifest),
+        PackageState::IncompleteUninstall => mark_as_incomplete_uninstall(db, manifest),
     }
 }
 
-pub(crate) fn mark_as_pending_installed(
+pub(crate) fn mark_as_incomplete_install(
     db: &mut PackageDatabase<'_>,
     manifest: &Arc<PackageManifest>,
 ) {
@@ -251,7 +251,7 @@ pub(crate) fn mark_as_pending_installed(
     db.apply_plan_transaction(&plan).unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().0,
-        PackageState::PendingInstall
+        PackageState::IncompleteInstall
     );
 }
 
@@ -263,7 +263,7 @@ pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &Arc<Pac
     assert_eq!(db.entry_by_id(&pkg_id).unwrap().0, PackageState::Installed);
 }
 
-pub(crate) fn mark_as_pending_uninstalled(
+pub(crate) fn mark_as_incomplete_uninstall(
     db: &mut PackageDatabase<'_>,
     manifest: &Arc<PackageManifest>,
 ) {
@@ -275,7 +275,7 @@ pub(crate) fn mark_as_pending_uninstalled(
     db.apply_plan_transaction(&plan).unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().0,
-        PackageState::PendingUninstall
+        PackageState::IncompleteUninstall
     );
 }
 

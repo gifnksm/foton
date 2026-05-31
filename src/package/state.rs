@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 pub(crate) enum PackageState {
     #[display("installed")]
     Installed,
-    #[display("install-incomplete")]
-    PendingInstall,
-    #[display("uninstall-incomplete")]
-    PendingUninstall,
+    #[display("incomplete-install")]
+    IncompleteInstall,
+    #[display("incomplete-uninstall")]
+    IncompleteUninstall,
 }

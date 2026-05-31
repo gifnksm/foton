@@ -16,7 +16,7 @@ Include packages left by incomplete installs, uninstalls, or updates.
 
 Without this option, only packages in the `installed` state are shown.
 With this option, leftover packages are shown with states such as
-`install-incomplete` and `uninstall-incomplete`.
+`incomplete-install` and `incomplete-uninstall`.
 
 ### `--no-confirm`
 
@@ -53,7 +53,7 @@ With `--show-incomplete`, each line also includes the package state:
 
 ```text
 example-font@1.2.3 (installed)
-another-font@0.1.0 (install-incomplete)
+another-font@0.1.0 (incomplete-install)
 ```
 
 ## Notes

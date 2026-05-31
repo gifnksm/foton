@@ -239,7 +239,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_spec_resolves_pending_entries() {
+    fn resolve_spec_resolves_incomplete_entries() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         let cx = UninstallResolveScope::start(&cx);
@@ -250,7 +250,7 @@ mod tests {
         let spec = PackageSpec::from_str("example-font").unwrap();
 
         testing::with_db(&cx, |mut db| {
-            testing::mark_as_pending_installed(&mut db, &manifest);
+            testing::mark_as_incomplete_install(&mut db, &manifest);
 
             let target = resolve_spec(&cx, &db, &spec).unwrap();
             assert_matches!(target, ResolvedUninstallTarget::Uninstall { pkg_id: target_id } if target_id == pkg_id);
@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_spec_reports_multiple_matches_for_name_across_pending_states() {
+    fn resolve_spec_reports_multiple_matches_for_name_across_incomplete_states() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         let cx = UninstallResolveScope::start(&cx);
@@ -274,8 +274,8 @@ mod tests {
         let spec = PackageSpec::from_str("example-font").unwrap();
 
         testing::with_db(&cx, |mut db| {
-            testing::mark_as_pending_installed(&mut db, &manifest1);
-            testing::mark_as_pending_uninstalled(&mut db, &manifest2);
+            testing::mark_as_incomplete_install(&mut db, &manifest1);
+            testing::mark_as_incomplete_uninstall(&mut db, &manifest2);
 
             let err = resolve_spec(&cx, &db, &spec).unwrap_err();
             assert_matches!(err, TestError::Failed);

@@ -88,7 +88,7 @@ where
         let db = db.lock().unwrap();
         assert_eq!(
             db.entry_by_id(&pkg_id).map(|(state, _)| state),
-            Some(PackageState::PendingInstall)
+            Some(PackageState::IncompleteInstall)
         );
     }
 
@@ -182,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn install_db_guard_preserves_pending_install_before_completion() {
+    fn install_db_guard_preserves_incomplete_install_before_completion() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
@@ -205,12 +205,12 @@ mod tests {
             {
                 let mut db = db.lock().unwrap();
                 // Reload from disk while keeping the install guard alive so this assertion verifies
-                // `begin_install()` persisted `PendingInstall` before completion, rather than only
+                // `begin_install()` persisted `IncompleteInstall` before completion, rather than only
                 // checking the guard's in-memory DB state.
                 db.reload().unwrap();
                 assert_eq!(
                     get_entry_state(&db, &pkg_id),
-                    Some(PackageState::PendingInstall)
+                    Some(PackageState::IncompleteInstall)
                 );
             }
             drop(guard);
@@ -218,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn dropping_install_guard_rolls_back_persisted_pending_install() {
+    fn dropping_install_guard_rolls_back_persisted_incomplete_install() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
@@ -245,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn dropping_install_guard_keeps_pending_uninstall_when_cleanup_failed() {
+    fn dropping_install_guard_keeps_incomplete_uninstall_when_cleanup_failed() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
@@ -272,7 +272,7 @@ mod tests {
             let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
             assert_eq!(
                 get_entry_state(&db, &pkg_id),
-                Some(PackageState::PendingUninstall)
+                Some(PackageState::IncompleteUninstall)
             );
         }
     }
@@ -311,7 +311,7 @@ mod tests {
             let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
             assert_eq!(
                 get_entry_state(&db, &pkg_id),
-                Some(PackageState::PendingUninstall)
+                Some(PackageState::IncompleteUninstall)
             );
         }
     }

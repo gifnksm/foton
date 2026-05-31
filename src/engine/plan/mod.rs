@@ -101,10 +101,10 @@ pub(crate) enum UninstallReason {
     RequestedByUser,
     #[display("conflicts with package {pkg_id}")]
     ConflictWithInstall { pkg_id: PackageId },
-    #[display("cleanup after failed install")]
-    CleanupPendingInstall,
-    #[display("cleanup after failed uninstall")]
-    CleanupPendingUninstall,
+    #[display("cleanup after incomplete install")]
+    CleanupIncompleteInstall,
+    #[display("cleanup after incomplete uninstall")]
+    CleanupIncompleteUninstall,
 }
 
 #[derive(Debug, Clone, derive_more::Display, PartialEq, Eq)]

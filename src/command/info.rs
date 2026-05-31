@@ -223,7 +223,7 @@ exclude = ["fonts/exclude.ttf"]
         .unwrap();
         let mut output = Vec::new();
 
-        render_package_info(&mut output, PackageState::PendingInstall, &manifest).unwrap();
+        render_package_info(&mut output, PackageState::IncompleteInstall, &manifest).unwrap();
 
         let output = String::from_utf8(output).unwrap();
         assert_eq!(
@@ -232,7 +232,7 @@ exclude = ["fonts/exclude.ttf"]
                 "Name: example-font",
                 "Display Name: Example Font",
                 "Version: 0.1.0",
-                "State: install-incomplete",
+                "State: incomplete-install",
                 "Description: Example font family for UI and coding",
                 "Aliases:",
                 "  - Example Font UI",

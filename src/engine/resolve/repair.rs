@@ -55,7 +55,7 @@ where
         .entries()
         .filter_map(|(state, manifest)| match state {
             PackageState::Installed => None,
-            PackageState::PendingInstall | PackageState::PendingUninstall => {
+            PackageState::IncompleteInstall | PackageState::IncompleteUninstall => {
                 Some(ResolvedRepairTarget::Uninstall {
                     pkg_id: manifest.id(),
                 })
@@ -95,7 +95,7 @@ fn resolve_spec(db: &PackageDatabase<'_>, pkg_spec: &PackageSpec) -> Vec<Resolve
     for (state, manifest) in candidates {
         match state {
             PackageState::Installed => {}
-            PackageState::PendingInstall | PackageState::PendingUninstall => {
+            PackageState::IncompleteInstall | PackageState::IncompleteUninstall => {
                 targets.push(ResolvedRepairTarget::Uninstall {
                     pkg_id: manifest.id(),
                 });
@@ -155,17 +155,17 @@ mod tests {
     }
 
     #[test]
-    fn resolve_all_repair_targets_returns_all_pending_entries_only() {
+    fn resolve_all_repair_targets_returns_all_incomplete_entries_only() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let pending_install_manifest = testing::make_manifest("example-font@0.1.0");
-        let pending_uninstall_manifest = testing::make_manifest("example-font@0.2.0");
+        let incomplete_install_manifest = testing::make_manifest("example-font@0.1.0");
+        let incomplete_uninstall_manifest = testing::make_manifest("example-font@0.2.0");
         let installed_manifest = testing::make_manifest("other-font@1.0.0");
 
         testing::with_db(&cx, |mut db| {
-            testing::mark_as_pending_installed(&mut db, &pending_install_manifest);
-            testing::mark_as_pending_uninstalled(&mut db, &pending_uninstall_manifest);
+            testing::mark_as_incomplete_install(&mut db, &incomplete_install_manifest);
+            testing::mark_as_incomplete_uninstall(&mut db, &incomplete_uninstall_manifest);
             testing::mark_as_installed(&mut db, &installed_manifest);
 
             let targets = resolve_all_repair_targets(&cx, &db);
@@ -174,8 +174,8 @@ mod tests {
             assert_uninstall_targets_eq(
                 &targets,
                 &[
-                    pending_install_manifest.id(),
-                    pending_uninstall_manifest.id(),
+                    incomplete_install_manifest.id(),
+                    incomplete_uninstall_manifest.id(),
                 ],
             );
         });
@@ -228,12 +228,12 @@ mod tests {
     }
 
     #[test]
-    fn resolve_repair_targets_returns_all_pending_matches_for_name_and_dedups() {
+    fn resolve_repair_targets_returns_all_incomplete_matches_for_name_and_dedups() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 
-        let pending_install_manifest = testing::make_manifest("example-font@0.1.0");
-        let pending_uninstall_manifest = testing::make_manifest("example-font@0.2.0");
+        let incomplete_install_manifest = testing::make_manifest("example-font@0.1.0");
+        let incomplete_uninstall_manifest = testing::make_manifest("example-font@0.2.0");
         let installed_manifest = testing::make_manifest("example-font@1.0.0");
         let pkg_specs = vec![
             PackageSpec::from_str("example-font").unwrap(),
@@ -242,8 +242,8 @@ mod tests {
         ];
 
         testing::with_db(&cx, |mut db| {
-            testing::mark_as_pending_installed(&mut db, &pending_install_manifest);
-            testing::mark_as_pending_uninstalled(&mut db, &pending_uninstall_manifest);
+            testing::mark_as_incomplete_install(&mut db, &incomplete_install_manifest);
+            testing::mark_as_incomplete_uninstall(&mut db, &incomplete_uninstall_manifest);
             testing::mark_as_installed(&mut db, &installed_manifest);
 
             let targets = resolve_repair_targets(&cx, &db, &pkg_specs);
@@ -252,8 +252,8 @@ mod tests {
             assert_uninstall_targets_eq(
                 &targets,
                 &[
-                    pending_install_manifest.id(),
-                    pending_uninstall_manifest.id(),
+                    incomplete_install_manifest.id(),
+                    incomplete_uninstall_manifest.id(),
                 ],
             );
         });

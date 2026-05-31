@@ -142,7 +142,7 @@ where
         let db = db.lock().unwrap();
         assert_eq!(
             db.entry_by_id(pkg_id).map(|(state, _)| state),
-            Some(PackageState::PendingUninstall)
+            Some(PackageState::IncompleteUninstall)
         );
     }
 
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "assertion `left == right` failed")]
-    fn execute_uninstall_requires_pending_uninstall_state() {
+    fn execute_uninstall_requires_incomplete_uninstall_state() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         testing::with_db(&cx, |db| {
@@ -224,7 +224,7 @@ mod tests {
         let manifest = testing::make_manifest(&*PKG_ID);
         {
             let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            testing::mark_as_pending_uninstalled(&mut db, &manifest);
+            testing::mark_as_incomplete_uninstall(&mut db, &manifest);
             let db = Arc::new(Mutex::new(db));
             execute_uninstall(&cx, &db, &PKG_ID).unwrap();
         }
@@ -243,7 +243,7 @@ mod tests {
         not(build_for_sandbox),
         ignore = "registry should be isolated in sandbox tests. use `cargo xtask sandbox run --test` instead."
     )]
-    fn execute_uninstall_keeps_pending_uninstall_when_version_directory_has_leftovers() {
+    fn execute_uninstall_keeps_incomplete_uninstall_when_version_directory_has_leftovers() {
         let cx = TempdirContext::with_app_id(test_app_id());
         let cx = TestScope::start(&cx);
         let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
@@ -256,7 +256,7 @@ mod tests {
         let manifest = testing::make_manifest(&*PKG_ID);
         {
             let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            testing::mark_as_pending_uninstalled(&mut db, &manifest);
+            testing::mark_as_incomplete_uninstall(&mut db, &manifest);
             let db = Arc::new(Mutex::new(db));
             execute_uninstall(&cx, &db, &PKG_ID).unwrap_err();
         }
@@ -265,7 +265,7 @@ mod tests {
             let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
             assert_eq!(
                 get_entry_state(&db, &PKG_ID),
-                Some(PackageState::PendingUninstall)
+                Some(PackageState::IncompleteUninstall)
             );
             assert!(!pkg_dirs.fonts_dir().exists());
             assert!(pkg_dirs.version_dir().exists());
