@@ -14,7 +14,7 @@ use crate::{
     },
     db::{PackageDatabase, PackageDatabaseError},
     engine::execute::install::CleanupTracker,
-    package::{PackageId, PackageManifest, PackageState},
+    package::{InstallationState, PackageId, PackageManifest},
     util::macros::concat_line,
 };
 
@@ -87,8 +87,9 @@ where
     {
         let db = db.lock().unwrap();
         assert_eq!(
-            db.entry_by_id(&pkg_id).map(|(state, _)| state),
-            Some(PackageState::IncompleteInstall)
+            db.entry_by_id(&pkg_id)
+                .map(|entry| entry.installation_state),
+            Some(InstallationState::IncompleteInstall)
         );
     }
 
@@ -163,7 +164,7 @@ mod tests {
     use crate::{
         cli::reporter::RootReportScope as _,
         engine,
-        package::PackageState,
+        package::InstallationState,
         util::testing::{self, TempdirContext, TestError, TestScope},
     };
 
@@ -175,10 +176,6 @@ mod tests {
         fn drop(&mut self) {
             self.cleanup_tracker.request_cleanup();
         }
-    }
-
-    fn get_entry_state(db: &PackageDatabase<'_>, pkg_id: &PackageId) -> Option<PackageState> {
-        db.entry_by_id(pkg_id).map(|(state, _manifest)| state)
     }
 
     #[test]
@@ -209,8 +206,8 @@ mod tests {
                 // checking the guard's in-memory DB state.
                 db.reload().unwrap();
                 assert_eq!(
-                    get_entry_state(&db, &pkg_id),
-                    Some(PackageState::IncompleteInstall)
+                    db.entry_by_id(&pkg_id).unwrap().installation_state,
+                    InstallationState::IncompleteInstall,
                 );
             }
             drop(guard);
@@ -240,7 +237,7 @@ mod tests {
 
         {
             let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            assert_eq!(get_entry_state(&db, &pkg_id), None);
+            assert!(db.entry_by_id(&pkg_id).is_none());
         }
     }
 
@@ -271,8 +268,8 @@ mod tests {
         {
             let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
             assert_eq!(
-                get_entry_state(&db, &pkg_id),
-                Some(PackageState::IncompleteUninstall)
+                db.entry_by_id(&pkg_id).unwrap().installation_state,
+                InstallationState::IncompleteUninstall,
             );
         }
     }
@@ -310,8 +307,8 @@ mod tests {
         {
             let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
             assert_eq!(
-                get_entry_state(&db, &pkg_id),
-                Some(PackageState::IncompleteUninstall)
+                db.entry_by_id(&pkg_id).unwrap().installation_state,
+                InstallationState::IncompleteUninstall,
             );
         }
     }
@@ -339,7 +336,10 @@ mod tests {
 
         {
             let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            assert_eq!(get_entry_state(&db, &pkg_id), Some(PackageState::Installed));
+            assert_eq!(
+                db.entry_by_id(&pkg_id).unwrap().installation_state,
+                InstallationState::Installed,
+            );
         }
     }
 }

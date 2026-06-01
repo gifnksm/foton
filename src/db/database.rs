@@ -14,7 +14,7 @@ use crate::{
         persist::{self, PersistError, PersistedPackageDb, PersistedPackageEntry},
     },
     engine::{ExecutionPlan, ExecutionPlanOp, InstallOp, UninstallOp},
-    package::{PackageId, PackageManifest, PackageName, PackageSpec, PackageState},
+    package::{InstallationState, PackageId, PackageManifest, PackageName, PackageSpec},
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
 
@@ -37,14 +37,29 @@ pub(crate) enum PackageDatabaseError {
     ))]
     UnexpectedState {
         pkg_id: PackageId,
-        expected: PackageState,
-        actual: PackageState,
+        expected: InstallationState,
+        actual: InstallationState,
     },
     #[snafu(display("package ID {pkg_id} is already installed"))]
     AlreadyInstalled { pkg_id: PackageId },
     #[cfg(test)]
     #[snafu(display("simulated failure to save package database"))]
     SimulatedSaveFailure,
+}
+
+#[derive(Debug)]
+pub(crate) struct PackageDbEntry {
+    pub(crate) installation_state: InstallationState,
+    pub(crate) manifest: Arc<PackageManifest>,
+}
+
+impl From<&PersistedPackageEntry> for PackageDbEntry {
+    fn from(entry: &PersistedPackageEntry) -> Self {
+        Self {
+            installation_state: entry.installation_state,
+            manifest: Arc::clone(&entry.manifest),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -131,49 +146,41 @@ impl<'a> PackageDatabase<'a> {
         res
     }
 
-    pub(crate) fn entries(&self) -> impl Iterator<Item = (PackageState, Arc<PackageManifest>)> {
+    pub(crate) fn entries(&self) -> impl Iterator<Item = PackageDbEntry> {
         self.persist_db
             .packages
             .values()
             .flat_map(|version_map| version_map.versions.values())
-            .map(|entry| (entry.state, Arc::clone(&entry.manifest)))
+            .map(Into::into)
     }
 
     pub(crate) fn entries_by_spec(
         &'a self,
         pkg_spec: &PackageSpec,
-    ) -> Box<dyn Iterator<Item = (PackageState, Arc<PackageManifest>)> + 'a> {
+    ) -> Box<dyn Iterator<Item = PackageDbEntry> + 'a> {
         match pkg_spec {
             PackageSpec::Id(id) => Box::new(self.entry_by_id(id).into_iter()),
             PackageSpec::Name(name) => Box::new(self.entries_by_name(name)),
         }
     }
 
-    pub(crate) fn entry_by_id(
-        &self,
-        pkg_id: &PackageId,
-    ) -> Option<(PackageState, Arc<PackageManifest>)> {
+    pub(crate) fn entry_by_id(&self, pkg_id: &PackageId) -> Option<PackageDbEntry> {
         self.persist_db
             .packages
             .get(pkg_id.name())
             .and_then(|version_map| version_map.versions.get(pkg_id.version()))
-            .map(|entry| (entry.state, Arc::clone(&entry.manifest)))
+            .map(Into::into)
     }
 
     pub(crate) fn entries_by_name(
         &'a self,
         pkg_name: &PackageName,
-    ) -> impl Iterator<Item = (PackageState, Arc<PackageManifest>)> + 'a {
+    ) -> impl Iterator<Item = PackageDbEntry> + 'a {
         self.persist_db
             .packages
             .get(pkg_name)
             .into_iter()
-            .flat_map(|version_map| {
-                version_map
-                    .versions
-                    .values()
-                    .map(|packages| (packages.state, Arc::clone(&packages.manifest)))
-            })
+            .flat_map(|version_map| version_map.versions.values().map(Into::into))
     }
 
     fn entry_mut(&mut self, pkg_id: &PackageId) -> Option<&mut PersistedPackageEntry> {
@@ -181,7 +188,11 @@ impl<'a> PackageDatabase<'a> {
         version_map.versions.get_mut(pkg_id.version())
     }
 
-    fn insert_entry(&mut self, state: PackageState, manifest: Arc<PackageManifest>) {
+    fn insert_entry(
+        &mut self,
+        installation_state: InstallationState,
+        manifest: Arc<PackageManifest>,
+    ) {
         let pkg_name = manifest.name.clone();
         let pkg_version = manifest.version.clone();
         self.persist_db
@@ -189,7 +200,13 @@ impl<'a> PackageDatabase<'a> {
             .entry(pkg_name)
             .or_default()
             .versions
-            .insert(pkg_version, PersistedPackageEntry { state, manifest });
+            .insert(
+                pkg_version,
+                PersistedPackageEntry {
+                    installation_state,
+                    manifest,
+                },
+            );
     }
 
     fn remove_entry(&mut self, pkg_id: &PackageId) -> Option<PersistedPackageEntry> {
@@ -207,17 +224,24 @@ impl<'a> PackageDatabase<'a> {
         let mut installed_other_versions = vec![];
         let mut incomplete_installs = vec![];
         let mut incomplete_uninstalls = vec![];
-        for (state, m) in self.entries_by_name(&pkg_name) {
-            if m.version == pkg_version {
-                match state {
-                    PackageState::Installed => return Installability::AlreadyInstalled,
-                    PackageState::IncompleteInstall | PackageState::IncompleteUninstall => {}
+        for entry in self.entries_by_name(&pkg_name) {
+            if entry.manifest.version == pkg_version {
+                match entry.installation_state {
+                    InstallationState::Installed => return Installability::AlreadyInstalled,
+                    InstallationState::IncompleteInstall
+                    | InstallationState::IncompleteUninstall => {}
                 }
             } else {
-                match state {
-                    PackageState::Installed => installed_other_versions.push(m.id()),
-                    PackageState::IncompleteInstall => incomplete_installs.push(m.id()),
-                    PackageState::IncompleteUninstall => incomplete_uninstalls.push(m.id()),
+                match entry.installation_state {
+                    InstallationState::Installed => {
+                        installed_other_versions.push(entry.manifest.id());
+                    }
+                    InstallationState::IncompleteInstall => {
+                        incomplete_installs.push(entry.manifest.id());
+                    }
+                    InstallationState::IncompleteUninstall => {
+                        incomplete_uninstalls.push(entry.manifest.id());
+                    }
                 }
             }
         }
@@ -247,7 +271,7 @@ impl<'a> PackageDatabase<'a> {
         for op in plan.ops() {
             match op {
                 ExecutionPlanOp::Install(InstallOp { manifest, .. }) => {
-                    self.insert_entry(PackageState::IncompleteInstall, Arc::clone(manifest));
+                    self.insert_entry(InstallationState::IncompleteInstall, Arc::clone(manifest));
                 }
                 ExecutionPlanOp::Uninstall(UninstallOp {
                     pkg_id, conditions, ..
@@ -255,7 +279,7 @@ impl<'a> PackageDatabase<'a> {
                     let entry = self
                         .entry_mut(pkg_id)
                         .context(EntryNotFoundSnafu { pkg_id })?;
-                    entry.state = PackageState::IncompleteUninstall;
+                    entry.installation_state = InstallationState::IncompleteUninstall;
                 }
                 ExecutionPlanOp::Uninstall(_) | ExecutionPlanOp::Skip(_) => {}
             }
@@ -273,11 +297,11 @@ impl<'a> PackageDatabase<'a> {
             .entry_mut(pkg_id)
             .context(EntryNotFoundSnafu { pkg_id })?;
         snafu::ensure!(
-            entry.state == PackageState::IncompleteInstall,
+            entry.installation_state == InstallationState::IncompleteInstall,
             UnexpectedStateSnafu {
                 pkg_id,
-                expected: PackageState::IncompleteInstall,
-                actual: entry.state,
+                expected: InstallationState::IncompleteInstall,
+                actual: entry.installation_state,
             }
         );
         for replacing_pkg_id in replacing_pkg_ids {
@@ -287,18 +311,19 @@ impl<'a> PackageDatabase<'a> {
                     pkg_id: replacing_pkg_id,
                 })?;
             snafu::ensure!(
-                entry.state == PackageState::Installed,
+                entry.installation_state == InstallationState::Installed,
                 UnexpectedStateSnafu {
                     pkg_id: replacing_pkg_id,
-                    expected: PackageState::Installed,
-                    actual: entry.state,
+                    expected: InstallationState::Installed,
+                    actual: entry.installation_state,
                 }
             );
         }
 
-        self.entry_mut(pkg_id).unwrap().state = PackageState::Installed;
+        self.entry_mut(pkg_id).unwrap().installation_state = InstallationState::Installed;
         for replacing_pkg_id in replacing_pkg_ids {
-            self.entry_mut(replacing_pkg_id).unwrap().state = PackageState::IncompleteUninstall;
+            self.entry_mut(replacing_pkg_id).unwrap().installation_state =
+                InstallationState::IncompleteUninstall;
         }
 
         self.save()?;
@@ -320,15 +345,15 @@ impl<'a> PackageDatabase<'a> {
             .get_mut(pkg_id.version())
             .context(EntryNotFoundSnafu { pkg_id })?;
         snafu::ensure!(
-            entry.state == PackageState::IncompleteInstall,
+            entry.installation_state == InstallationState::IncompleteInstall,
             UnexpectedStateSnafu {
                 pkg_id,
-                expected: PackageState::IncompleteInstall,
-                actual: entry.state,
+                expected: InstallationState::IncompleteInstall,
+                actual: entry.installation_state,
             }
         );
         if cleanup_required {
-            entry.state = PackageState::IncompleteUninstall;
+            entry.installation_state = InstallationState::IncompleteUninstall;
         } else {
             version_map.versions.remove(pkg_id.version()).unwrap();
             if version_map.versions.is_empty() {
@@ -347,11 +372,11 @@ impl<'a> PackageDatabase<'a> {
             return Err(EntryNotFoundSnafu { pkg_id }.build());
         };
         snafu::ensure!(
-            entry.state == PackageState::IncompleteUninstall,
+            entry.installation_state == InstallationState::IncompleteUninstall,
             UnexpectedStateSnafu {
                 pkg_id,
-                expected: PackageState::IncompleteUninstall,
-                actual: entry.state,
+                expected: InstallationState::IncompleteUninstall,
+                actual: entry.installation_state,
             }
         );
         self.remove_entry(pkg_id);
@@ -383,20 +408,23 @@ mod tests {
     use super::*;
     use crate::{db::DbLockFile, engine::UninstallReason, util::testing};
 
-    fn get_entry_state(db: &PackageDatabase<'_>, id: &PackageId) -> Option<PackageState> {
-        let (state, manifest) = db.entry_by_id(id)?;
-        assert_eq!(manifest.id(), *id);
-        Some(state)
+    fn get_entry_installation_state(
+        db: &PackageDatabase<'_>,
+        id: &PackageId,
+    ) -> Option<InstallationState> {
+        let entry = db.entry_by_id(id)?;
+        assert_eq!(entry.manifest.id(), *id);
+        Some(entry.installation_state)
     }
 
     fn get_persisted_state(
         app_dirs: &AppDirs,
         lock_file: &mut DbLockFile,
         id: &PackageId,
-    ) -> Option<PackageState> {
+    ) -> Option<InstallationState> {
         let lock_file_guard = lock_file.try_acquire().unwrap();
         let db = PackageDatabase::load(app_dirs, lock_file_guard).unwrap();
-        get_entry_state(&db, id)
+        get_entry_installation_state(&db, id)
     }
 
     fn with_db<F, R>(app_dirs: &AppDirs, lock_file: &mut DbLockFile, f: F) -> R
@@ -413,8 +441,8 @@ mod tests {
         app_dirs: &AppDirs,
         lock_file: &mut DbLockFile,
         id: &PackageId,
-        before_state: Option<PackageState>,
-        after_state: Option<PackageState>,
+        before_state: Option<InstallationState>,
+        after_state: Option<InstallationState>,
         f: F,
     ) where
         F: FnOnce(&mut PackageDatabase<'_>),
@@ -427,7 +455,11 @@ mod tests {
     fn assert_statuses_change<F>(
         app_dirs: &AppDirs,
         lock_file: &mut DbLockFile,
-        conditions: &[(&PackageId, Option<PackageState>, Option<PackageState>)],
+        conditions: &[(
+            &PackageId,
+            Option<InstallationState>,
+            Option<InstallationState>,
+        )],
         f: F,
     ) where
         F: FnOnce(&mut PackageDatabase<'_>),
@@ -438,11 +470,11 @@ mod tests {
 
         with_db(app_dirs, lock_file, |db| {
             for (id, before_state, _) in conditions {
-                assert_eq!(get_entry_state(db, id), *before_state);
+                assert_eq!(get_entry_installation_state(db, id), *before_state);
             }
             f(db);
             for (id, _, after_state) in conditions {
-                assert_eq!(get_entry_state(db, id), *after_state);
+                assert_eq!(get_entry_installation_state(db, id), *after_state);
             }
         });
 
@@ -472,10 +504,10 @@ mod tests {
             &[
                 (
                     &installed_pkg_id,
-                    Some(PackageState::Installed),
-                    Some(PackageState::IncompleteUninstall),
+                    Some(InstallationState::Installed),
+                    Some(InstallationState::IncompleteUninstall),
                 ),
-                (&pkg_id, None, Some(PackageState::Installed)),
+                (&pkg_id, None, Some(InstallationState::Installed)),
             ],
             |db| {
                 let plan = testing::make_install_plan(&manifest, replacing_pkg_ids.clone());
@@ -500,8 +532,8 @@ mod tests {
             &app_dirs,
             &mut lock_file,
             &pkg_id,
-            Some(PackageState::IncompleteInstall),
-            Some(PackageState::IncompleteInstall),
+            Some(InstallationState::IncompleteInstall),
+            Some(InstallationState::IncompleteInstall),
             |db| {
                 let plan = testing::make_install_plan(&manifest, vec![]);
                 db.apply_plan_transaction(&plan).unwrap();
@@ -529,18 +561,18 @@ mod tests {
             &[
                 (
                     &installed_manifest.id(),
-                    Some(PackageState::Installed),
-                    Some(PackageState::Installed),
+                    Some(InstallationState::Installed),
+                    Some(InstallationState::Installed),
                 ),
                 (
                     &incomplete_install_manifest.id(),
-                    Some(PackageState::IncompleteInstall),
-                    Some(PackageState::IncompleteInstall),
+                    Some(InstallationState::IncompleteInstall),
+                    Some(InstallationState::IncompleteInstall),
                 ),
                 (
                     &incomplete_uninstall_manifest.id(),
-                    Some(PackageState::IncompleteUninstall),
-                    Some(PackageState::IncompleteUninstall),
+                    Some(InstallationState::IncompleteUninstall),
+                    Some(InstallationState::IncompleteUninstall),
                 ),
             ],
             |db| {
@@ -586,7 +618,7 @@ mod tests {
             &app_dirs,
             &mut lock_file,
             &pkg_id,
-            Some(PackageState::IncompleteInstall),
+            Some(InstallationState::IncompleteInstall),
             None,
             |db| {
                 db.cancel_install(&pkg_id, false).unwrap();
@@ -609,8 +641,8 @@ mod tests {
             &app_dirs,
             &mut lock_file,
             &pkg_id,
-            Some(PackageState::IncompleteInstall),
-            Some(PackageState::IncompleteUninstall),
+            Some(InstallationState::IncompleteInstall),
+            Some(InstallationState::IncompleteUninstall),
             |db| {
                 db.cancel_install(&pkg_id, true).unwrap();
             },
@@ -632,7 +664,7 @@ mod tests {
             &app_dirs,
             &mut lock_file,
             &pkg_id,
-            Some(PackageState::Installed),
+            Some(InstallationState::Installed),
             None,
             |db| {
                 let plan = testing::make_uninstall_plan(&pkg_id, vec![]);
@@ -664,13 +696,13 @@ mod tests {
             &[
                 (
                     &installed_pkg_id,
-                    Some(PackageState::Installed),
-                    Some(PackageState::Installed),
+                    Some(InstallationState::Installed),
+                    Some(InstallationState::Installed),
                 ),
                 (
                     &pkg_id,
-                    Some(PackageState::IncompleteInstall),
-                    Some(PackageState::IncompleteInstall),
+                    Some(InstallationState::IncompleteInstall),
+                    Some(InstallationState::IncompleteInstall),
                 ),
             ],
             |db| {
@@ -698,8 +730,8 @@ mod tests {
             &app_dirs,
             &mut lock_file,
             &pkg_id,
-            Some(PackageState::IncompleteInstall),
-            Some(PackageState::IncompleteInstall),
+            Some(InstallationState::IncompleteInstall),
+            Some(InstallationState::IncompleteInstall),
             |db| {
                 db.simulate_save_failure = true;
                 let err = db.cancel_install(&pkg_id, false).unwrap_err();
@@ -723,8 +755,8 @@ mod tests {
             &app_dirs,
             &mut lock_file,
             &pkg_id,
-            Some(PackageState::IncompleteInstall),
-            Some(PackageState::IncompleteInstall),
+            Some(InstallationState::IncompleteInstall),
+            Some(InstallationState::IncompleteInstall),
             |db| {
                 db.simulate_save_failure = true;
                 let err = db.cancel_install(&pkg_id, true).unwrap_err();
@@ -748,8 +780,8 @@ mod tests {
             &app_dirs,
             &mut lock_file,
             &pkg_id,
-            Some(PackageState::IncompleteUninstall),
-            Some(PackageState::IncompleteUninstall),
+            Some(InstallationState::IncompleteUninstall),
+            Some(InstallationState::IncompleteUninstall),
             |db| {
                 db.simulate_save_failure = true;
                 let err = db.complete_uninstall(&pkg_id).unwrap_err();

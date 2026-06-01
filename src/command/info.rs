@@ -11,8 +11,9 @@ use crate::{
             ScopeResultErrorExt as _,
         },
     },
+    db::PackageDbEntry,
     engine,
-    package::{PackageManifest, PackageSource, PackageSpec, PackageState},
+    package::{PackageManifest, PackageSource, PackageSpec},
 };
 
 #[derive(Debug)]
@@ -74,14 +75,14 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
 
     let mut res = Ok(());
     for pkg_spec in pkg_specs {
-        let mut manifests = db.entries_by_spec(pkg_spec).peekable();
-        if manifests.peek().is_none() {
+        let mut entries = db.entries_by_spec(pkg_spec).peekable();
+        if entries.peek().is_none() {
             res = Err(reporter.report_error(NoMatchingPackageSnafu { pkg_spec }.build()));
             continue;
         }
 
-        for (state, manifest) in manifests {
-            render_package_info(io::stdout().lock(), state, &manifest)
+        for entry in entries {
+            render_package_info(io::stdout().lock(), &entry)
                 .context(WriteInfoSnafu)
                 .report_error(reporter)?;
         }
@@ -90,11 +91,7 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
     res
 }
 
-fn render_package_info<W>(
-    mut writer: W,
-    state: PackageState,
-    manifest: &PackageManifest,
-) -> io::Result<()>
+fn render_package_info<W>(mut writer: W, entry: &PackageDbEntry) -> io::Result<()>
 where
     W: io::Write,
 {
@@ -109,13 +106,13 @@ where
         repository,
         license,
         sources,
-    } = manifest;
+    } = &*entry.manifest;
     writeln!(writer, "Name: {name}")?;
     if let Some(display_name) = display_name {
         writeln!(writer, "Display Name: {display_name}")?;
     }
     writeln!(writer, "Version: {version}")?;
-    writeln!(writer, "State: {state}")?;
+    writeln!(writer, "Installation State: {}", entry.installation_state)?;
     if let Some(description) = description {
         writeln!(writer, "Description: {description}")?;
     }
@@ -169,15 +166,24 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
-    use crate::util::{macros::concat_line, testing};
+    use crate::{
+        package::InstallationState,
+        util::{macros::concat_line, testing},
+    };
 
     #[test]
     fn render_package_info_prints_all_present_fields() {
         let manifest = testing::make_manifest("example-font@0.1.0");
         let mut output = Vec::new();
 
-        render_package_info(&mut output, PackageState::Installed, &manifest).unwrap();
+        let entry = PackageDbEntry {
+            installation_state: InstallationState::Installed,
+            manifest: Arc::clone(&manifest),
+        };
+        render_package_info(&mut output, &entry).unwrap();
 
         let output = String::from_utf8(output).unwrap();
         assert_eq!(
@@ -185,7 +191,7 @@ mod tests {
             concat_line!(
                 "Name: example-font",
                 "Version: 0.1.0",
-                "State: installed",
+                "Installation State: installed",
                 "Sources[0]:",
                 "  - URL: https://example.com/example-font-0.1.0.zip",
                 "  - Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -223,7 +229,11 @@ exclude = ["fonts/exclude.ttf"]
         .unwrap();
         let mut output = Vec::new();
 
-        render_package_info(&mut output, PackageState::IncompleteInstall, &manifest).unwrap();
+        let entry = PackageDbEntry {
+            installation_state: InstallationState::IncompleteInstall,
+            manifest: Arc::new(manifest),
+        };
+        render_package_info(&mut output, &entry).unwrap();
 
         let output = String::from_utf8(output).unwrap();
         assert_eq!(
@@ -232,7 +242,7 @@ exclude = ["fonts/exclude.ttf"]
                 "Name: example-font",
                 "Display Name: Example Font",
                 "Version: 0.1.0",
-                "State: incomplete-install",
+                "Installation State: incomplete-install",
                 "Description: Example font family for UI and coding",
                 "Aliases:",
                 "  - Example Font UI",

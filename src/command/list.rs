@@ -1,4 +1,4 @@
-use std::{io, sync::Arc};
+use std::io;
 
 use snafu::{ResultExt as _, Snafu};
 
@@ -11,8 +11,9 @@ use crate::{
             ScopeResultErrorExt as _,
         },
     },
+    db::PackageDbEntry,
     engine,
-    package::{PackageId, PackageManifest, PackageState},
+    package::InstallationState,
 };
 
 #[derive(Debug)]
@@ -89,48 +90,37 @@ fn render_entries<I>(
     render: &dyn EntryRender,
 ) -> io::Result<()>
 where
-    I: IntoIterator<Item = (PackageState, Arc<PackageManifest>)>,
+    I: IntoIterator<Item = PackageDbEntry>,
 {
-    for (state, manifest) in entries {
-        let id = manifest.id();
-        render.render(writer, &id, state)?;
+    for entry in entries {
+        render.render(writer, &entry)?;
     }
     Ok(())
 }
 
 trait EntryRender {
-    fn render(
-        &self,
-        writer: &mut dyn io::Write,
-        id: &PackageId,
-        state: PackageState,
-    ) -> io::Result<()>;
+    fn render(&self, writer: &mut dyn io::Write, entry: &PackageDbEntry) -> io::Result<()>;
 }
 
 struct AllEntryRender {}
 
 impl EntryRender for AllEntryRender {
-    fn render(
-        &self,
-        writer: &mut dyn io::Write,
-        id: &PackageId,
-        state: PackageState,
-    ) -> io::Result<()> {
-        writeln!(writer, "{id} ({state})")
+    fn render(&self, writer: &mut dyn io::Write, entry: &PackageDbEntry) -> io::Result<()> {
+        writeln!(
+            writer,
+            "{} ({})",
+            entry.manifest.id(),
+            entry.installation_state,
+        )
     }
 }
 
 struct InstalledEntryRender {}
 
 impl EntryRender for InstalledEntryRender {
-    fn render(
-        &self,
-        writer: &mut dyn io::Write,
-        id: &PackageId,
-        state: PackageState,
-    ) -> io::Result<()> {
-        if state == PackageState::Installed {
-            writeln!(writer, "{id}")?;
+    fn render(&self, writer: &mut dyn io::Write, entry: &PackageDbEntry) -> io::Result<()> {
+        if entry.installation_state == InstallationState::Installed {
+            writeln!(writer, "{}", entry.manifest.id())?;
         }
         Ok(())
     }
@@ -141,20 +131,20 @@ mod tests {
     use super::*;
     use crate::util::{macros::concat_line, testing};
 
-    fn make_entries() -> Vec<(PackageState, Arc<PackageManifest>)> {
+    fn make_entries() -> Vec<PackageDbEntry> {
         vec![
-            (
-                PackageState::Installed,
-                testing::make_manifest("installed-font@1.0.0"),
-            ),
-            (
-                PackageState::IncompleteInstall,
-                testing::make_manifest("incomplete-install-font@1.1.0"),
-            ),
-            (
-                PackageState::IncompleteUninstall,
-                testing::make_manifest("incomplete-uninstall-font@1.2.0"),
-            ),
+            PackageDbEntry {
+                installation_state: InstallationState::Installed,
+                manifest: testing::make_manifest("installed-font@1.0.0"),
+            },
+            PackageDbEntry {
+                installation_state: InstallationState::IncompleteInstall,
+                manifest: testing::make_manifest("incomplete-install-font@1.1.0"),
+            },
+            PackageDbEntry {
+                installation_state: InstallationState::IncompleteUninstall,
+                manifest: testing::make_manifest("incomplete-uninstall-font@1.2.0"),
+            },
         ]
     }
 

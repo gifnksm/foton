@@ -15,7 +15,7 @@ use crate::{
         InstallTargetSource, ResolvedInstallTarget, ResolvedUninstallTarget, SkipOp, UninstallOp,
         UninstallReason,
     },
-    package::{PackageDirs, PackageId, PackageManifest, PackageState},
+    package::{InstallationState, PackageDirs, PackageId, PackageManifest},
     registry::{RegistryId, RegistryIndex, RegistrySource, RegistrySpec},
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
@@ -233,12 +233,12 @@ pub(crate) fn make_uninstall_plan(
 pub(crate) fn mark_as_state(
     db: &mut PackageDatabase<'_>,
     manifest: &Arc<PackageManifest>,
-    state: PackageState,
+    state: InstallationState,
 ) {
     match state {
-        PackageState::Installed => mark_as_installed(db, manifest),
-        PackageState::IncompleteInstall => mark_as_incomplete_install(db, manifest),
-        PackageState::IncompleteUninstall => mark_as_incomplete_uninstall(db, manifest),
+        InstallationState::Installed => mark_as_installed(db, manifest),
+        InstallationState::IncompleteInstall => mark_as_incomplete_install(db, manifest),
+        InstallationState::IncompleteUninstall => mark_as_incomplete_uninstall(db, manifest),
     }
 }
 
@@ -250,8 +250,8 @@ pub(crate) fn mark_as_incomplete_install(
     let plan = make_install_plan(manifest, vec![]);
     db.apply_plan_transaction(&plan).unwrap();
     assert_eq!(
-        db.entry_by_id(&pkg_id).unwrap().0,
-        PackageState::IncompleteInstall
+        db.entry_by_id(&pkg_id).unwrap().installation_state,
+        InstallationState::IncompleteInstall
     );
 }
 
@@ -260,7 +260,10 @@ pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &Arc<Pac
     let plan = make_install_plan(manifest, vec![]);
     db.apply_plan_transaction(&plan).unwrap();
     db.complete_install(&pkg_id, &[]).unwrap();
-    assert_eq!(db.entry_by_id(&pkg_id).unwrap().0, PackageState::Installed);
+    assert_eq!(
+        db.entry_by_id(&pkg_id).unwrap().installation_state,
+        InstallationState::Installed
+    );
 }
 
 pub(crate) fn mark_as_incomplete_uninstall(
@@ -274,8 +277,8 @@ pub(crate) fn mark_as_incomplete_uninstall(
     let plan = make_uninstall_plan(&manifest.id(), vec![]);
     db.apply_plan_transaction(&plan).unwrap();
     assert_eq!(
-        db.entry_by_id(&pkg_id).unwrap().0,
-        PackageState::IncompleteUninstall
+        db.entry_by_id(&pkg_id).unwrap().installation_state,
+        InstallationState::IncompleteUninstall
     );
 }
 

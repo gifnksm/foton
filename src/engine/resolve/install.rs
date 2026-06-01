@@ -17,7 +17,7 @@ use crate::{
         },
     },
     db::PackageDatabase,
-    package::{PackageId, PackageManifest, PackageName, PackageSpec, PackageState},
+    package::{InstallationState, PackageId, PackageManifest, PackageName, PackageSpec},
     registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySpec},
     util::macros::concat_line,
 };
@@ -187,7 +187,9 @@ where
 fn resolve_installed_package(db: &PackageDatabase<'_>, pkg_spec: &PackageSpec) -> ResolveState {
     let installed_pkg = db
         .entries_by_spec(pkg_spec)
-        .filter_map(|(state, manifest)| (state == PackageState::Installed).then_some(manifest))
+        .filter_map(|entry| {
+            (entry.installation_state == InstallationState::Installed).then_some(entry.manifest)
+        })
         .max_by(|a, b| a.version.cmp(&b.version));
     if let Some(manifest) = installed_pkg {
         ResolveState::Resolved {

@@ -142,7 +142,7 @@ mod tests {
             ExecutionCondition, ExecutionResult, InstallReason, SkipOp, SkipReason,
             UninstallExecution, UninstallReason,
         },
-        package::{PackageId, PackageState},
+        package::{InstallationState, PackageId},
         util::testing::{self, TempdirContext, TestScope},
     };
 
@@ -207,28 +207,24 @@ mod tests {
                     .iter()
                     .any(|execution| matches!(execution, Execution::Uninstall(_)))
             );
+            let db = db.lock().unwrap();
             assert_eq!(
-                db.lock()
-                    .unwrap()
-                    .entry_by_id(&install_pkg_id)
-                    .map(|(state, _)| state),
-                Some(PackageState::IncompleteInstall),
+                db.entry_by_id(&install_pkg_id).unwrap().installation_state,
+                InstallationState::IncompleteInstall,
             );
             assert_eq!(
-                db.lock()
+                db.entry_by_id(&uninstall_pkg_id)
                     .unwrap()
-                    .entry_by_id(&uninstall_pkg_id)
-                    .map(|(state, _)| state),
-                Some(PackageState::IncompleteUninstall),
+                    .installation_state,
+                InstallationState::IncompleteUninstall,
             );
             assert_eq!(
-                db.lock()
+                db.entry_by_id(&conditional_uninstall_pkg_id)
                     .unwrap()
-                    .entry_by_id(&conditional_uninstall_pkg_id)
-                    .map(|(state, _)| state),
-                Some(PackageState::Installed),
+                    .installation_state,
+                InstallationState::Installed,
             );
-            assert!(db.lock().unwrap().entry_by_id(&skipped_pkg_id).is_none());
+            assert!(db.entry_by_id(&skipped_pkg_id).is_none());
         });
     }
 
@@ -261,8 +257,9 @@ mod tests {
                 db.lock()
                     .unwrap()
                     .entry_by_id(&pkg_id)
-                    .map(|(state, _)| state),
-                Some(PackageState::IncompleteUninstall),
+                    .unwrap()
+                    .installation_state,
+                InstallationState::IncompleteUninstall,
             );
         });
     }

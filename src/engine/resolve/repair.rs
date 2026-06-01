@@ -6,7 +6,7 @@ use crate::{
         reporter::{NeverReport, ReportScope, SubReportScope},
     },
     db::PackageDatabase,
-    package::{PackageId, PackageSpec, PackageState},
+    package::{InstallationState, PackageId, PackageSpec},
 };
 
 #[derive(Debug)]
@@ -53,11 +53,11 @@ where
         RepairResolveScope::start_with_report(cx, format_args!("Resolving repair targets..."));
     let mut targets = db
         .entries()
-        .filter_map(|(state, manifest)| match state {
-            PackageState::Installed => None,
-            PackageState::IncompleteInstall | PackageState::IncompleteUninstall => {
+        .filter_map(|entry| match entry.installation_state {
+            InstallationState::Installed => None,
+            InstallationState::IncompleteInstall | InstallationState::IncompleteUninstall => {
                 Some(ResolvedRepairTarget::Uninstall {
-                    pkg_id: manifest.id(),
+                    pkg_id: entry.manifest.id(),
                 })
             }
         })
@@ -92,12 +92,12 @@ fn resolve_spec(db: &PackageDatabase<'_>, pkg_spec: &PackageSpec) -> Vec<Resolve
     }
 
     let mut targets = vec![];
-    for (state, manifest) in candidates {
-        match state {
-            PackageState::Installed => {}
-            PackageState::IncompleteInstall | PackageState::IncompleteUninstall => {
+    for entry in candidates {
+        match entry.installation_state {
+            InstallationState::Installed => {}
+            InstallationState::IncompleteInstall | InstallationState::IncompleteUninstall => {
                 targets.push(ResolvedRepairTarget::Uninstall {
-                    pkg_id: manifest.id(),
+                    pkg_id: entry.manifest.id(),
                 });
             }
         }
