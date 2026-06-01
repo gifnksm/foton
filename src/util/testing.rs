@@ -259,7 +259,7 @@ pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &Arc<Pac
     let pkg_id = manifest.id();
     let plan = make_install_plan(manifest, vec![]);
     db.apply_plan_transaction(&plan).unwrap();
-    db.complete_install(&pkg_id, &[]).unwrap();
+    db.complete_install(&pkg_id, &[], &[]).unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().installation_state,
         InstallationState::Installed
@@ -273,7 +273,7 @@ pub(crate) fn mark_as_incomplete_uninstall(
     let pkg_id = manifest.id();
     let plan = make_install_plan(manifest, vec![]);
     db.apply_plan_transaction(&plan).unwrap();
-    db.complete_install(&pkg_id, &[]).unwrap();
+    db.complete_install(&pkg_id, &[], &[]).unwrap();
     let plan = make_uninstall_plan(&manifest.id(), vec![]);
     db.apply_plan_transaction(&plan).unwrap();
     assert_eq!(

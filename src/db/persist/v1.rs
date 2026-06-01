@@ -27,7 +27,12 @@ pub(in crate::db) mod types {
 
     use serde::{Deserialize, Serialize};
 
-    use crate::package::{InstallationState, PackageManifest, PackageName, PackageVersion};
+    use crate::{
+        package::{
+            ActivationState, InstallationState, PackageManifest, PackageName, PackageVersion,
+        },
+        util::path::FileName,
+    };
 
     #[derive(Debug, Default, Clone, Serialize, Deserialize)]
     pub(in crate::db) struct PersistedPackageDb {
@@ -42,6 +47,14 @@ pub(in crate::db) mod types {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub(in crate::db) struct PersistedPackageEntry {
         pub(in crate::db) installation_state: InstallationState,
+        pub(in crate::db) activation_state: ActivationState,
         pub(in crate::db) manifest: Arc<PackageManifest>,
+        pub(in crate::db) font_entries: Vec<PersistedFontEntry>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub(in crate::db) struct PersistedFontEntry {
+        pub(in crate::db) title: String,
+        pub(in crate::db) file_name: FileName,
     }
 }
