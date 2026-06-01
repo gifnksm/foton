@@ -4,7 +4,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
 pub(crate) struct FileName(OsString);
 
 impl FileName {
@@ -29,6 +32,16 @@ impl FileName {
 
     pub(crate) fn display(&self) -> os_str::Display<'_> {
         self.0.display()
+    }
+}
+
+impl<'de> Deserialize<'de> for FileName {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = OsString::deserialize(deserializer)?;
+        FileName::new(s).ok_or_else(|| serde::de::Error::custom("invalid file name"))
     }
 }
 

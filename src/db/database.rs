@@ -11,10 +11,15 @@ use tempfile::NamedTempFile;
 use crate::{
     db::{
         DbLockFileGuard,
-        persist::{self, PersistError, PersistedPackageDb, PersistedPackageEntry},
+        persist::{
+            self, PersistError, PersistedFontEntry, PersistedPackageDb, PersistedPackageEntry,
+        },
     },
     engine::{ExecutionPlan, ExecutionPlanOp, InstallOp, UninstallOp},
-    package::{InstallationState, PackageId, PackageManifest, PackageName, PackageSpec},
+    package::{
+        ActivationState, FontEntry, InstallationState, PackageId, PackageManifest, PackageName,
+        PackageSpec,
+    },
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
 
@@ -58,6 +63,15 @@ impl From<&PersistedPackageEntry> for PackageDbEntry {
         Self {
             installation_state: entry.installation_state,
             manifest: Arc::clone(&entry.manifest),
+        }
+    }
+}
+
+impl From<&FontEntry> for PersistedFontEntry {
+    fn from(value: &FontEntry) -> Self {
+        Self {
+            title: value.title().to_owned(),
+            file_name: value.file_name().clone(),
         }
     }
 }
@@ -188,25 +202,15 @@ impl<'a> PackageDatabase<'a> {
         version_map.versions.get_mut(pkg_id.version())
     }
 
-    fn insert_entry(
-        &mut self,
-        installation_state: InstallationState,
-        manifest: Arc<PackageManifest>,
-    ) {
-        let pkg_name = manifest.name.clone();
-        let pkg_version = manifest.version.clone();
+    fn insert_entry(&mut self, entry: PersistedPackageEntry) {
+        let pkg_name = entry.manifest.name.clone();
+        let pkg_version = entry.manifest.version.clone();
         self.persist_db
             .packages
             .entry(pkg_name)
             .or_default()
             .versions
-            .insert(
-                pkg_version,
-                PersistedPackageEntry {
-                    installation_state,
-                    manifest,
-                },
-            );
+            .insert(pkg_version, entry);
     }
 
     fn remove_entry(&mut self, pkg_id: &PackageId) -> Option<PersistedPackageEntry> {
@@ -271,7 +275,12 @@ impl<'a> PackageDatabase<'a> {
         for op in plan.ops() {
             match op {
                 ExecutionPlanOp::Install(InstallOp { manifest, .. }) => {
-                    self.insert_entry(InstallationState::IncompleteInstall, Arc::clone(manifest));
+                    self.insert_entry(PersistedPackageEntry {
+                        installation_state: InstallationState::IncompleteInstall,
+                        activation_state: ActivationState::Inactive,
+                        manifest: Arc::clone(manifest),
+                        font_entries: vec![],
+                    });
                 }
                 ExecutionPlanOp::Uninstall(UninstallOp {
                     pkg_id, conditions, ..
@@ -291,6 +300,7 @@ impl<'a> PackageDatabase<'a> {
     pub(crate) fn complete_install(
         &mut self,
         pkg_id: &PackageId,
+        font_entries: &[FontEntry],
         replacing_pkg_ids: &[PackageId],
     ) -> Result<(), PackageDatabaseError> {
         let entry = self
@@ -320,7 +330,10 @@ impl<'a> PackageDatabase<'a> {
             );
         }
 
-        self.entry_mut(pkg_id).unwrap().installation_state = InstallationState::Installed;
+        let db_entry = self.entry_mut(pkg_id).unwrap();
+        db_entry.installation_state = InstallationState::Installed;
+        db_entry.activation_state = ActivationState::Active;
+        db_entry.font_entries = font_entries.iter().map(Into::into).collect();
         for replacing_pkg_id in replacing_pkg_ids {
             self.entry_mut(replacing_pkg_id).unwrap().installation_state =
                 InstallationState::IncompleteUninstall;
@@ -512,7 +525,8 @@ mod tests {
             |db| {
                 let plan = testing::make_install_plan(&manifest, replacing_pkg_ids.clone());
                 db.apply_plan_transaction(&plan).unwrap();
-                db.complete_install(&pkg_id, &replacing_pkg_ids).unwrap();
+                db.complete_install(&pkg_id, &[], &replacing_pkg_ids)
+                    .unwrap();
             },
         );
     }
@@ -708,7 +722,7 @@ mod tests {
             |db| {
                 db.simulate_save_failure = true;
                 let err = db
-                    .complete_install(&pkg_id, &replacing_pkg_ids)
+                    .complete_install(&pkg_id, &[], &replacing_pkg_ids)
                     .unwrap_err();
                 assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
             },

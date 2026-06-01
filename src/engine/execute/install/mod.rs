@@ -179,7 +179,7 @@ where
         let registration_guard =
             registration::register_package_fonts(&cx, self.cleanup_tracker.clone(), &package)?;
 
-        self.db_guard.complete_install()?;
+        self.db_guard.complete_install(package.entries())?;
 
         pkg_dirs_guard.disarm();
         registration_guard.disarm();

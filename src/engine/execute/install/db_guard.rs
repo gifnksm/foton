@@ -14,7 +14,7 @@ use crate::{
     },
     db::{PackageDatabase, PackageDatabaseError},
     engine::execute::install::CleanupTracker,
-    package::{InstallationState, PackageId, PackageManifest},
+    package::{FontEntry, InstallationState, PackageId, PackageManifest},
     util::macros::concat_line,
 };
 
@@ -120,9 +120,9 @@ impl<S> InstallDbGuard<'_, S>
 where
     S: ReportScope,
 {
-    pub(super) fn complete_install(&mut self) -> Result<(), S::Error> {
+    pub(super) fn complete_install(&mut self, font_entries: &[FontEntry]) -> Result<(), S::Error> {
         let mut db = self.db.lock().unwrap();
-        db.complete_install(&self.pkg_id, &self.replacing_pkg_ids)
+        db.complete_install(&self.pkg_id, font_entries, &self.replacing_pkg_ids)
             .context(CompleteInstallSnafu {
                 pkg_id: &self.pkg_id,
             })
@@ -300,7 +300,7 @@ mod tests {
             );
             let _request_cleanup = RequestCleanupOnDrop { cleanup_tracker };
 
-            let err = guard.complete_install().unwrap_err();
+            let err = guard.complete_install(&[]).unwrap_err();
             assert_matches!(err, TestError::Failed);
         }
 
@@ -331,7 +331,7 @@ mod tests {
             let db = Arc::new(Mutex::new(db));
             let cleanup_tracker = CleanupTracker::default();
             let mut guard = begin_install(&cx, db, cleanup_tracker, &manifest, replacing_pkg_ids);
-            guard.complete_install().unwrap();
+            guard.complete_install(&[]).unwrap();
         }
 
         {
