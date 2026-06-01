@@ -85,7 +85,7 @@ mod tests {
     use super::*;
     use crate::{
         cli::reporter::RootReportScope as _,
-        package::PackageState,
+        package::InstallationState,
         util::testing::{self, TempdirContext, TestScope},
     };
 
@@ -171,8 +171,14 @@ mod tests {
         let cx = TestScope::start(&cx);
 
         let pairs = [
-            (PackageState::IncompleteUninstall, "example-font-pu@0.1.0"),
-            (PackageState::IncompleteInstall, "example-font-pi@0.1.0"),
+            (
+                InstallationState::IncompleteUninstall,
+                "example-font-pu@0.1.0",
+            ),
+            (
+                InstallationState::IncompleteInstall,
+                "example-font-pi@0.1.0",
+            ),
         ];
         for (state, pkg_id) in pairs {
             let manifest = testing::make_manifest(pkg_id);

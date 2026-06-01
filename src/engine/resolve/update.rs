@@ -155,10 +155,12 @@ where
 }
 
 fn all_installed_packages(db: &PackageDatabase<'_>) -> Vec<PackageId> {
-    collect_latest_packages(
-        db.entries()
-            .filter_map(|(state, manifest)| state.is_installed().then(|| manifest.id())),
-    )
+    collect_latest_packages(db.entries().filter_map(|entry| {
+        entry
+            .installation_state
+            .is_installed()
+            .then(|| entry.manifest.id())
+    }))
     .into_values()
     .collect()
 }
@@ -171,10 +173,13 @@ fn resolve_installed_package<S>(
 where
     S: ReportScope,
 {
-    let latest_packages = collect_latest_packages(
-        db.entries_by_spec(pkg_spec)
-            .filter_map(|(state, manifest)| state.is_installed().then(|| manifest.id())),
-    );
+    let latest_packages =
+        collect_latest_packages(db.entries_by_spec(pkg_spec).filter_map(|entry| {
+            entry
+                .installation_state
+                .is_installed()
+                .then(|| entry.manifest.id())
+        }));
     if latest_packages.len() > 1 {
         return Err(cx.reporter().report_error(
             MultipleMatchingPackagesSnafu {

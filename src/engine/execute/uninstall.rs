@@ -14,7 +14,7 @@ use crate::{
     },
     db::{PackageDatabase, PackageDatabaseError},
     engine::{ExecutionCondition, ExecutionResult},
-    package::{self, PackageDirs, PackageId, PackageState},
+    package::{self, InstallationState, PackageDirs, PackageId},
     platform::windows::steps::unregistration,
     util::{fs::FsError, macros::concat_line},
 };
@@ -141,8 +141,8 @@ where
     {
         let db = db.lock().unwrap();
         assert_eq!(
-            db.entry_by_id(pkg_id).map(|(state, _)| state),
-            Some(PackageState::IncompleteUninstall)
+            db.entry_by_id(pkg_id).map(|entry| entry.installation_state),
+            Some(InstallationState::IncompleteUninstall)
         );
     }
 
@@ -176,9 +176,8 @@ mod tests {
     use super::*;
     use crate::{
         cli::reporter::RootReportScope as _,
-        db::PackageDatabase,
         engine,
-        package::{PackageId, PackageState},
+        package::{InstallationState, PackageId},
         util::testing::{self, TempdirContext, TestScope},
     };
 
@@ -192,10 +191,6 @@ mod tests {
     }
 
     static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| "example-font@0.1.0".parse().unwrap());
-
-    fn get_entry_state(db: &PackageDatabase<'_>, pkg_id: &PackageId) -> Option<PackageState> {
-        db.entry_by_id(pkg_id).map(|(state, _manifest)| state)
-    }
 
     #[test]
     #[should_panic(expected = "assertion `left == right` failed")]
@@ -231,7 +226,7 @@ mod tests {
 
         {
             let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            assert_eq!(get_entry_state(&db, &PKG_ID), None);
+            assert!(db.entry_by_id(&PKG_ID).is_none());
             assert!(!pkg_dirs.fonts_dir().exists());
             assert!(!pkg_dirs.version_dir().exists());
             assert!(!pkg_dirs.name_dir().exists());
@@ -264,8 +259,8 @@ mod tests {
         {
             let db = engine::load_database(&cx, &mut db_lock_file).unwrap();
             assert_eq!(
-                get_entry_state(&db, &PKG_ID),
-                Some(PackageState::IncompleteUninstall)
+                db.entry_by_id(&PKG_ID).unwrap().installation_state,
+                InstallationState::IncompleteUninstall,
             );
             assert!(!pkg_dirs.fonts_dir().exists());
             assert!(pkg_dirs.version_dir().exists());

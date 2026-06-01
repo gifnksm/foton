@@ -98,15 +98,15 @@ where
         [] => Ok(ResolvedUninstallTarget::AlreadyUninstalled {
             pkg_spec: pkg_spec.clone(),
         }),
-        [(_state, manifest)] => Ok(ResolvedUninstallTarget::Uninstall {
-            pkg_id: manifest.id(),
+        [entry] => Ok(ResolvedUninstallTarget::Uninstall {
+            pkg_id: entry.manifest.id(),
         }),
         _ => Err(cx.reporter().report_error(
             MultipleMatchingPackagesSnafu {
                 pkg_spec: pkg_spec.clone(),
                 pkg_ids: candidates
                     .into_iter()
-                    .map(|(_state, manifest)| manifest.id())
+                    .map(|entry| entry.manifest.id())
                     .collect::<Vec<_>>(),
             }
             .build(),
