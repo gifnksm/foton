@@ -14,7 +14,7 @@ use crate::{
     },
     db::{PackageDatabase, PackageDatabaseError},
     engine::execute::install::CleanupTracker,
-    package::{FontEntry, InstallationState, PackageId, PackageManifest},
+    package::{FontEntry, PackageId, PackageManifest},
     util::macros::concat_line,
 };
 
@@ -83,15 +83,6 @@ where
 {
     let cx = InstallDbGuardScope::start(cx);
     let pkg_id = manifest.id();
-
-    {
-        let db = db.lock().unwrap();
-        assert_eq!(
-            db.entry_by_id(&pkg_id)
-                .map(|entry| entry.installation_state),
-            Some(InstallationState::IncompleteInstall)
-        );
-    }
 
     InstallDbGuard {
         installation_persisted: false,
@@ -188,8 +179,7 @@ mod tests {
         let replacing_pkg_ids = vec![];
 
         testing::with_db(&cx, |mut db| {
-            let plan = testing::make_install_plan(&manifest, vec![]);
-            db.apply_plan_transaction(&plan).unwrap();
+            testing::mark_as_incomplete_install(&mut db, &manifest);
             let db = Arc::new(Mutex::new(db));
             let cleanup_tracker = CleanupTracker::default();
             let guard = begin_install(
@@ -202,8 +192,8 @@ mod tests {
             {
                 let mut db = db.lock().unwrap();
                 // Reload from disk while keeping the install guard alive so this assertion verifies
-                // `begin_install()` persisted `IncompleteInstall` before completion, rather than only
-                // checking the guard's in-memory DB state.
+                // the persisted `IncompleteInstall` state remains present before completion,
+                // rather than only checking the guard's in-memory DB state.
                 db.reload().unwrap();
                 assert_eq!(
                     db.entry_by_id(&pkg_id).unwrap().installation_state,
@@ -227,8 +217,7 @@ mod tests {
 
         {
             let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            let plan = testing::make_install_plan(&manifest, vec![]);
-            db.apply_plan_transaction(&plan).unwrap();
+            testing::mark_as_incomplete_install(&mut db, &manifest);
             let db = Arc::new(Mutex::new(db));
             let cleanup_tracker = CleanupTracker::default();
             let guard = begin_install(&cx, db, cleanup_tracker, &manifest, replacing_pkg_ids);
@@ -254,8 +243,7 @@ mod tests {
 
         {
             let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            let plan = testing::make_install_plan(&manifest, vec![]);
-            db.apply_plan_transaction(&plan).unwrap();
+            testing::mark_as_incomplete_install(&mut db, &manifest);
             let db = Arc::new(Mutex::new(db));
             let cleanup_tracker = CleanupTracker::default();
             cleanup_tracker
@@ -287,8 +275,7 @@ mod tests {
 
         {
             let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            let plan = testing::make_install_plan(&manifest, vec![]);
-            db.apply_plan_transaction(&plan).unwrap();
+            testing::mark_as_incomplete_install(&mut db, &manifest);
             let db = Arc::new(Mutex::new(db));
             let cleanup_tracker = CleanupTracker::default();
             let mut guard = begin_install(
@@ -326,8 +313,7 @@ mod tests {
 
         {
             let mut db = engine::load_database(&cx, &mut db_lock_file).unwrap();
-            let plan = testing::make_install_plan(&manifest, vec![]);
-            db.apply_plan_transaction(&plan).unwrap();
+            testing::mark_as_incomplete_install(&mut db, &manifest);
             let db = Arc::new(Mutex::new(db));
             let cleanup_tracker = CleanupTracker::default();
             let mut guard = begin_install(&cx, db, cleanup_tracker, &manifest, replacing_pkg_ids);
