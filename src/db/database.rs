@@ -77,11 +77,10 @@ impl From<&FontEntry> for PersistedFontEntry {
 }
 
 #[derive(Debug)]
-pub(crate) struct PackageDatabase<'a> {
+pub(crate) struct PackageDatabase<'lock> {
     persist_path: AbsolutePath,
     persist_db: PersistedPackageDb,
-    saved_persist_db: PersistedPackageDb,
-    _lock_file_guard: DbLockFileGuard<'a>,
+    _lock_file_guard: DbLockFileGuard<'lock>,
     #[cfg(test)]
     simulate_save_failure: bool,
 }
@@ -98,17 +97,16 @@ fn load(path: &AbsolutePath) -> Result<PersistedPackageDb, PackageDatabaseError>
     Ok(db)
 }
 
-impl<'a> PackageDatabase<'a> {
+impl<'lock> PackageDatabase<'lock> {
     pub(crate) fn load(
         app_dirs: &AppDirs,
-        lock_file_guard: DbLockFileGuard<'a>,
+        lock_file_guard: DbLockFileGuard<'lock>,
     ) -> Result<Self, PackageDatabaseError> {
         let persist_path = app_dirs.db_json_file();
         let persist_db = load(&persist_path)?;
         Ok(Self {
             persist_path,
-            persist_db: persist_db.clone(),
-            saved_persist_db: persist_db,
+            persist_db,
             _lock_file_guard: lock_file_guard,
             #[cfg(test)]
             simulate_save_failure: false,
@@ -118,46 +116,7 @@ impl<'a> PackageDatabase<'a> {
     #[cfg(test)]
     pub(crate) fn reload(&mut self) -> Result<(), PackageDatabaseError> {
         self.persist_db = load(&self.persist_path)?;
-        self.saved_persist_db = self.persist_db.clone();
         Ok(())
-    }
-
-    fn save(&mut self) -> Result<(), PackageDatabaseError> {
-        let res = (|| {
-            #[cfg(test)]
-            {
-                if self.simulate_save_failure {
-                    return Err(SimulatedSaveFailureSnafu.build());
-                }
-            }
-
-            let persist_dir = self.persist_path.parent().unwrap();
-            let mut temp_file = NamedTempFile::new_in(&persist_dir)
-                .context(CreateTempFileSnafu { path: &persist_dir })?;
-            persist::to_writer(&temp_file, &self.persist_db).context(SerializeDatabaseSnafu {
-                path: temp_file.path(),
-            })?;
-            temp_file
-                .as_file_mut()
-                .sync_all()
-                .context(PersistTempFileSnafu {
-                    path: &self.persist_path,
-                })?;
-            temp_file.persist(&self.persist_path).map_err(|source| {
-                PersistTempFileSnafu {
-                    path: &self.persist_path,
-                }
-                .into_error(source.error)
-            })?;
-
-            Ok(())
-        })();
-        if res.is_err() {
-            self.persist_db = self.saved_persist_db.clone();
-        } else {
-            self.saved_persist_db = self.persist_db.clone();
-        }
-        res
     }
 
     pub(crate) fn entries(&self) -> impl Iterator<Item = PackageDbEntry> {
@@ -169,9 +128,9 @@ impl<'a> PackageDatabase<'a> {
     }
 
     pub(crate) fn entries_by_spec(
-        &'a self,
+        &'lock self,
         pkg_spec: &PackageSpec,
-    ) -> Box<dyn Iterator<Item = PackageDbEntry> + 'a> {
+    ) -> Box<dyn Iterator<Item = PackageDbEntry> + 'lock> {
         match pkg_spec {
             PackageSpec::Id(id) => Box::new(self.entry_by_id(id).into_iter()),
             PackageSpec::Name(name) => Box::new(self.entries_by_name(name)),
@@ -187,39 +146,14 @@ impl<'a> PackageDatabase<'a> {
     }
 
     pub(crate) fn entries_by_name(
-        &'a self,
+        &'lock self,
         pkg_name: &PackageName,
-    ) -> impl Iterator<Item = PackageDbEntry> + 'a {
+    ) -> impl Iterator<Item = PackageDbEntry> + 'lock {
         self.persist_db
             .packages
             .get(pkg_name)
             .into_iter()
             .flat_map(|version_map| version_map.versions.values().map(Into::into))
-    }
-
-    fn entry_mut(&mut self, pkg_id: &PackageId) -> Option<&mut PersistedPackageEntry> {
-        let version_map = self.persist_db.packages.get_mut(pkg_id.name())?;
-        version_map.versions.get_mut(pkg_id.version())
-    }
-
-    fn insert_entry(&mut self, entry: PersistedPackageEntry) {
-        let pkg_name = entry.manifest.name.clone();
-        let pkg_version = entry.manifest.version.clone();
-        self.persist_db
-            .packages
-            .entry(pkg_name)
-            .or_default()
-            .versions
-            .insert(pkg_version, entry);
-    }
-
-    fn remove_entry(&mut self, pkg_id: &PackageId) -> Option<PersistedPackageEntry> {
-        let version_map = self.persist_db.packages.get_mut(pkg_id.name())?;
-        let entry = version_map.versions.remove(pkg_id.version())?;
-        if version_map.versions.is_empty() {
-            self.persist_db.packages.remove(pkg_id.name());
-        }
-        Some(entry)
     }
 
     pub(crate) fn check_installability(&self, manifest: &PackageManifest) -> Installability {
@@ -264,6 +198,124 @@ impl<'a> PackageDatabase<'a> {
         }
     }
 
+    pub(crate) fn transaction(&mut self) -> PackageDatabaseTransaction<'_, 'lock> {
+        PackageDatabaseTransaction {
+            persist_db: self.persist_db.clone(),
+            #[cfg(test)]
+            simulate_save_failure: self.simulate_save_failure,
+            db: self,
+        }
+    }
+
+    pub(crate) fn apply_plan_transaction(
+        &mut self,
+        plan: &ExecutionPlan,
+    ) -> Result<(), PackageDatabaseError> {
+        let mut tx = self.transaction();
+        tx.apply_plan_transaction(plan)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn complete_install(
+        &mut self,
+        pkg_id: &PackageId,
+        font_entries: &[FontEntry],
+        replacing_pkg_ids: &[PackageId],
+    ) -> Result<(), PackageDatabaseError> {
+        let mut tx = self.transaction();
+        tx.complete_install(pkg_id, font_entries, replacing_pkg_ids)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn cancel_install(
+        &mut self,
+        pkg_id: &PackageId,
+        cleanup_required: bool,
+    ) -> Result<(), PackageDatabaseError> {
+        let mut tx = self.transaction();
+        tx.cancel_install(pkg_id, cleanup_required)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn complete_uninstall(
+        &mut self,
+        pkg_id: &PackageId,
+    ) -> Result<(), PackageDatabaseError> {
+        let mut tx = self.transaction();
+        tx.complete_uninstall(pkg_id)?;
+        tx.commit()?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct PackageDatabaseTransaction<'db, 'lock> {
+    db: &'db mut PackageDatabase<'lock>,
+    persist_db: PersistedPackageDb,
+    #[cfg(test)]
+    simulate_save_failure: bool,
+}
+
+impl PackageDatabaseTransaction<'_, '_> {
+    pub(crate) fn commit(self) -> Result<(), PackageDatabaseError> {
+        #[cfg(test)]
+        {
+            if self.simulate_save_failure {
+                return Err(SimulatedSaveFailureSnafu.build());
+            }
+        }
+
+        let persist_dir = self.db.persist_path.parent().unwrap();
+        let mut temp_file = NamedTempFile::new_in(&persist_dir)
+            .context(CreateTempFileSnafu { path: &persist_dir })?;
+        persist::to_writer(&temp_file, &self.persist_db).context(SerializeDatabaseSnafu {
+            path: temp_file.path(),
+        })?;
+        temp_file
+            .as_file_mut()
+            .sync_all()
+            .context(PersistTempFileSnafu {
+                path: &self.db.persist_path,
+            })?;
+        temp_file.persist(&self.db.persist_path).map_err(|source| {
+            PersistTempFileSnafu {
+                path: &self.db.persist_path,
+            }
+            .into_error(source.error)
+        })?;
+
+        self.db.persist_db = self.persist_db;
+        Ok(())
+    }
+
+    fn entry_mut(&mut self, pkg_id: &PackageId) -> Option<&mut PersistedPackageEntry> {
+        let version_map = self.persist_db.packages.get_mut(pkg_id.name())?;
+        version_map.versions.get_mut(pkg_id.version())
+    }
+
+    fn insert_entry(&mut self, entry: PersistedPackageEntry) {
+        let pkg_name = entry.manifest.name.clone();
+        let pkg_version = entry.manifest.version.clone();
+        self.persist_db
+            .packages
+            .entry(pkg_name)
+            .or_default()
+            .versions
+            .insert(pkg_version, entry);
+    }
+
+    fn remove_entry(&mut self, pkg_id: &PackageId) -> Option<PersistedPackageEntry> {
+        let version_map = self.persist_db.packages.get_mut(pkg_id.name())?;
+        let entry = version_map.versions.remove(pkg_id.version())?;
+        if version_map.versions.is_empty() {
+            self.persist_db.packages.remove(pkg_id.name());
+        }
+        Some(entry)
+    }
+
     pub(crate) fn apply_plan_transaction(
         &mut self,
         plan: &ExecutionPlan,
@@ -294,7 +346,6 @@ impl<'a> PackageDatabase<'a> {
                 PlanStepOp::Skip(_) => {}
             }
         }
-        self.save()?;
         Ok(())
     }
 
@@ -339,8 +390,6 @@ impl<'a> PackageDatabase<'a> {
             self.entry_mut(replacing_pkg_id).unwrap().installation_state =
                 InstallationState::IncompleteUninstall;
         }
-
-        self.save()?;
         Ok(())
     }
 
@@ -374,7 +423,6 @@ impl<'a> PackageDatabase<'a> {
                 self.persist_db.packages.remove(pkg_id.name());
             }
         }
-        self.save()?;
         Ok(())
     }
 
@@ -394,7 +442,6 @@ impl<'a> PackageDatabase<'a> {
             }
         );
         self.remove_entry(pkg_id);
-        self.save()?;
         Ok(())
     }
 }
@@ -454,241 +501,165 @@ mod tests {
         f(&mut db)
     }
 
-    #[track_caller]
-    fn assert_status_change<F>(
-        app_dirs: &AppDirs,
-        lock_file: &mut DbLockFile,
+    type StateCondition<'a> = (&'a PackageId, Option<InstallationState>);
+
+    fn get_transaction_installation_state(
+        tx: &PackageDatabaseTransaction<'_, '_>,
         id: &PackageId,
-        before_state: Option<InstallationState>,
-        after_state: Option<InstallationState>,
-        f: F,
-    ) where
-        F: FnOnce(&mut PackageDatabase<'_>),
-    {
-        let conditions = &[(id, before_state, after_state)];
-        assert_statuses_change(app_dirs, lock_file, conditions, f);
+    ) -> Option<InstallationState> {
+        let entry = tx
+            .persist_db
+            .packages
+            .get(id.name())
+            .and_then(|version_map| version_map.versions.get(id.version()))?;
+        assert_eq!(entry.manifest.id(), *id);
+        Some(entry.installation_state)
     }
 
     #[track_caller]
-    fn assert_statuses_change<F>(
+    fn assert_loaded_database_states(db: &PackageDatabase<'_>, conditions: &[StateCondition<'_>]) {
+        for (id, expected_state) in conditions {
+            assert_eq!(get_entry_installation_state(db, id), *expected_state);
+        }
+    }
+
+    #[track_caller]
+    fn assert_persisted_states(
         app_dirs: &AppDirs,
         lock_file: &mut DbLockFile,
-        conditions: &[(
-            &PackageId,
-            Option<InstallationState>,
-            Option<InstallationState>,
-        )],
+        conditions: &[StateCondition<'_>],
+    ) {
+        for (id, expected_state) in conditions {
+            assert_eq!(
+                get_persisted_state(app_dirs, lock_file, id),
+                *expected_state
+            );
+        }
+    }
+
+    #[track_caller]
+    fn assert_transaction_states(
+        tx: &PackageDatabaseTransaction<'_, '_>,
+        conditions: &[StateCondition<'_>],
+    ) {
+        for (id, expected_state) in conditions {
+            assert_eq!(get_transaction_installation_state(tx, id), *expected_state);
+        }
+    }
+
+    #[track_caller]
+    fn assert_transaction_stages_without_commit<F>(
+        db: &mut PackageDatabase<'_>,
+        before: &[StateCondition<'_>],
+        staged: &[StateCondition<'_>],
         f: F,
     ) where
-        F: FnOnce(&mut PackageDatabase<'_>),
+        F: FnOnce(&mut PackageDatabaseTransaction<'_, '_>),
     {
-        for (id, before_state, _) in conditions {
-            assert_eq!(get_persisted_state(app_dirs, lock_file, id), *before_state);
+        assert_loaded_database_states(db, before);
+
+        {
+            let mut tx = db.transaction();
+            f(&mut tx);
+            assert_transaction_states(&tx, staged);
         }
 
-        with_db(app_dirs, lock_file, |db| {
-            for (id, before_state, _) in conditions {
-                assert_eq!(get_entry_installation_state(db, id), *before_state);
-            }
-            f(db);
-            for (id, _, after_state) in conditions {
-                assert_eq!(get_entry_installation_state(db, id), *after_state);
-            }
-        });
-
-        for (id, _, after_state) in conditions {
-            assert_eq!(get_persisted_state(app_dirs, lock_file, id), *after_state);
-        }
+        assert_loaded_database_states(db, before);
     }
 
     #[test]
-    fn complete_install_persists_installed_state_and_marks_replaced_versions_incomplete_uninstall()
-    {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
-
-        let installed_manifest = testing::make_manifest("example-font@0.1.0");
-        let installed_pkg_id = installed_manifest.id();
-        let manifest = testing::make_manifest("example-font@0.2.0");
-        let pkg_id = manifest.id();
-        let replacing_pkg_ids = vec![installed_pkg_id.clone()];
-
-        with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_installed(db, &installed_manifest);
-        });
-        assert_statuses_change(
-            &app_dirs,
-            &mut lock_file,
-            &[
-                (
-                    &installed_pkg_id,
-                    Some(InstallationState::Installed),
-                    Some(InstallationState::IncompleteUninstall),
-                ),
-                (&pkg_id, None, Some(InstallationState::Installed)),
-            ],
-            |db| {
-                let plan = testing::make_install_plan(&manifest, replacing_pkg_ids.clone());
-                db.apply_plan_transaction(&plan).unwrap();
-                db.complete_install(&pkg_id, &[], &replacing_pkg_ids)
-                    .unwrap();
-            },
-        );
-    }
-
-    #[test]
-    fn apply_plan_transaction_keeps_same_version_incomplete_install() {
+    fn transaction_without_commit_discards_changes() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.id();
+        let before = [(&pkg_id, None)];
+        let staged = [(&pkg_id, Some(InstallationState::IncompleteInstall))];
 
+        assert_persisted_states(&app_dirs, &mut lock_file, &before);
         with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_incomplete_install(db, &manifest);
+            let plan = testing::make_install_plan(&manifest, vec![]);
+            assert_transaction_stages_without_commit(db, &before, &staged, |tx| {
+                tx.apply_plan_transaction(&plan).unwrap();
+            });
         });
-        assert_status_change(
-            &app_dirs,
-            &mut lock_file,
-            &pkg_id,
-            Some(InstallationState::IncompleteInstall),
-            Some(InstallationState::IncompleteInstall),
-            |db| {
-                let plan = testing::make_install_plan(&manifest, vec![]);
-                db.apply_plan_transaction(&plan).unwrap();
-            },
-        );
+        assert_persisted_states(&app_dirs, &mut lock_file, &before);
     }
 
     #[test]
-    fn apply_plan_transaction_save_failure_rolls_back_previous_states() {
+    fn transaction_commit_failure_keeps_database_unchanged() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let installed_manifest = testing::make_manifest("example-font@0.1.0");
         let incomplete_install_manifest = testing::make_manifest("example-font@0.2.0");
         let incomplete_uninstall_manifest = testing::make_manifest("example-font@0.3.0");
+        let before = [
+            (&installed_manifest.id(), Some(InstallationState::Installed)),
+            (
+                &incomplete_install_manifest.id(),
+                Some(InstallationState::IncompleteInstall),
+            ),
+            (
+                &incomplete_uninstall_manifest.id(),
+                Some(InstallationState::IncompleteUninstall),
+            ),
+        ];
+        let staged = [
+            (
+                &installed_manifest.id(),
+                Some(InstallationState::IncompleteUninstall),
+            ),
+            (
+                &incomplete_install_manifest.id(),
+                Some(InstallationState::IncompleteUninstall),
+            ),
+            (
+                &incomplete_uninstall_manifest.id(),
+                Some(InstallationState::IncompleteUninstall),
+            ),
+        ];
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_installed(db, &installed_manifest);
             testing::mark_as_incomplete_install(db, &incomplete_install_manifest);
             testing::mark_as_incomplete_uninstall(db, &incomplete_uninstall_manifest);
         });
-        assert_statuses_change(
-            &app_dirs,
-            &mut lock_file,
-            &[
-                (
-                    &installed_manifest.id(),
-                    Some(InstallationState::Installed),
-                    Some(InstallationState::Installed),
-                ),
-                (
-                    &incomplete_install_manifest.id(),
-                    Some(InstallationState::IncompleteInstall),
-                    Some(InstallationState::IncompleteInstall),
-                ),
-                (
-                    &incomplete_uninstall_manifest.id(),
-                    Some(InstallationState::IncompleteUninstall),
-                    Some(InstallationState::IncompleteUninstall),
-                ),
-            ],
-            |db| {
-                let plan = ExecutionPlan::new_for_test([
-                    PlanStep::new(UninstallOp {
-                        pkg_id: installed_manifest.id(),
-                        reason: UninstallReason::RequestedByUser,
-                    }),
-                    PlanStep::new(UninstallOp {
-                        pkg_id: incomplete_install_manifest.id(),
-                        reason: UninstallReason::RequestedByUser,
-                    }),
-                    PlanStep::new(UninstallOp {
-                        pkg_id: incomplete_uninstall_manifest.id(),
-                        reason: UninstallReason::RequestedByUser,
-                    }),
-                ]);
-                db.simulate_save_failure = true;
-                let err = db.apply_plan_transaction(&plan).unwrap_err();
-                assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
-            },
-        );
-    }
 
-    #[test]
-    fn cancel_install_removes_incomplete_entry() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
-
-        let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.id();
-
+        assert_persisted_states(&app_dirs, &mut lock_file, &before);
         with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_incomplete_install(db, &manifest);
+            assert_loaded_database_states(db, &before);
+
+            let plan = ExecutionPlan::new_for_test([
+                PlanStep::new(UninstallOp {
+                    pkg_id: installed_manifest.id(),
+                    reason: UninstallReason::RequestedByUser,
+                }),
+                PlanStep::new(UninstallOp {
+                    pkg_id: incomplete_install_manifest.id(),
+                    reason: UninstallReason::RequestedByUser,
+                }),
+                PlanStep::new(UninstallOp {
+                    pkg_id: incomplete_uninstall_manifest.id(),
+                    reason: UninstallReason::RequestedByUser,
+                }),
+            ]);
+            db.simulate_save_failure = true;
+            let mut tx = db.transaction();
+            tx.apply_plan_transaction(&plan).unwrap();
+            assert_transaction_states(&tx, &staged);
+
+            let err = tx.commit().unwrap_err();
+            assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
+
+            assert_loaded_database_states(db, &before);
         });
-        assert_status_change(
-            &app_dirs,
-            &mut lock_file,
-            &pkg_id,
-            Some(InstallationState::IncompleteInstall),
-            None,
-            |db| {
-                db.cancel_install(&pkg_id, false).unwrap();
-            },
-        );
+        assert_persisted_states(&app_dirs, &mut lock_file, &before);
     }
 
     #[test]
-    fn cancel_install_marks_entry_incomplete_uninstall_when_cleanup_failed() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
-
-        let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.id();
-
-        with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_incomplete_install(db, &manifest);
-        });
-        assert_status_change(
-            &app_dirs,
-            &mut lock_file,
-            &pkg_id,
-            Some(InstallationState::IncompleteInstall),
-            Some(InstallationState::IncompleteUninstall),
-            |db| {
-                db.cancel_install(&pkg_id, true).unwrap();
-            },
-        );
-    }
-
-    #[test]
-    fn complete_uninstall_removes_last_version_entry() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
-
-        let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.id();
-
-        with_db(&app_dirs, &mut lock_file, |db| {
-            testing::mark_as_installed(db, &manifest);
-        });
-        assert_status_change(
-            &app_dirs,
-            &mut lock_file,
-            &pkg_id,
-            Some(InstallationState::Installed),
-            None,
-            |db| {
-                let plan = testing::make_uninstall_plan(&pkg_id, vec![]);
-                db.apply_plan_transaction(&plan).unwrap();
-                db.complete_uninstall(&pkg_id).unwrap();
-            },
-        );
-    }
-
-    #[test]
-    fn complete_install_save_failure_restores_previous_states() {
+    fn transaction_commit_persists_multiple_changes_together() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
@@ -697,109 +668,169 @@ mod tests {
         let manifest = testing::make_manifest("example-font@0.2.0");
         let pkg_id = manifest.id();
         let replacing_pkg_ids = vec![installed_pkg_id.clone()];
+        let before = [
+            (&installed_pkg_id, Some(InstallationState::Installed)),
+            (&pkg_id, None),
+        ];
+        let staged = [
+            (
+                &installed_pkg_id,
+                Some(InstallationState::IncompleteUninstall),
+            ),
+            (&pkg_id, Some(InstallationState::Installed)),
+        ];
+
+        with_db(&app_dirs, &mut lock_file, |db| {
+            testing::mark_as_installed(db, &installed_manifest);
+        });
+
+        assert_persisted_states(&app_dirs, &mut lock_file, &before);
+        with_db(&app_dirs, &mut lock_file, |db| {
+            assert_loaded_database_states(db, &before);
+
+            let plan = testing::make_install_plan(&manifest, replacing_pkg_ids.clone());
+            let mut tx = db.transaction();
+            tx.apply_plan_transaction(&plan).unwrap();
+            tx.complete_install(&pkg_id, &[], &replacing_pkg_ids)
+                .unwrap();
+            assert_transaction_states(&tx, &staged);
+
+            tx.commit().unwrap();
+            assert_loaded_database_states(db, &staged);
+        });
+        assert_persisted_states(&app_dirs, &mut lock_file, &staged);
+    }
+
+    #[test]
+    fn apply_plan_transaction_keeps_same_version_incomplete_install_in_transaction() {
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
+        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+
+        let manifest = testing::make_manifest("example-font@0.1.0");
+        let pkg_id = manifest.id();
+        let expected = [(&pkg_id, Some(InstallationState::IncompleteInstall))];
+
+        with_db(&app_dirs, &mut lock_file, |db| {
+            testing::mark_as_incomplete_install(db, &manifest);
+        });
+
+        assert_persisted_states(&app_dirs, &mut lock_file, &expected);
+        with_db(&app_dirs, &mut lock_file, |db| {
+            let plan = testing::make_install_plan(&manifest, vec![]);
+            assert_transaction_stages_without_commit(db, &expected, &expected, |tx| {
+                tx.apply_plan_transaction(&plan).unwrap();
+            });
+        });
+        assert_persisted_states(&app_dirs, &mut lock_file, &expected);
+    }
+
+    #[test]
+    fn complete_install_marks_target_installed_and_replacements_incomplete_uninstall_in_transaction()
+     {
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
+        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+
+        let installed_manifest = testing::make_manifest("example-font@0.1.0");
+        let installed_pkg_id = installed_manifest.id();
+        let manifest = testing::make_manifest("example-font@0.2.0");
+        let pkg_id = manifest.id();
+        let replacing_pkg_ids = vec![installed_pkg_id.clone()];
+        let before = [
+            (&installed_pkg_id, Some(InstallationState::Installed)),
+            (&pkg_id, Some(InstallationState::IncompleteInstall)),
+        ];
+        let staged = [
+            (
+                &installed_pkg_id,
+                Some(InstallationState::IncompleteUninstall),
+            ),
+            (&pkg_id, Some(InstallationState::Installed)),
+        ];
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_installed(db, &installed_manifest);
             let plan = testing::make_install_plan(&manifest, replacing_pkg_ids.clone());
-            db.apply_plan_transaction(&plan).unwrap();
+            let mut tx = db.transaction();
+            tx.apply_plan_transaction(&plan).unwrap();
+            tx.commit().unwrap();
         });
-        assert_statuses_change(
-            &app_dirs,
-            &mut lock_file,
-            &[
-                (
-                    &installed_pkg_id,
-                    Some(InstallationState::Installed),
-                    Some(InstallationState::Installed),
-                ),
-                (
-                    &pkg_id,
-                    Some(InstallationState::IncompleteInstall),
-                    Some(InstallationState::IncompleteInstall),
-                ),
-            ],
-            |db| {
-                db.simulate_save_failure = true;
-                let err = db
-                    .complete_install(&pkg_id, &[], &replacing_pkg_ids)
-                    .unwrap_err();
-                assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
-            },
-        );
+
+        assert_persisted_states(&app_dirs, &mut lock_file, &before);
+        with_db(&app_dirs, &mut lock_file, |db| {
+            assert_transaction_stages_without_commit(db, &before, &staged, |tx| {
+                tx.complete_install(&pkg_id, &[], &replacing_pkg_ids)
+                    .unwrap();
+            });
+        });
+        assert_persisted_states(&app_dirs, &mut lock_file, &before);
     }
 
     #[test]
-    fn cancel_install_save_failure_restores_incomplete_install_state() {
+    fn cancel_install_removes_incomplete_entry_from_transaction() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.id();
+        let before = [(&pkg_id, Some(InstallationState::IncompleteInstall))];
+        let staged = [(&pkg_id, None)];
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_incomplete_install(db, &manifest);
         });
-        assert_status_change(
-            &app_dirs,
-            &mut lock_file,
-            &pkg_id,
-            Some(InstallationState::IncompleteInstall),
-            Some(InstallationState::IncompleteInstall),
-            |db| {
-                db.simulate_save_failure = true;
-                let err = db.cancel_install(&pkg_id, false).unwrap_err();
-                assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
-            },
-        );
+
+        assert_persisted_states(&app_dirs, &mut lock_file, &before);
+        with_db(&app_dirs, &mut lock_file, |db| {
+            assert_transaction_stages_without_commit(db, &before, &staged, |tx| {
+                tx.cancel_install(&pkg_id, false).unwrap();
+            });
+        });
+        assert_persisted_states(&app_dirs, &mut lock_file, &before);
     }
 
     #[test]
-    fn cancel_install_with_cleanup_failure_save_failure_restores_incomplete_install_state() {
+    fn cancel_install_marks_entry_incomplete_uninstall_in_transaction_when_cleanup_failed() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.id();
+        let before = [(&pkg_id, Some(InstallationState::IncompleteInstall))];
+        let staged = [(&pkg_id, Some(InstallationState::IncompleteUninstall))];
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_incomplete_install(db, &manifest);
         });
-        assert_status_change(
-            &app_dirs,
-            &mut lock_file,
-            &pkg_id,
-            Some(InstallationState::IncompleteInstall),
-            Some(InstallationState::IncompleteInstall),
-            |db| {
-                db.simulate_save_failure = true;
-                let err = db.cancel_install(&pkg_id, true).unwrap_err();
-                assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
-            },
-        );
+
+        assert_persisted_states(&app_dirs, &mut lock_file, &before);
+        with_db(&app_dirs, &mut lock_file, |db| {
+            assert_transaction_stages_without_commit(db, &before, &staged, |tx| {
+                tx.cancel_install(&pkg_id, true).unwrap();
+            });
+        });
+        assert_persisted_states(&app_dirs, &mut lock_file, &before);
     }
 
     #[test]
-    fn complete_uninstall_save_failure_restores_incomplete_uninstall_state() {
+    fn complete_uninstall_removes_last_version_entry_from_transaction() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
         let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.id();
+        let before = [(&pkg_id, Some(InstallationState::IncompleteUninstall))];
+        let staged = [(&pkg_id, None)];
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_incomplete_uninstall(db, &manifest);
         });
-        assert_status_change(
-            &app_dirs,
-            &mut lock_file,
-            &pkg_id,
-            Some(InstallationState::IncompleteUninstall),
-            Some(InstallationState::IncompleteUninstall),
-            |db| {
-                db.simulate_save_failure = true;
-                let err = db.complete_uninstall(&pkg_id).unwrap_err();
-                assert_matches!(err, PackageDatabaseError::SimulatedSaveFailure);
-            },
-        );
+
+        assert_persisted_states(&app_dirs, &mut lock_file, &before);
+        with_db(&app_dirs, &mut lock_file, |db| {
+            assert_transaction_stages_without_commit(db, &before, &staged, |tx| {
+                tx.complete_uninstall(&pkg_id).unwrap();
+            });
+        });
+        assert_persisted_states(&app_dirs, &mut lock_file, &before);
     }
 }
