@@ -1,7 +1,7 @@
 use crate::{
     db::{PackageDatabase, Uninstallability},
     engine::{
-        ExecutionId, ExecutionPlan, ResolvedRepairTarget, SkipOp, SkipReason, UninstallOp,
+        ExecutionPlan, PlanStep, ResolvedRepairTarget, SkipOp, SkipReason, UninstallOp,
         UninstallReason,
     },
 };
@@ -13,43 +13,29 @@ pub(crate) fn plan_repair(
     let mut ops = vec![];
     for target in targets {
         match target {
-            ResolvedRepairTarget::NotBroken { pkg_spec } => ops.push(
-                SkipOp {
-                    pkg_spec: pkg_spec.clone(),
-                    reason: SkipReason::NotBroken,
-                }
-                .into(),
-            ),
+            ResolvedRepairTarget::NotBroken { pkg_spec } => ops.push(PlanStep::new(SkipOp {
+                pkg_spec: pkg_spec.clone(),
+                reason: SkipReason::NotBroken,
+            })),
             ResolvedRepairTarget::Uninstall { pkg_id } => match db.check_uninstallability(pkg_id) {
-                Uninstallability::Uninstallable => ops.push(
-                    UninstallOp {
-                        exec_id: ExecutionId::new(),
-                        pkg_id: pkg_id.clone(),
-                        reason: UninstallReason::RequestedByUser,
-                        conditions: vec![],
-                    }
-                    .into(),
-                ),
-                Uninstallability::AlreadyUninstalled => ops.push(
-                    SkipOp {
-                        pkg_spec: pkg_id.clone().into(),
-                        reason: SkipReason::AlreadyRepaired,
-                    }
-                    .into(),
-                ),
+                Uninstallability::Uninstallable => ops.push(PlanStep::new(UninstallOp {
+                    pkg_id: pkg_id.clone(),
+                    reason: UninstallReason::RequestedByUser,
+                })),
+                Uninstallability::AlreadyUninstalled => ops.push(PlanStep::new(SkipOp {
+                    pkg_spec: pkg_id.clone().into(),
+                    reason: SkipReason::AlreadyRepaired,
+                })),
             },
             ResolvedRepairTarget::AlreadyUninstalled { pkg_spec } => {
-                ops.push(
-                    SkipOp {
-                        pkg_spec: pkg_spec.clone(),
-                        reason: SkipReason::AlreadyRepaired,
-                    }
-                    .into(),
-                );
+                ops.push(PlanStep::new(SkipOp {
+                    pkg_spec: pkg_spec.clone(),
+                    reason: SkipReason::AlreadyRepaired,
+                }));
             }
         }
     }
-    ExecutionPlan { ops }
+    ExecutionPlan { steps: ops }
 }
 
 #[cfg(test)]
@@ -90,20 +76,14 @@ mod tests {
         testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([
-                UninstallOp {
-                    exec_id: ExecutionId::new(),
+                PlanStep::new(UninstallOp {
                     pkg_id: incomplete_install_pkg_id,
                     reason: UninstallReason::RequestedByUser,
-                    conditions: vec![],
-                }
-                .into(),
-                UninstallOp {
-                    exec_id: ExecutionId::new(),
+                }),
+                PlanStep::new(UninstallOp {
                     pkg_id: incomplete_uninstall_pkg_id,
                     reason: UninstallReason::RequestedByUser,
-                    conditions: vec![],
-                }
-                .into(),
+                }),
             ]),
         );
     }
@@ -122,11 +102,10 @@ mod tests {
 
         testing::assert_plan_eq(
             &plan,
-            &ExecutionPlan::new_for_test([SkipOp {
+            &ExecutionPlan::new_for_test([PlanStep::new(SkipOp {
                 pkg_spec,
                 reason: SkipReason::NotBroken,
-            }
-            .into()]),
+            })]),
         );
     }
 
@@ -151,16 +130,14 @@ mod tests {
         testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([
-                SkipOp {
+                PlanStep::new(SkipOp {
                     pkg_spec: missing_pkg_id.into(),
                     reason: SkipReason::AlreadyRepaired,
-                }
-                .into(),
-                SkipOp {
+                }),
+                PlanStep::new(SkipOp {
                     pkg_spec: missing_pkg_spec,
                     reason: SkipReason::AlreadyRepaired,
-                }
-                .into(),
+                }),
             ]),
         );
     }

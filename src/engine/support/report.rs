@@ -8,16 +8,20 @@ where
     S: ReportScope,
 {
     let mut install_ops = plan
-        .ops()
+        .steps()
         .iter()
-        .filter_map(|op| op.as_install())
+        .filter_map(|step| step.op().as_install())
         .peekable();
     let mut uninstall_ops = plan
-        .ops()
+        .steps()
         .iter()
-        .filter_map(|op| op.as_uninstall())
+        .filter_map(|step| step.op().as_uninstall())
         .peekable();
-    let mut skip_ops = plan.ops().iter().filter_map(|op| op.as_skip()).peekable();
+    let mut skip_ops = plan
+        .steps()
+        .iter()
+        .filter_map(|step| step.op().as_skip())
+        .peekable();
     if install_ops.peek().is_some() {
         cx.reporter().report_info(format_args!(
             "Installing the following packages:\n{}",

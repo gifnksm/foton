@@ -15,7 +15,7 @@ use crate::{
             self, PersistError, PersistedFontEntry, PersistedPackageDb, PersistedPackageEntry,
         },
     },
-    engine::{ExecutionPlan, ExecutionPlanOp, InstallOp, UninstallOp},
+    engine::{ExecutionPlan, InstallOp, PlanStepOp, UninstallOp},
     package::{
         ActivationState, FontEntry, InstallationState, PackageId, PackageManifest, PackageName,
         PackageSpec,
@@ -272,9 +272,12 @@ impl<'a> PackageDatabase<'a> {
             return Ok(());
         }
 
-        for op in plan.ops() {
-            match op {
-                ExecutionPlanOp::Install(InstallOp { manifest, .. }) => {
+        for step in plan.steps() {
+            if !step.can_execute() {
+                continue;
+            }
+            match step.op() {
+                PlanStepOp::Install(InstallOp { manifest, .. }) => {
                     self.insert_entry(PersistedPackageEntry {
                         installation_state: InstallationState::IncompleteInstall,
                         activation_state: ActivationState::Inactive,
@@ -282,15 +285,13 @@ impl<'a> PackageDatabase<'a> {
                         font_entries: vec![],
                     });
                 }
-                ExecutionPlanOp::Uninstall(UninstallOp {
-                    pkg_id, conditions, ..
-                }) if conditions.is_empty() => {
+                PlanStepOp::Uninstall(UninstallOp { pkg_id, .. }) => {
                     let entry = self
                         .entry_mut(pkg_id)
                         .context(EntryNotFoundSnafu { pkg_id })?;
                     entry.installation_state = InstallationState::IncompleteUninstall;
                 }
-                ExecutionPlanOp::Uninstall(_) | ExecutionPlanOp::Skip(_) => {}
+                PlanStepOp::Skip(_) => {}
             }
         }
         self.save()?;
@@ -421,7 +422,7 @@ mod tests {
     use super::*;
     use crate::{
         db::DbLockFile,
-        engine::{ExecutionId, UninstallReason},
+        engine::{PlanStep, UninstallReason},
         util::testing,
     };
 
@@ -595,27 +596,18 @@ mod tests {
             ],
             |db| {
                 let plan = ExecutionPlan::new_for_test([
-                    UninstallOp {
-                        exec_id: ExecutionId::new(),
+                    PlanStep::new(UninstallOp {
                         pkg_id: installed_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
-                        conditions: vec![],
-                    }
-                    .into(),
-                    UninstallOp {
-                        exec_id: ExecutionId::new(),
+                    }),
+                    PlanStep::new(UninstallOp {
                         pkg_id: incomplete_install_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
-                        conditions: vec![],
-                    }
-                    .into(),
-                    UninstallOp {
-                        exec_id: ExecutionId::new(),
+                    }),
+                    PlanStep::new(UninstallOp {
                         pkg_id: incomplete_uninstall_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
-                        conditions: vec![],
-                    }
-                    .into(),
+                    }),
                 ]);
                 db.simulate_save_failure = true;
                 let err = db.apply_plan_transaction(&plan).unwrap_err();

@@ -13,7 +13,7 @@ use crate::{
         },
     },
     db::PackageDatabase,
-    engine::{ExecutionId, ExecutionResult, execute::install::db_guard::InstallDbGuard, support},
+    engine::{execute::install::db_guard::InstallDbGuard, support},
     package::{self, PackageDirs, PackageId, PackageManifest},
     platform::windows::steps::unregistration,
     util::{fs::FsError, macros::concat_line},
@@ -118,24 +118,22 @@ impl CleanupTracker {
 }
 
 #[derive(Debug)]
-pub(in crate::engine) struct InstallExecution<'db, S>
+pub(in crate::engine) struct PreparedInstallStep<'db, S>
 where
     S: ReportScope,
 {
     db_guard: InstallDbGuard<'db, S>,
-    exec_id: ExecutionId,
     manifest: Arc<PackageManifest>,
     cleanup_tracker: CleanupTracker,
 }
 
-impl<'db, S> InstallExecution<'db, S>
+impl<'db, S> PreparedInstallStep<'db, S>
 where
     S: ReportScope,
 {
     pub(in crate::engine) fn new(
         cx: &ReportContext<S>,
         db: Arc<Mutex<PackageDatabase<'db>>>,
-        exec_id: ExecutionId,
         manifest: Arc<PackageManifest>,
         replacing_pkg_ids: Vec<PackageId>,
     ) -> Self {
@@ -149,7 +147,6 @@ where
         );
         Self {
             db_guard,
-            exec_id,
             manifest,
             cleanup_tracker,
         }
@@ -188,22 +185,5 @@ where
         registration_guard.disarm();
 
         Ok(())
-    }
-
-    pub(in crate::engine) fn exec_id(&self) -> ExecutionId {
-        self.exec_id
-    }
-
-    #[expect(clippy::unused_self)]
-    pub(in crate::engine) fn can_execute(&self) -> bool {
-        true
-    }
-
-    #[expect(clippy::unused_self)]
-    pub(in crate::engine) fn notify_result(
-        &mut self,
-        _exec_id: ExecutionId,
-        _result: ExecutionResult,
-    ) {
     }
 }

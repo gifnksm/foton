@@ -14,8 +14,8 @@ use crate::{
     },
     db::{PackageDatabase, PackageDatabaseError},
     engine::{
-        Execution, ExecutionId, ExecutionPlan, ExecutionPlanOp, ExecutionResult, InstallExecution,
-        InstallOp, UninstallExecution, UninstallOp,
+        ExecutionPlan, InstallOp, PlanStepOp, PreparedInstallStep, PreparedStep, PreparedStepOp,
+        PreparedUninstallStep, StepId, StepResult, UninstallOp,
     },
 };
 
@@ -62,33 +62,29 @@ pub(crate) struct PreparedExecutions<'db, S>
 where
     S: ReportScope,
 {
-    executions: Vec<Execution<'db, S>>,
+    steps: Vec<PreparedStep<'db, S>>,
 }
 
 impl<'db, S> PreparedExecutions<'db, S>
 where
     S: ReportScope,
 {
-    pub(in crate::engine) fn pop_executable(&mut self) -> Option<Execution<'db, S>> {
-        if let Some(idx) = self.executions.iter().position(Execution::can_execute) {
-            Some(self.executions.remove(idx))
+    pub(in crate::engine) fn pop_executable(&mut self) -> Option<PreparedStep<'db, S>> {
+        if let Some(idx) = self.steps.iter().position(PreparedStep::can_execute) {
+            Some(self.steps.remove(idx))
         } else {
             None
         }
     }
 
-    pub(in crate::engine) fn notify_result(
-        &mut self,
-        exec_id: ExecutionId,
-        result: ExecutionResult,
-    ) {
-        for exec in &mut self.executions {
-            exec.notify_result(exec_id, result);
+    pub(in crate::engine) fn notify_result(&mut self, step_id: StepId, result: StepResult) {
+        for exec in &mut self.steps {
+            exec.notify_result(step_id, result);
         }
     }
 
     pub(in crate::engine) fn len(&self) -> usize {
-        self.executions.len()
+        self.steps.len()
     }
 }
 
@@ -110,39 +106,32 @@ where
         .context(ApplyTransactionSnafu)
         .report_error(cx.reporter())?;
 
-    for op in plan.ops() {
-        let execution = match op {
-            ExecutionPlanOp::Install(InstallOp {
-                exec_id,
+    for step in plan.steps() {
+        let op: PreparedStepOp<'_, _> = match step.op() {
+            PlanStepOp::Install(InstallOp {
                 manifest,
                 replacing_pkg_ids,
                 ..
-            }) => InstallExecution::new(
+            }) => PreparedInstallStep::new(
                 outer_cx,
                 Arc::clone(db),
-                *exec_id,
                 Arc::clone(manifest),
                 replacing_pkg_ids.clone(),
             )
             .into(),
-            ExecutionPlanOp::Uninstall(UninstallOp {
-                exec_id,
-                pkg_id,
-                conditions,
-                ..
-            }) => UninstallExecution::new(
-                Arc::clone(db),
-                *exec_id,
-                pkg_id.clone(),
-                conditions.clone(),
-            )
-            .into(),
-            ExecutionPlanOp::Skip(_) => continue,
+            PlanStepOp::Uninstall(UninstallOp { pkg_id, .. }) => {
+                PreparedUninstallStep::new(Arc::clone(db), pkg_id.clone()).into()
+            }
+            PlanStepOp::Skip(_) => continue,
         };
-        executions.push(execution);
+        executions.push(PreparedStep::with_conditions(
+            step.step_id(),
+            op,
+            step.conditions().to_vec(),
+        ));
     }
 
-    Ok(PreparedExecutions { executions })
+    Ok(PreparedExecutions { steps: executions })
 }
 
 #[cfg(test)]
@@ -151,8 +140,8 @@ mod tests {
     use crate::{
         cli::reporter::RootReportScope as _,
         engine::{
-            ExecutionCondition, ExecutionId, ExecutionResult, InstallReason, SkipOp, SkipReason,
-            UninstallExecution, UninstallReason,
+            InstallReason, PlanStep, PreparedStepOp, PreparedUninstallStep, SkipOp, SkipReason,
+            StepCondition, StepId, StepResult, UninstallReason,
         },
         package::{InstallationState, PackageId},
         util::testing::{self, TempdirContext, TestScope},
@@ -176,52 +165,47 @@ mod tests {
             testing::mark_as_installed(&mut db, &uninstall_manifest);
             testing::mark_as_installed(&mut db, &conditional_uninstall_manifest);
             let db = Arc::new(Mutex::new(db));
-            let install_exec_id = ExecutionId::new();
+            let install_step = PlanStep::new(InstallOp {
+                manifest: Arc::clone(&install_manifest),
+                reason: InstallReason::RequestedByUser,
+                replacing_pkg_ids: vec![conditional_uninstall_pkg_id.clone()],
+            });
+            let install_step_id = install_step.step_id();
             let plan = ExecutionPlan::new_for_test([
-                InstallOp {
-                    exec_id: install_exec_id,
-                    manifest: Arc::clone(&install_manifest),
-                    reason: InstallReason::RequestedByUser,
-                    replacing_pkg_ids: vec![conditional_uninstall_pkg_id.clone()],
-                }
-                .into(),
-                UninstallOp {
-                    exec_id: ExecutionId::new(),
+                install_step,
+                PlanStep::new(UninstallOp {
                     pkg_id: uninstall_pkg_id.clone(),
                     reason: UninstallReason::RequestedByUser,
-                    conditions: vec![],
-                }
-                .into(),
-                UninstallOp {
-                    exec_id: ExecutionId::new(),
-                    pkg_id: conditional_uninstall_pkg_id.clone(),
-                    reason: UninstallReason::ConflictWithInstall {
-                        pkg_id: install_pkg_id.clone(),
+                }),
+                PlanStep::with_conditions(
+                    UninstallOp {
+                        pkg_id: conditional_uninstall_pkg_id.clone(),
+                        reason: UninstallReason::ConflictWithInstall {
+                            pkg_id: install_pkg_id.clone(),
+                        },
                     },
-                    conditions: vec![ExecutionCondition::AfterSuccess(install_exec_id)],
-                }
-                .into(),
-                SkipOp {
+                    vec![StepCondition::AfterSuccess(install_step_id)],
+                ),
+                PlanStep::new(SkipOp {
                     pkg_spec: skipped_pkg_id.clone().into(),
                     reason: SkipReason::AlreadyInstalled,
-                }
-                .into(),
+                }),
             ]);
 
             let prepared_plan = prepare(&cx, &db, &plan).unwrap();
 
-            assert_eq!(prepared_plan.executions.len(), 3);
+            assert_eq!(prepared_plan.steps.len(), 3);
             assert!(
                 prepared_plan
-                    .executions
+                    .steps
                     .iter()
-                    .any(|execution| matches!(execution, Execution::Install(_)))
+                    .any(|execution| matches!(execution.op(), PreparedStepOp::Install(_)))
             );
             assert!(
                 prepared_plan
-                    .executions
+                    .steps
                     .iter()
-                    .any(|execution| matches!(execution, Execution::Uninstall(_)))
+                    .any(|execution| matches!(execution.op(), PreparedStepOp::Uninstall(_)))
             );
             let db = db.lock().unwrap();
             assert_eq!(
@@ -255,20 +239,17 @@ mod tests {
         testing::with_db(&cx, |mut db| {
             testing::mark_as_incomplete_install(&mut db, &manifest);
             let db = Arc::new(Mutex::new(db));
-            let plan = ExecutionPlan::new_for_test([UninstallOp {
-                exec_id: ExecutionId::new(),
+            let plan = ExecutionPlan::new_for_test([PlanStep::new(UninstallOp {
                 pkg_id: pkg_id.clone(),
                 reason: UninstallReason::RequestedByUser,
-                conditions: vec![],
-            }
-            .into()]);
+            })]);
 
             let prepared_plan = prepare(&cx, &db, &plan).unwrap();
 
-            assert_eq!(prepared_plan.executions.len(), 1);
+            assert_eq!(prepared_plan.steps.len(), 1);
             assert!(matches!(
-                prepared_plan.executions[0],
-                Execution::Uninstall(_)
+                prepared_plan.steps[0].op(),
+                PreparedStepOp::Uninstall(_)
             ));
             assert_eq!(
                 db.lock()
@@ -287,39 +268,35 @@ mod tests {
         let cx = TestScope::start(&cx);
         let dependency_pkg_id = "dependency-font@0.1.0".parse::<PackageId>().unwrap();
         let dependent_pkg_id = "dependent-font@0.1.0".parse::<PackageId>().unwrap();
-        let dependency_exec_id = ExecutionId::new();
-        let dependent_exec_id = ExecutionId::new();
+        let dependency_step_id = StepId::new();
+        let dependent_step_id = StepId::new();
 
         testing::with_db(&cx, |db| {
             let db = Arc::new(Mutex::new(db));
-            let blocked_execution: Execution<'_, TestScope> = UninstallExecution::new(
-                Arc::clone(&db),
-                dependent_exec_id,
-                dependent_pkg_id.clone(),
-                vec![ExecutionCondition::AfterSuccess(dependency_exec_id)],
-            )
-            .into();
-            let ready_execution: Execution<'_, TestScope> = UninstallExecution::new(
-                Arc::clone(&db),
-                dependency_exec_id,
-                dependency_pkg_id.clone(),
+            let blocked_execution: PreparedStep<'_, TestScope> = PreparedStep::with_conditions(
+                dependent_step_id,
+                PreparedUninstallStep::new(Arc::clone(&db), dependent_pkg_id.clone()),
+                vec![StepCondition::AfterSuccess(dependency_step_id)],
+            );
+            let ready_execution: PreparedStep<'_, TestScope> = PreparedStep::with_conditions(
+                dependency_step_id,
+                PreparedUninstallStep::new(Arc::clone(&db), dependency_pkg_id.clone()),
                 vec![],
-            )
-            .into();
+            );
             let mut prepared = PreparedExecutions {
-                executions: vec![blocked_execution, ready_execution],
+                steps: vec![blocked_execution, ready_execution],
             };
 
             let first = prepared.pop_executable().unwrap();
             assert!(
-                matches!(first, Execution::Uninstall(exec) if exec.exec_id() == dependency_exec_id)
+                matches!(first.op(), PreparedStepOp::Uninstall(_) if first.step_id() == dependency_step_id)
             );
 
-            prepared.notify_result(dependency_exec_id, ExecutionResult::Success);
+            prepared.notify_result(dependency_step_id, StepResult::Success);
 
             let second = prepared.pop_executable().unwrap();
             assert!(
-                matches!(second, Execution::Uninstall(exec) if exec.exec_id() == dependent_exec_id)
+                matches!(second.op(), PreparedStepOp::Uninstall(_) if second.step_id() == dependent_step_id)
             );
             assert!(prepared.pop_executable().is_none());
         });
@@ -331,35 +308,31 @@ mod tests {
         let cx = TestScope::start(&cx);
         let dependency_pkg_id = "dependency-font@0.1.0".parse::<PackageId>().unwrap();
         let dependent_pkg_id = "dependent-font@0.1.0".parse::<PackageId>().unwrap();
-        let dependency_exec_id = ExecutionId::new();
-        let dependent_exec_id = ExecutionId::new();
+        let dependency_step_id = StepId::new();
+        let dependent_step_id = StepId::new();
 
         testing::with_db(&cx, |db| {
             let db = Arc::new(Mutex::new(db));
-            let blocked_execution: Execution<'_, TestScope> = UninstallExecution::new(
-                Arc::clone(&db),
-                dependent_exec_id,
-                dependent_pkg_id,
-                vec![ExecutionCondition::AfterSuccess(dependency_exec_id)],
-            )
-            .into();
-            let ready_execution: Execution<'_, TestScope> = UninstallExecution::new(
-                Arc::clone(&db),
-                dependency_exec_id,
-                dependency_pkg_id.clone(),
+            let blocked_execution: PreparedStep<'_, TestScope> = PreparedStep::with_conditions(
+                dependent_step_id,
+                PreparedUninstallStep::new(Arc::clone(&db), dependent_pkg_id),
+                vec![StepCondition::AfterSuccess(dependency_step_id)],
+            );
+            let ready_execution: PreparedStep<'_, TestScope> = PreparedStep::with_conditions(
+                dependency_step_id,
+                PreparedUninstallStep::new(Arc::clone(&db), dependency_pkg_id.clone()),
                 vec![],
-            )
-            .into();
+            );
             let mut prepared = PreparedExecutions {
-                executions: vec![blocked_execution, ready_execution],
+                steps: vec![blocked_execution, ready_execution],
             };
 
             let first = prepared.pop_executable().unwrap();
             assert!(
-                matches!(first, Execution::Uninstall(exec) if exec.exec_id() == dependency_exec_id)
+                matches!(first.op(), PreparedStepOp::Uninstall(_) if first.step_id() == dependency_step_id)
             );
 
-            prepared.notify_result(dependency_exec_id, ExecutionResult::Failure);
+            prepared.notify_result(dependency_step_id, StepResult::Failure);
 
             assert!(prepared.pop_executable().is_none());
             assert_eq!(prepared.len(), 1);
@@ -374,15 +347,14 @@ mod tests {
 
         testing::with_db(&cx, |db| {
             let db = Arc::new(Mutex::new(db));
-            let plan = ExecutionPlan::new_for_test([SkipOp {
+            let plan = ExecutionPlan::new_for_test([PlanStep::new(SkipOp {
                 pkg_spec: skipped_pkg_id.clone().into(),
                 reason: SkipReason::AlreadyInstalled,
-            }
-            .into()]);
+            })]);
 
             let prepared_plan = prepare(&cx, &db, &plan).unwrap();
 
-            assert!(prepared_plan.executions.is_empty());
+            assert!(prepared_plan.steps.is_empty());
             assert!(db.lock().unwrap().entry_by_id(&skipped_pkg_id).is_none());
         });
     }

@@ -1,7 +1,7 @@
 use crate::{
     db::{PackageDatabase, Uninstallability},
     engine::{
-        ExecutionId, ExecutionPlan, ResolvedUninstallTarget, SkipOp, SkipReason, UninstallOp,
+        ExecutionPlan, PlanStep, ResolvedUninstallTarget, SkipOp, SkipReason, UninstallOp,
         UninstallReason,
     },
 };
@@ -15,36 +15,25 @@ pub(crate) fn plan_uninstall(
         match target {
             ResolvedUninstallTarget::Uninstall { pkg_id } => {
                 match db.check_uninstallability(pkg_id) {
-                    Uninstallability::Uninstallable => ops.push(
-                        UninstallOp {
-                            exec_id: ExecutionId::new(),
-                            pkg_id: pkg_id.clone(),
-                            reason: UninstallReason::RequestedByUser,
-                            conditions: vec![],
-                        }
-                        .into(),
-                    ),
-                    Uninstallability::AlreadyUninstalled => ops.push(
-                        SkipOp {
-                            pkg_spec: pkg_id.clone().into(),
-                            reason: SkipReason::AlreadyUninstalled,
-                        }
-                        .into(),
-                    ),
+                    Uninstallability::Uninstallable => ops.push(PlanStep::new(UninstallOp {
+                        pkg_id: pkg_id.clone(),
+                        reason: UninstallReason::RequestedByUser,
+                    })),
+                    Uninstallability::AlreadyUninstalled => ops.push(PlanStep::new(SkipOp {
+                        pkg_spec: pkg_id.clone().into(),
+                        reason: SkipReason::AlreadyUninstalled,
+                    })),
                 }
             }
             ResolvedUninstallTarget::AlreadyUninstalled { pkg_spec } => {
-                ops.push(
-                    SkipOp {
-                        pkg_spec: pkg_spec.clone(),
-                        reason: SkipReason::AlreadyUninstalled,
-                    }
-                    .into(),
-                );
+                ops.push(PlanStep::new(SkipOp {
+                    pkg_spec: pkg_spec.clone(),
+                    reason: SkipReason::AlreadyUninstalled,
+                }));
             }
         }
     }
-    ExecutionPlan { ops }
+    ExecutionPlan { steps: ops }
 }
 
 #[cfg(test)]
@@ -77,13 +66,10 @@ mod tests {
 
         testing::assert_plan_eq(
             &plan,
-            &ExecutionPlan::new_for_test([UninstallOp {
-                exec_id: ExecutionId::new(),
+            &ExecutionPlan::new_for_test([PlanStep::new(UninstallOp {
                 pkg_id: uninstall_pkg_id,
                 reason: UninstallReason::RequestedByUser,
-                conditions: vec![],
-            }
-            .into()]),
+            })]),
         );
     }
 
@@ -98,11 +84,10 @@ mod tests {
 
         testing::assert_plan_eq(
             &plan,
-            &ExecutionPlan::new_for_test([SkipOp {
+            &ExecutionPlan::new_for_test([PlanStep::new(SkipOp {
                 pkg_spec: uninstall_pkg_id.into(),
                 reason: SkipReason::AlreadyUninstalled,
-            }
-            .into()]),
+            })]),
         );
     }
 }
