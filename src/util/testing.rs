@@ -1,4 +1,4 @@
-use std::{fmt::Debug, fs, ops::Deref, path::Path, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, fs, ops::Deref, path::Path, sync::Arc};
 
 use tempfile::TempDir;
 
@@ -11,9 +11,9 @@ use crate::{
     },
     db::PackageDatabase,
     engine::{
-        self, ExecutionCondition, ExecutionPlan, ExecutionPlanOp, InstallOp, InstallReason,
-        InstallTargetSource, ResolvedInstallTarget, ResolvedUninstallTarget, SkipOp, UninstallOp,
-        UninstallReason,
+        self, ExecutionCondition, ExecutionId, ExecutionPlan, ExecutionPlanOp, InstallOp,
+        InstallReason, InstallTargetSource, ResolvedInstallTarget, ResolvedUninstallTarget, SkipOp,
+        UninstallOp, UninstallReason,
     },
     package::{InstallationState, PackageDirs, PackageId, PackageManifest},
     registry::{RegistryId, RegistryIndex, RegistrySource, RegistrySpec},
@@ -211,6 +211,7 @@ pub(crate) fn make_install_plan(
     replacing_pkg_ids: Vec<PackageId>,
 ) -> ExecutionPlan {
     ExecutionPlan::new_for_test([InstallOp {
+        exec_id: ExecutionId::new(),
         manifest: Arc::clone(manifest),
         reason: InstallReason::RequestedByUser,
         replacing_pkg_ids,
@@ -223,6 +224,7 @@ pub(crate) fn make_uninstall_plan(
     conditions: Vec<ExecutionCondition>,
 ) -> ExecutionPlan {
     ExecutionPlan::new_for_test([UninstallOp {
+        exec_id: ExecutionId::new(),
         pkg_id: pkg_id.clone(),
         reason: UninstallReason::RequestedByUser,
         conditions,
@@ -291,15 +293,22 @@ pub(crate) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
         actual_ops.len(),
         "plan op count mismatch:\n  actual: {actual_ops:?}\nexpected: {expected_ops:?}",
     );
+    let exec_id_map = actual_ops
+        .iter()
+        .zip(expected_ops)
+        .filter_map(|(actual_op, expected_op)| Some((actual_op.exec_id()?, expected_op.exec_id()?)))
+        .collect::<HashMap<_, _>>();
     for (actual_op, expected_op) in actual_ops.iter().zip(expected_ops) {
         match (actual_op, expected_op) {
             (
                 ExecutionPlanOp::Install(InstallOp {
+                    exec_id: _,
                     manifest: actual_manifest,
                     reason: actual_reason,
                     replacing_pkg_ids: actual_replacing_pkg_ids,
                 }),
                 ExecutionPlanOp::Install(InstallOp {
+                    exec_id: _,
                     manifest: expected_manifest,
                     reason: expected_reason,
                     replacing_pkg_ids: expected_replacing_pkg_ids,
@@ -311,11 +320,13 @@ pub(crate) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
             }
             (
                 ExecutionPlanOp::Uninstall(UninstallOp {
+                    exec_id: _,
                     pkg_id: actual_pkg_id,
                     reason: actual_reason,
                     conditions: actual_conditions,
                 }),
                 ExecutionPlanOp::Uninstall(UninstallOp {
+                    exec_id: _,
                     pkg_id: expected_pkg_id,
                     reason: expected_reason,
                     conditions: expected_conditions,
@@ -323,7 +334,7 @@ pub(crate) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
             ) => {
                 assert_eq!(actual_pkg_id, expected_pkg_id);
                 assert_eq!(actual_reason, expected_reason);
-                assert_eq!(actual_conditions, expected_conditions);
+                assert_conditions_eq(&exec_id_map, actual_conditions, expected_conditions);
             }
             (
                 ExecutionPlanOp::Skip(SkipOp {
@@ -343,6 +354,23 @@ pub(crate) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
             }
         }
     }
+}
+
+fn assert_conditions_eq(
+    exec_id_map: &HashMap<ExecutionId, ExecutionId>,
+    actual_conditions: &[ExecutionCondition],
+    expected_conditions: &[ExecutionCondition],
+) {
+    let converted_actual_conditions = actual_conditions
+        .iter()
+        .map(|condition| match condition {
+            ExecutionCondition::AfterSuccess(exec_id) => {
+                ExecutionCondition::AfterSuccess(exec_id_map[exec_id])
+            }
+            ExecutionCondition::Never => ExecutionCondition::Never,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(converted_actual_conditions, expected_conditions);
 }
 
 pub(crate) fn with_db<S, F, T>(cx: &ReportContext<S>, f: F) -> T

@@ -1,7 +1,8 @@
 use crate::{
     db::{PackageDatabase, Uninstallability},
     engine::{
-        ExecutionPlan, ResolvedRepairTarget, SkipOp, SkipReason, UninstallOp, UninstallReason,
+        ExecutionId, ExecutionPlan, ResolvedRepairTarget, SkipOp, SkipReason, UninstallOp,
+        UninstallReason,
     },
 };
 
@@ -22,6 +23,7 @@ pub(crate) fn plan_repair(
             ResolvedRepairTarget::Uninstall { pkg_id } => match db.check_uninstallability(pkg_id) {
                 Uninstallability::Uninstallable => ops.push(
                     UninstallOp {
+                        exec_id: ExecutionId::new(),
                         pkg_id: pkg_id.clone(),
                         reason: UninstallReason::RequestedByUser,
                         conditions: vec![],
@@ -89,12 +91,14 @@ mod tests {
             &plan,
             &ExecutionPlan::new_for_test([
                 UninstallOp {
+                    exec_id: ExecutionId::new(),
                     pkg_id: incomplete_install_pkg_id,
                     reason: UninstallReason::RequestedByUser,
                     conditions: vec![],
                 }
                 .into(),
                 UninstallOp {
+                    exec_id: ExecutionId::new(),
                     pkg_id: incomplete_uninstall_pkg_id,
                     reason: UninstallReason::RequestedByUser,
                     conditions: vec![],

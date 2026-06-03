@@ -14,10 +14,9 @@ use crate::{
     },
     db::{PackageDatabase, PackageDatabaseError},
     engine::{
-        Execution, ExecutionPlan, ExecutionPlanOp, ExecutionResult, InstallExecution, InstallOp,
-        UninstallExecution, UninstallOp,
+        Execution, ExecutionId, ExecutionPlan, ExecutionPlanOp, ExecutionResult, InstallExecution,
+        InstallOp, UninstallExecution, UninstallOp,
     },
-    package::PackageId,
 };
 
 #[derive(Debug)]
@@ -78,9 +77,13 @@ where
         }
     }
 
-    pub(in crate::engine) fn notify_result(&mut self, pkg_id: &PackageId, result: ExecutionResult) {
+    pub(in crate::engine) fn notify_result(
+        &mut self,
+        exec_id: ExecutionId,
+        result: ExecutionResult,
+    ) {
         for exec in &mut self.executions {
-            exec.notify_result(pkg_id, result);
+            exec.notify_result(exec_id, result);
         }
     }
 
@@ -110,21 +113,30 @@ where
     for op in plan.ops() {
         let execution = match op {
             ExecutionPlanOp::Install(InstallOp {
+                exec_id,
                 manifest,
                 replacing_pkg_ids,
                 ..
             }) => InstallExecution::new(
                 outer_cx,
                 Arc::clone(db),
+                *exec_id,
                 Arc::clone(manifest),
                 replacing_pkg_ids.clone(),
             )
             .into(),
             ExecutionPlanOp::Uninstall(UninstallOp {
-                pkg_id, conditions, ..
-            }) => {
-                UninstallExecution::new(Arc::clone(db), pkg_id.clone(), conditions.clone()).into()
-            }
+                exec_id,
+                pkg_id,
+                conditions,
+                ..
+            }) => UninstallExecution::new(
+                Arc::clone(db),
+                *exec_id,
+                pkg_id.clone(),
+                conditions.clone(),
+            )
+            .into(),
             ExecutionPlanOp::Skip(_) => continue,
         };
         executions.push(execution);
@@ -139,7 +151,7 @@ mod tests {
     use crate::{
         cli::reporter::RootReportScope as _,
         engine::{
-            ExecutionCondition, ExecutionResult, InstallReason, SkipOp, SkipReason,
+            ExecutionCondition, ExecutionId, ExecutionResult, InstallReason, SkipOp, SkipReason,
             UninstallExecution, UninstallReason,
         },
         package::{InstallationState, PackageId},
@@ -164,25 +176,29 @@ mod tests {
             testing::mark_as_installed(&mut db, &uninstall_manifest);
             testing::mark_as_installed(&mut db, &conditional_uninstall_manifest);
             let db = Arc::new(Mutex::new(db));
+            let install_exec_id = ExecutionId::new();
             let plan = ExecutionPlan::new_for_test([
                 InstallOp {
+                    exec_id: install_exec_id,
                     manifest: Arc::clone(&install_manifest),
                     reason: InstallReason::RequestedByUser,
                     replacing_pkg_ids: vec![conditional_uninstall_pkg_id.clone()],
                 }
                 .into(),
                 UninstallOp {
+                    exec_id: ExecutionId::new(),
                     pkg_id: uninstall_pkg_id.clone(),
                     reason: UninstallReason::RequestedByUser,
                     conditions: vec![],
                 }
                 .into(),
                 UninstallOp {
+                    exec_id: ExecutionId::new(),
                     pkg_id: conditional_uninstall_pkg_id.clone(),
                     reason: UninstallReason::ConflictWithInstall {
                         pkg_id: install_pkg_id.clone(),
                     },
-                    conditions: vec![ExecutionCondition::AfterSuccess(install_pkg_id.clone())],
+                    conditions: vec![ExecutionCondition::AfterSuccess(install_exec_id)],
                 }
                 .into(),
                 SkipOp {
@@ -240,6 +256,7 @@ mod tests {
             testing::mark_as_incomplete_install(&mut db, &manifest);
             let db = Arc::new(Mutex::new(db));
             let plan = ExecutionPlan::new_for_test([UninstallOp {
+                exec_id: ExecutionId::new(),
                 pkg_id: pkg_id.clone(),
                 reason: UninstallReason::RequestedByUser,
                 conditions: vec![],
@@ -270,31 +287,39 @@ mod tests {
         let cx = TestScope::start(&cx);
         let dependency_pkg_id = "dependency-font@0.1.0".parse::<PackageId>().unwrap();
         let dependent_pkg_id = "dependent-font@0.1.0".parse::<PackageId>().unwrap();
+        let dependency_exec_id = ExecutionId::new();
+        let dependent_exec_id = ExecutionId::new();
 
         testing::with_db(&cx, |db| {
             let db = Arc::new(Mutex::new(db));
             let blocked_execution: Execution<'_, TestScope> = UninstallExecution::new(
                 Arc::clone(&db),
+                dependent_exec_id,
                 dependent_pkg_id.clone(),
-                vec![ExecutionCondition::AfterSuccess(dependency_pkg_id.clone())],
+                vec![ExecutionCondition::AfterSuccess(dependency_exec_id)],
             )
             .into();
-            let ready_execution: Execution<'_, TestScope> =
-                UninstallExecution::new(Arc::clone(&db), dependency_pkg_id.clone(), vec![]).into();
+            let ready_execution: Execution<'_, TestScope> = UninstallExecution::new(
+                Arc::clone(&db),
+                dependency_exec_id,
+                dependency_pkg_id.clone(),
+                vec![],
+            )
+            .into();
             let mut prepared = PreparedExecutions {
                 executions: vec![blocked_execution, ready_execution],
             };
 
             let first = prepared.pop_executable().unwrap();
             assert!(
-                matches!(first, Execution::Uninstall(exec) if exec.target_id() == dependency_pkg_id)
+                matches!(first, Execution::Uninstall(exec) if exec.exec_id() == dependency_exec_id)
             );
 
-            prepared.notify_result(&dependency_pkg_id, ExecutionResult::Success);
+            prepared.notify_result(dependency_exec_id, ExecutionResult::Success);
 
             let second = prepared.pop_executable().unwrap();
             assert!(
-                matches!(second, Execution::Uninstall(exec) if exec.target_id() == dependent_pkg_id)
+                matches!(second, Execution::Uninstall(exec) if exec.exec_id() == dependent_exec_id)
             );
             assert!(prepared.pop_executable().is_none());
         });
@@ -306,27 +331,35 @@ mod tests {
         let cx = TestScope::start(&cx);
         let dependency_pkg_id = "dependency-font@0.1.0".parse::<PackageId>().unwrap();
         let dependent_pkg_id = "dependent-font@0.1.0".parse::<PackageId>().unwrap();
+        let dependency_exec_id = ExecutionId::new();
+        let dependent_exec_id = ExecutionId::new();
 
         testing::with_db(&cx, |db| {
             let db = Arc::new(Mutex::new(db));
             let blocked_execution: Execution<'_, TestScope> = UninstallExecution::new(
                 Arc::clone(&db),
+                dependent_exec_id,
                 dependent_pkg_id,
-                vec![ExecutionCondition::AfterSuccess(dependency_pkg_id.clone())],
+                vec![ExecutionCondition::AfterSuccess(dependency_exec_id)],
             )
             .into();
-            let ready_execution: Execution<'_, TestScope> =
-                UninstallExecution::new(Arc::clone(&db), dependency_pkg_id.clone(), vec![]).into();
+            let ready_execution: Execution<'_, TestScope> = UninstallExecution::new(
+                Arc::clone(&db),
+                dependency_exec_id,
+                dependency_pkg_id.clone(),
+                vec![],
+            )
+            .into();
             let mut prepared = PreparedExecutions {
                 executions: vec![blocked_execution, ready_execution],
             };
 
             let first = prepared.pop_executable().unwrap();
             assert!(
-                matches!(first, Execution::Uninstall(exec) if exec.target_id() == dependency_pkg_id)
+                matches!(first, Execution::Uninstall(exec) if exec.exec_id() == dependency_exec_id)
             );
 
-            prepared.notify_result(&dependency_pkg_id, ExecutionResult::Failure);
+            prepared.notify_result(dependency_exec_id, ExecutionResult::Failure);
 
             assert!(prepared.pop_executable().is_none());
             assert_eq!(prepared.len(), 1);

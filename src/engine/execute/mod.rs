@@ -3,8 +3,7 @@ use crate::{
         context::ReportContext,
         reporter::{OperationError as _, ReportScope},
     },
-    engine::PreparedExecutions,
-    package::PackageId,
+    engine::{ExecutionId, PreparedExecutions},
 };
 
 pub(in crate::engine) use self::{install::*, uninstall::*};
@@ -38,10 +37,10 @@ where
         }
     }
 
-    fn target_id(&self) -> PackageId {
+    fn exec_id(&self) -> ExecutionId {
         match self {
-            Self::Install(exec) => exec.target_id(),
-            Self::Uninstall(exec) => exec.target_id(),
+            Self::Install(exec) => exec.exec_id(),
+            Self::Uninstall(exec) => exec.exec_id(),
         }
     }
 
@@ -52,10 +51,14 @@ where
         }
     }
 
-    pub(in crate::engine) fn notify_result(&mut self, pkg_id: &PackageId, result: ExecutionResult) {
+    pub(in crate::engine) fn notify_result(
+        &mut self,
+        exec_id: ExecutionId,
+        result: ExecutionResult,
+    ) {
         match self {
-            Execution::Install(exec) => exec.notify_result(pkg_id, result),
-            Execution::Uninstall(exec) => exec.notify_result(pkg_id, result),
+            Execution::Install(exec) => exec.notify_result(exec_id, result),
+            Execution::Uninstall(exec) => exec.notify_result(exec_id, result),
         }
     }
 }
@@ -69,14 +72,14 @@ where
 {
     let mut err = None;
     while let Some(execution) = plan.pop_executable() {
-        let pkg_id = execution.target_id();
+        let exec_id = execution.exec_id();
         if cx.cancel_token().is_cancelled() {
             return Err(S::Error::cancelled());
         }
         match execution.execute(cx).await {
-            Ok(()) => plan.notify_result(&pkg_id, ExecutionResult::Success),
+            Ok(()) => plan.notify_result(exec_id, ExecutionResult::Success),
             Err(e) => {
-                plan.notify_result(&pkg_id, ExecutionResult::Failure);
+                plan.notify_result(exec_id, ExecutionResult::Failure);
                 err.get_or_insert(e);
             }
         }

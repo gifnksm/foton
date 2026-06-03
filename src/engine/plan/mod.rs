@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 use crate::package::{PackageId, PackageManifest, PackageSpec};
 
@@ -61,16 +64,37 @@ impl ExecutionPlanOp {
             _ => None,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn exec_id(&self) -> Option<ExecutionId> {
+        match self {
+            ExecutionPlanOp::Install(op) => Some(op.exec_id),
+            ExecutionPlanOp::Uninstall(op) => Some(op.exec_id),
+            ExecutionPlanOp::Skip(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct ExecutionId(u64);
+
+impl ExecutionId {
+    pub(crate) fn new() -> Self {
+        static ID: AtomicU64 = AtomicU64::new(0);
+        let id = ID.fetch_add(1, Ordering::Relaxed);
+        Self(id)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ExecutionCondition {
-    AfterSuccess(PackageId),
+    AfterSuccess(ExecutionId),
     Never,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct InstallOp {
+    pub(crate) exec_id: ExecutionId,
     pub(crate) manifest: Arc<PackageManifest>,
     pub(crate) reason: InstallReason,
     pub(crate) replacing_pkg_ids: Vec<PackageId>,
@@ -78,6 +102,7 @@ pub(crate) struct InstallOp {
 
 #[derive(Debug, Clone)]
 pub(crate) struct UninstallOp {
+    pub(crate) exec_id: ExecutionId,
     pub(crate) pkg_id: PackageId,
     pub(crate) reason: UninstallReason,
     pub(crate) conditions: Vec<ExecutionCondition>,
