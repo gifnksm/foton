@@ -15,7 +15,6 @@ use crate::{
             self, PersistError, PersistedFontEntry, PersistedPackageDb, PersistedPackageEntry,
         },
     },
-    engine::{ExecutionPlan, InstallOp, PlanStepOp, UninstallOp},
     package::{
         ActivationState, FontEntry, InstallationState, PackageId, PackageManifest, PackageName,
         PackageSpec,
@@ -207,16 +206,6 @@ impl<'lock> PackageDatabase<'lock> {
         }
     }
 
-    pub(crate) fn apply_plan_transaction(
-        &mut self,
-        plan: &ExecutionPlan,
-    ) -> Result<(), PackageDatabaseError> {
-        let mut tx = self.transaction();
-        tx.apply_plan_transaction(plan)?;
-        tx.commit()?;
-        Ok(())
-    }
-
     pub(crate) fn complete_install(
         &mut self,
         pkg_id: &PackageId,
@@ -316,37 +305,14 @@ impl PackageDatabaseTransaction<'_, '_> {
         Some(entry)
     }
 
-    pub(crate) fn apply_plan_transaction(
-        &mut self,
-        plan: &ExecutionPlan,
-    ) -> Result<(), PackageDatabaseError> {
-        if !plan.has_side_effects() {
-            return Ok(());
-        }
-
-        for step in plan.steps() {
-            if !step.can_execute() {
-                continue;
-            }
-            match step.op() {
-                PlanStepOp::Install(InstallOp { manifest, .. }) => {
-                    self.insert_entry(PersistedPackageEntry {
-                        installation_state: InstallationState::IncompleteInstall,
-                        activation_state: ActivationState::Inactive,
-                        manifest: Arc::clone(manifest),
-                        font_entries: vec![],
-                    });
-                }
-                PlanStepOp::Uninstall(UninstallOp { pkg_id, .. }) => {
-                    let entry = self
-                        .entry_mut(pkg_id)
-                        .context(EntryNotFoundSnafu { pkg_id })?;
-                    entry.installation_state = InstallationState::IncompleteUninstall;
-                }
-                PlanStepOp::Skip(_) => {}
-            }
-        }
-        Ok(())
+    pub(crate) fn begin_install(&mut self, manifest: Arc<PackageManifest>) {
+        let entry = PersistedPackageEntry {
+            installation_state: InstallationState::IncompleteInstall,
+            activation_state: ActivationState::Inactive,
+            manifest,
+            font_entries: vec![],
+        };
+        self.insert_entry(entry);
     }
 
     pub(crate) fn complete_install(
@@ -426,6 +392,17 @@ impl PackageDatabaseTransaction<'_, '_> {
         Ok(())
     }
 
+    pub(crate) fn begin_uninstall(
+        &mut self,
+        pkg_id: &PackageId,
+    ) -> Result<(), PackageDatabaseError> {
+        let entry = self
+            .entry_mut(pkg_id)
+            .context(EntryNotFoundSnafu { pkg_id })?;
+        entry.installation_state = InstallationState::IncompleteUninstall;
+        Ok(())
+    }
+
     pub(crate) fn complete_uninstall(
         &mut self,
         pkg_id: &PackageId,
@@ -467,11 +444,7 @@ mod tests {
     use std::assert_matches;
 
     use super::*;
-    use crate::{
-        db::DbLockFile,
-        engine::{PlanStep, UninstallReason},
-        util::testing,
-    };
+    use crate::{db::DbLockFile, util::testing};
 
     fn get_entry_installation_state(
         db: &PackageDatabase<'_>,
@@ -579,9 +552,8 @@ mod tests {
 
         assert_persisted_states(&app_dirs, &mut lock_file, &before);
         with_db(&app_dirs, &mut lock_file, |db| {
-            let plan = testing::make_install_plan(&manifest, vec![]);
             assert_transaction_stages_without_commit(db, &before, &staged, |tx| {
-                tx.apply_plan_transaction(&plan).unwrap();
+                tx.begin_install(Arc::clone(&manifest));
             });
         });
         assert_persisted_states(&app_dirs, &mut lock_file, &before);
@@ -631,23 +603,13 @@ mod tests {
         with_db(&app_dirs, &mut lock_file, |db| {
             assert_loaded_database_states(db, &before);
 
-            let plan = ExecutionPlan::new_for_test([
-                PlanStep::new(UninstallOp {
-                    pkg_id: installed_manifest.id(),
-                    reason: UninstallReason::RequestedByUser,
-                }),
-                PlanStep::new(UninstallOp {
-                    pkg_id: incomplete_install_manifest.id(),
-                    reason: UninstallReason::RequestedByUser,
-                }),
-                PlanStep::new(UninstallOp {
-                    pkg_id: incomplete_uninstall_manifest.id(),
-                    reason: UninstallReason::RequestedByUser,
-                }),
-            ]);
             db.simulate_save_failure = true;
             let mut tx = db.transaction();
-            tx.apply_plan_transaction(&plan).unwrap();
+            tx.begin_uninstall(&installed_manifest.id()).unwrap();
+            tx.begin_uninstall(&incomplete_install_manifest.id())
+                .unwrap();
+            tx.begin_uninstall(&incomplete_uninstall_manifest.id())
+                .unwrap();
             assert_transaction_states(&tx, &staged);
 
             let err = tx.commit().unwrap_err();
@@ -688,9 +650,8 @@ mod tests {
         with_db(&app_dirs, &mut lock_file, |db| {
             assert_loaded_database_states(db, &before);
 
-            let plan = testing::make_install_plan(&manifest, replacing_pkg_ids.clone());
             let mut tx = db.transaction();
-            tx.apply_plan_transaction(&plan).unwrap();
+            tx.begin_install(Arc::clone(&manifest));
             tx.complete_install(&pkg_id, &[], &replacing_pkg_ids)
                 .unwrap();
             assert_transaction_states(&tx, &staged);
@@ -702,7 +663,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_plan_transaction_keeps_same_version_incomplete_install_in_transaction() {
+    fn begin_install_keeps_same_version_incomplete_install_in_transaction() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
@@ -716,9 +677,8 @@ mod tests {
 
         assert_persisted_states(&app_dirs, &mut lock_file, &expected);
         with_db(&app_dirs, &mut lock_file, |db| {
-            let plan = testing::make_install_plan(&manifest, vec![]);
             assert_transaction_stages_without_commit(db, &expected, &expected, |tx| {
-                tx.apply_plan_transaction(&plan).unwrap();
+                tx.begin_install(Arc::clone(&manifest));
             });
         });
         assert_persisted_states(&app_dirs, &mut lock_file, &expected);
@@ -749,9 +709,8 @@ mod tests {
 
         with_db(&app_dirs, &mut lock_file, |db| {
             testing::mark_as_installed(db, &installed_manifest);
-            let plan = testing::make_install_plan(&manifest, replacing_pkg_ids.clone());
             let mut tx = db.transaction();
-            tx.apply_plan_transaction(&plan).unwrap();
+            tx.begin_install(Arc::clone(&manifest));
             tx.commit().unwrap();
         });
 

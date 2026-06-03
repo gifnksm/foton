@@ -12,11 +12,12 @@ use crate::{
             NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
         },
     },
-    db::{PackageDatabase, PackageDatabaseError},
+    db::{PackageDatabase, PackageDatabaseError, PackageDatabaseTransaction},
     engine::{
-        ExecutionPlan, InstallOp, PlanStepOp, PreparedInstallStep, PreparedStep, PreparedStepOp,
-        PreparedUninstallStep, StepId, StepResult, UninstallOp,
+        ExecutionPlan, InstallOp, PlanStep, PlanStepOp, PreparedInstallStep, PreparedStep,
+        PreparedStepOp, PreparedUninstallStep, StepId, StepResult, UninstallOp,
     },
+    package::PackageId,
 };
 
 #[derive(Debug)]
@@ -47,8 +48,13 @@ where
 
 #[derive(Debug, Snafu)]
 enum PrepareErrorReport {
-    #[snafu(display("failed to apply execution plan transaction"))]
-    ApplyTransaction { source: PackageDatabaseError },
+    #[snafu(display("failed to start uninstall transaction for package {pkg_id}"))]
+    BeginUninstall {
+        pkg_id: PackageId,
+        source: PackageDatabaseError,
+    },
+    #[snafu(display("failed to commit execution plan transaction"))]
+    CommitTransaction { source: PackageDatabaseError },
 }
 
 impl From<PrepareErrorReport> for ReportValue<'static> {
@@ -100,38 +106,64 @@ where
     let cx = PrepareScope::start(cx);
     let mut executions = vec![];
 
-    db.lock()
-        .unwrap()
-        .apply_plan_transaction(plan)
-        .context(ApplyTransactionSnafu)
-        .report_error(cx.reporter())?;
+    let mut db_guard = db.lock().unwrap();
+    let mut tx = db_guard.transaction();
 
     for step in plan.steps() {
-        let op: PreparedStepOp<'_, _> = match step.op() {
-            PlanStepOp::Install(InstallOp {
-                manifest,
-                replacing_pkg_ids,
-                ..
-            }) => PreparedInstallStep::new(
+        if let Some(step) = prepare_step(&cx, outer_cx, db, &mut tx, step)? {
+            executions.push(step);
+        }
+    }
+
+    tx.commit()
+        .context(CommitTransactionSnafu)
+        .report_error(cx.reporter())?;
+
+    Ok(PreparedExecutions { steps: executions })
+}
+
+fn prepare_step<'lock, S>(
+    cx: &ReportContext<PrepareScope<S>>,
+    outer_cx: &ReportContext<S>,
+    db: &Arc<Mutex<PackageDatabase<'lock>>>,
+    tx: &mut PackageDatabaseTransaction<'_, 'lock>,
+    step: &PlanStep,
+) -> Result<Option<PreparedStep<'lock, S>>, S::Error>
+where
+    S: ReportScope,
+{
+    let op: PreparedStepOp<'_, _> = match step.op() {
+        PlanStepOp::Install(InstallOp {
+            manifest,
+            replacing_pkg_ids,
+            ..
+        }) => {
+            if step.can_execute() {
+                tx.begin_install(Arc::clone(manifest));
+            }
+            PreparedInstallStep::new(
                 outer_cx,
                 Arc::clone(db),
                 Arc::clone(manifest),
                 replacing_pkg_ids.clone(),
             )
-            .into(),
-            PlanStepOp::Uninstall(UninstallOp { pkg_id, .. }) => {
-                PreparedUninstallStep::new(Arc::clone(db), pkg_id.clone()).into()
+            .into()
+        }
+        PlanStepOp::Uninstall(UninstallOp { pkg_id, .. }) => {
+            if step.can_execute() {
+                tx.begin_uninstall(pkg_id)
+                    .context(BeginUninstallSnafu { pkg_id })
+                    .report_error(cx.reporter())?;
             }
-            PlanStepOp::Skip(_) => continue,
-        };
-        executions.push(PreparedStep::with_conditions(
-            step.step_id(),
-            op,
-            step.conditions().to_vec(),
-        ));
-    }
-
-    Ok(PreparedExecutions { steps: executions })
+            PreparedUninstallStep::new(Arc::clone(db), pkg_id.clone()).into()
+        }
+        PlanStepOp::Skip(_) => return Ok(None),
+    };
+    Ok(Some(PreparedStep::with_conditions(
+        step.step_id(),
+        op,
+        step.conditions().to_vec(),
+    )))
 }
 
 #[cfg(test)]
@@ -148,7 +180,7 @@ mod tests {
     };
 
     #[test]
-    fn prepare_applies_plan_transaction_to_unconditional_ops_and_skips_skip_ops() {
+    fn prepare_begins_unconditional_ops_and_skips_skip_ops() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
 

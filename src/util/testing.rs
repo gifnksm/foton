@@ -11,9 +11,8 @@ use crate::{
     },
     db::PackageDatabase,
     engine::{
-        self, ExecutionPlan, InstallOp, InstallReason, InstallTargetSource, PlanStep, PlanStepOp,
-        ResolvedInstallTarget, ResolvedUninstallTarget, SkipOp, StepCondition, StepId, UninstallOp,
-        UninstallReason,
+        self, ExecutionPlan, InstallOp, InstallTargetSource, PlanStepOp, ResolvedInstallTarget,
+        ResolvedUninstallTarget, SkipOp, StepCondition, StepId, UninstallOp,
     },
     package::{InstallationState, PackageDirs, PackageId, PackageManifest},
     registry::{RegistryId, RegistryIndex, RegistrySource, RegistrySpec},
@@ -206,30 +205,6 @@ where
     }
 }
 
-pub(crate) fn make_install_plan(
-    manifest: &Arc<PackageManifest>,
-    replacing_pkg_ids: Vec<PackageId>,
-) -> ExecutionPlan {
-    ExecutionPlan::new_for_test([PlanStep::new(InstallOp {
-        manifest: Arc::clone(manifest),
-        reason: InstallReason::RequestedByUser,
-        replacing_pkg_ids,
-    })])
-}
-
-pub(crate) fn make_uninstall_plan(
-    pkg_id: &PackageId,
-    conditions: Vec<StepCondition>,
-) -> ExecutionPlan {
-    ExecutionPlan::new_for_test([PlanStep::with_conditions(
-        UninstallOp {
-            pkg_id: pkg_id.clone(),
-            reason: UninstallReason::RequestedByUser,
-        },
-        conditions,
-    )])
-}
-
 pub(crate) fn mark_as_state(
     db: &mut PackageDatabase<'_>,
     manifest: &Arc<PackageManifest>,
@@ -247,8 +222,9 @@ pub(crate) fn mark_as_incomplete_install(
     manifest: &Arc<PackageManifest>,
 ) {
     let pkg_id = manifest.id();
-    let plan = make_install_plan(manifest, vec![]);
-    db.apply_plan_transaction(&plan).unwrap();
+    let mut tx = db.transaction();
+    tx.begin_install(Arc::clone(manifest));
+    tx.commit().unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().installation_state,
         InstallationState::IncompleteInstall
@@ -257,9 +233,10 @@ pub(crate) fn mark_as_incomplete_install(
 
 pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &Arc<PackageManifest>) {
     let pkg_id = manifest.id();
-    let plan = make_install_plan(manifest, vec![]);
-    db.apply_plan_transaction(&plan).unwrap();
-    db.complete_install(&pkg_id, &[], &[]).unwrap();
+    let mut tx = db.transaction();
+    tx.begin_install(Arc::clone(manifest));
+    tx.complete_install(&pkg_id, &[], &[]).unwrap();
+    tx.commit().unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().installation_state,
         InstallationState::Installed
@@ -271,11 +248,11 @@ pub(crate) fn mark_as_incomplete_uninstall(
     manifest: &Arc<PackageManifest>,
 ) {
     let pkg_id = manifest.id();
-    let plan = make_install_plan(manifest, vec![]);
-    db.apply_plan_transaction(&plan).unwrap();
-    db.complete_install(&pkg_id, &[], &[]).unwrap();
-    let plan = make_uninstall_plan(&manifest.id(), vec![]);
-    db.apply_plan_transaction(&plan).unwrap();
+    let mut tx = db.transaction();
+    tx.begin_install(Arc::clone(manifest));
+    tx.complete_install(&pkg_id, &[], &[]).unwrap();
+    tx.begin_uninstall(&pkg_id).unwrap();
+    tx.commit().unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().installation_state,
         InstallationState::IncompleteUninstall
