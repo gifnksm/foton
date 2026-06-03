@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{
     db::{Installability, PackageDatabase},
     engine::{
-        ExecutionCondition, ExecutionPlan, ExecutionPlanOp, InstallOp, InstallReason,
+        ExecutionCondition, ExecutionId, ExecutionPlan, ExecutionPlanOp, InstallOp, InstallReason,
         ResolvedInstallTarget, SkipOp, UninstallOp, UninstallReason, plan::SkipReason,
     },
     package::{PackageId, PackageManifest},
@@ -23,22 +23,24 @@ pub(crate) fn plan_install(
                 incomplete_installs,
                 incomplete_uninstalls,
             } => {
-                ops.push(install_target_op(
-                    manifest,
-                    installed_other_versions.clone(),
-                ));
+                let install_exec_id = ExecutionId::new();
+                let install_op =
+                    install_target_op(install_exec_id, manifest, installed_other_versions.clone());
+                ops.push(install_op);
                 let mut uninstall_ops = vec![];
                 for pkg_id in installed_other_versions {
                     uninstall_ops.push(UninstallOp {
+                        exec_id: ExecutionId::new(),
                         pkg_id,
                         reason: UninstallReason::ConflictWithInstall {
                             pkg_id: target_id.clone(),
                         },
-                        conditions: vec![ExecutionCondition::AfterSuccess(target_id.clone())],
+                        conditions: vec![ExecutionCondition::AfterSuccess(install_exec_id)],
                     });
                 }
                 for pkg_id in incomplete_uninstalls {
                     uninstall_ops.push(UninstallOp {
+                        exec_id: ExecutionId::new(),
                         pkg_id,
                         reason: UninstallReason::CleanupIncompleteUninstall,
                         conditions: vec![],
@@ -46,6 +48,7 @@ pub(crate) fn plan_install(
                 }
                 for pkg_id in incomplete_installs {
                     uninstall_ops.push(UninstallOp {
+                        exec_id: ExecutionId::new(),
                         pkg_id,
                         reason: UninstallReason::CleanupIncompleteInstall,
                         conditions: vec![],
@@ -67,10 +70,12 @@ pub(crate) fn plan_install(
 }
 
 fn install_target_op(
+    exec_id: ExecutionId,
     manifest: &Arc<PackageManifest>,
     replacing_pkg_ids: Vec<PackageId>,
 ) -> ExecutionPlanOp {
     InstallOp {
+        exec_id,
         manifest: Arc::clone(manifest),
         reason: InstallReason::RequestedByUser,
         replacing_pkg_ids,
@@ -107,35 +112,39 @@ mod tests {
             plan_install(&db, &[install_target])
         });
 
+        let install_exec_id = ExecutionId::new();
+
         testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([
                 InstallOp {
+                    exec_id: install_exec_id,
                     manifest: Arc::clone(&install_target_manifest),
                     reason: InstallReason::RequestedByUser,
                     replacing_pkg_ids: vec![installed_manifest.id()],
                 }
                 .into(),
                 UninstallOp {
+                    exec_id: ExecutionId::new(),
                     pkg_id: incomplete_install_manifest.id(),
                     reason: UninstallReason::CleanupIncompleteInstall,
                     conditions: vec![],
                 }
                 .into(),
                 UninstallOp {
+                    exec_id: ExecutionId::new(),
                     pkg_id: incomplete_uninstall_manifest.id(),
                     reason: UninstallReason::CleanupIncompleteUninstall,
                     conditions: vec![],
                 }
                 .into(),
                 UninstallOp {
+                    exec_id: ExecutionId::new(),
                     pkg_id: installed_manifest.id(),
                     reason: UninstallReason::ConflictWithInstall {
                         pkg_id: install_target_manifest.id(),
                     },
-                    conditions: vec![ExecutionCondition::AfterSuccess(
-                        install_target_manifest.id(),
-                    )],
+                    conditions: vec![ExecutionCondition::AfterSuccess(install_exec_id)],
                 }
                 .into(),
             ]),
@@ -191,6 +200,7 @@ mod tests {
             testing::assert_plan_eq(
                 &plan,
                 &ExecutionPlan::new_for_test([InstallOp {
+                    exec_id: ExecutionId::new(),
                     manifest: Arc::clone(&manifest),
                     reason: InstallReason::RequestedByUser,
                     replacing_pkg_ids: vec![],

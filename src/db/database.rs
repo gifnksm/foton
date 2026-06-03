@@ -419,7 +419,11 @@ mod tests {
     use std::assert_matches;
 
     use super::*;
-    use crate::{db::DbLockFile, engine::UninstallReason, util::testing};
+    use crate::{
+        db::DbLockFile,
+        engine::{ExecutionId, UninstallReason},
+        util::testing,
+    };
 
     fn get_entry_installation_state(
         db: &PackageDatabase<'_>,
@@ -592,18 +596,21 @@ mod tests {
             |db| {
                 let plan = ExecutionPlan::new_for_test([
                     UninstallOp {
+                        exec_id: ExecutionId::new(),
                         pkg_id: installed_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
                         conditions: vec![],
                     }
                     .into(),
                     UninstallOp {
+                        exec_id: ExecutionId::new(),
                         pkg_id: incomplete_install_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
                         conditions: vec![],
                     }
                     .into(),
                     UninstallOp {
+                        exec_id: ExecutionId::new(),
                         pkg_id: incomplete_uninstall_manifest.id(),
                         reason: UninstallReason::RequestedByUser,
                         conditions: vec![],

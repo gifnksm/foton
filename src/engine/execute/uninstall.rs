@@ -13,7 +13,7 @@ use crate::{
         },
     },
     db::{PackageDatabase, PackageDatabaseError},
-    engine::{ExecutionCondition, ExecutionResult},
+    engine::{ExecutionCondition, ExecutionId, ExecutionResult},
     package::{self, InstallationState, PackageDirs, PackageId},
     platform::windows::steps::unregistration,
     util::{fs::FsError, macros::concat_line},
@@ -80,6 +80,7 @@ impl From<UninstallExecutionErrorReport> for ReportValue<'static> {
 #[derive(Debug)]
 pub(in crate::engine) struct UninstallExecution<'db> {
     db: Arc<Mutex<PackageDatabase<'db>>>,
+    exec_id: ExecutionId,
     pkg_id: PackageId,
     conditions: Vec<ExecutionCondition>,
 }
@@ -87,11 +88,13 @@ pub(in crate::engine) struct UninstallExecution<'db> {
 impl<'db> UninstallExecution<'db> {
     pub(in crate::engine) fn new(
         db: Arc<Mutex<PackageDatabase<'db>>>,
+        exec_id: ExecutionId,
         pkg_id: PackageId,
         conditions: Vec<ExecutionCondition>,
     ) -> Self {
         Self {
             db,
+            exec_id,
             pkg_id,
             conditions,
         }
@@ -104,17 +107,21 @@ impl<'db> UninstallExecution<'db> {
         execute_uninstall(cx, &self.db, &self.pkg_id)
     }
 
-    pub(in crate::engine) fn target_id(&self) -> PackageId {
-        self.pkg_id.clone()
+    pub(in crate::engine) fn exec_id(&self) -> ExecutionId {
+        self.exec_id
     }
 
     pub(in crate::engine) fn can_execute(&self) -> bool {
         self.conditions.is_empty()
     }
 
-    pub(in crate::engine) fn notify_result(&mut self, pkg_id: &PackageId, result: ExecutionResult) {
+    pub(in crate::engine) fn notify_result(
+        &mut self,
+        exec_id: ExecutionId,
+        result: ExecutionResult,
+    ) {
         self.conditions.retain_mut(|exec| match exec {
-            ExecutionCondition::AfterSuccess(cond_id) if cond_id == pkg_id => match result {
+            ExecutionCondition::AfterSuccess(cond_id) if *cond_id == exec_id => match result {
                 ExecutionResult::Success => false,
                 ExecutionResult::Failure => {
                     *exec = ExecutionCondition::Never;

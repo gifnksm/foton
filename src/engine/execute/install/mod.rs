@@ -13,7 +13,7 @@ use crate::{
         },
     },
     db::PackageDatabase,
-    engine::{ExecutionResult, execute::install::db_guard::InstallDbGuard, support},
+    engine::{ExecutionId, ExecutionResult, execute::install::db_guard::InstallDbGuard, support},
     package::{self, PackageDirs, PackageId, PackageManifest},
     platform::windows::steps::unregistration,
     util::{fs::FsError, macros::concat_line},
@@ -123,6 +123,7 @@ where
     S: ReportScope,
 {
     db_guard: InstallDbGuard<'db, S>,
+    exec_id: ExecutionId,
     manifest: Arc<PackageManifest>,
     cleanup_tracker: CleanupTracker,
 }
@@ -134,6 +135,7 @@ where
     pub(in crate::engine) fn new(
         cx: &ReportContext<S>,
         db: Arc<Mutex<PackageDatabase<'db>>>,
+        exec_id: ExecutionId,
         manifest: Arc<PackageManifest>,
         replacing_pkg_ids: Vec<PackageId>,
     ) -> Self {
@@ -147,6 +149,7 @@ where
         );
         Self {
             db_guard,
+            exec_id,
             manifest,
             cleanup_tracker,
         }
@@ -187,8 +190,8 @@ where
         Ok(())
     }
 
-    pub(in crate::engine) fn target_id(&self) -> PackageId {
-        self.manifest.id()
+    pub(in crate::engine) fn exec_id(&self) -> ExecutionId {
+        self.exec_id
     }
 
     #[expect(clippy::unused_self)]
@@ -199,7 +202,7 @@ where
     #[expect(clippy::unused_self)]
     pub(in crate::engine) fn notify_result(
         &mut self,
-        _pkg_id: &PackageId,
+        _exec_id: ExecutionId,
         _result: ExecutionResult,
     ) {
     }

@@ -1,7 +1,8 @@
 use crate::{
     db::{PackageDatabase, Uninstallability},
     engine::{
-        ExecutionPlan, ResolvedUninstallTarget, SkipOp, SkipReason, UninstallOp, UninstallReason,
+        ExecutionId, ExecutionPlan, ResolvedUninstallTarget, SkipOp, SkipReason, UninstallOp,
+        UninstallReason,
     },
 };
 
@@ -16,6 +17,7 @@ pub(crate) fn plan_uninstall(
                 match db.check_uninstallability(pkg_id) {
                     Uninstallability::Uninstallable => ops.push(
                         UninstallOp {
+                            exec_id: ExecutionId::new(),
                             pkg_id: pkg_id.clone(),
                             reason: UninstallReason::RequestedByUser,
                             conditions: vec![],
@@ -76,6 +78,7 @@ mod tests {
         testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([UninstallOp {
+                exec_id: ExecutionId::new(),
                 pkg_id: uninstall_pkg_id,
                 reason: UninstallReason::RequestedByUser,
                 conditions: vec![],
