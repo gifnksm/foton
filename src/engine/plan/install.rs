@@ -3,8 +3,8 @@ use std::sync::Arc;
 use crate::{
     db::{Installability, PackageDatabase},
     engine::{
-        ExecutionCondition, ExecutionId, ExecutionPlan, ExecutionPlanOp, InstallOp, InstallReason,
-        ResolvedInstallTarget, SkipOp, UninstallOp, UninstallReason, plan::SkipReason,
+        ExecutionPlan, InstallOp, InstallReason, PlanStep, ResolvedInstallTarget, SkipOp,
+        StepCondition, UninstallOp, UninstallReason, plan::SkipReason,
     },
     package::{PackageId, PackageManifest},
 };
@@ -23,64 +23,64 @@ pub(crate) fn plan_install(
                 incomplete_installs,
                 incomplete_uninstalls,
             } => {
-                let install_exec_id = ExecutionId::new();
-                let install_op =
-                    install_target_op(install_exec_id, manifest, installed_other_versions.clone());
+                let install_op = install_target_op(manifest, installed_other_versions.clone());
+                let install_step_id = install_op.step_id;
                 ops.push(install_op);
                 let mut uninstall_ops = vec![];
                 for pkg_id in installed_other_versions {
-                    uninstall_ops.push(UninstallOp {
-                        exec_id: ExecutionId::new(),
-                        pkg_id,
-                        reason: UninstallReason::ConflictWithInstall {
-                            pkg_id: target_id.clone(),
+                    uninstall_ops.push((
+                        UninstallOp {
+                            pkg_id,
+                            reason: UninstallReason::ConflictWithInstall {
+                                pkg_id: target_id.clone(),
+                            },
                         },
-                        conditions: vec![ExecutionCondition::AfterSuccess(install_exec_id)],
-                    });
+                        vec![StepCondition::AfterSuccess(install_step_id)],
+                    ));
                 }
                 for pkg_id in incomplete_uninstalls {
-                    uninstall_ops.push(UninstallOp {
-                        exec_id: ExecutionId::new(),
-                        pkg_id,
-                        reason: UninstallReason::CleanupIncompleteUninstall,
-                        conditions: vec![],
-                    });
+                    uninstall_ops.push((
+                        UninstallOp {
+                            pkg_id,
+                            reason: UninstallReason::CleanupIncompleteUninstall,
+                        },
+                        vec![],
+                    ));
                 }
                 for pkg_id in incomplete_installs {
-                    uninstall_ops.push(UninstallOp {
-                        exec_id: ExecutionId::new(),
-                        pkg_id,
-                        reason: UninstallReason::CleanupIncompleteInstall,
-                        conditions: vec![],
-                    });
+                    uninstall_ops.push((
+                        UninstallOp {
+                            pkg_id,
+                            reason: UninstallReason::CleanupIncompleteInstall,
+                        },
+                        vec![],
+                    ));
                 }
-                uninstall_ops.sort_by(|a, b| a.pkg_id.cmp(&b.pkg_id));
-                ops.extend(uninstall_ops.into_iter().map(ExecutionPlanOp::Uninstall));
+                uninstall_ops.sort_by(|(a, _), (b, _)| a.pkg_id.cmp(&b.pkg_id));
+                ops.extend(
+                    uninstall_ops
+                        .into_iter()
+                        .map(|(op, conditions)| PlanStep::with_conditions(op, conditions)),
+                );
             }
-            Installability::AlreadyInstalled => ops.push(
-                SkipOp {
-                    pkg_spec: target_id.into(),
-                    reason: SkipReason::AlreadyInstalled,
-                }
-                .into(),
-            ),
+            Installability::AlreadyInstalled => ops.push(PlanStep::new(SkipOp {
+                pkg_spec: target_id.into(),
+                reason: SkipReason::AlreadyInstalled,
+            })),
         }
     }
-    ExecutionPlan { ops }
+    ExecutionPlan { steps: ops }
 }
 
 fn install_target_op(
-    exec_id: ExecutionId,
     manifest: &Arc<PackageManifest>,
     replacing_pkg_ids: Vec<PackageId>,
-) -> ExecutionPlanOp {
-    InstallOp {
-        exec_id,
+) -> PlanStep {
+    PlanStep::new(InstallOp {
         manifest: Arc::clone(manifest),
         reason: InstallReason::RequestedByUser,
         replacing_pkg_ids,
-    }
-    .into()
+    })
 }
 
 #[cfg(test)]
@@ -112,41 +112,34 @@ mod tests {
             plan_install(&db, &[install_target])
         });
 
-        let install_exec_id = ExecutionId::new();
+        let install_step = PlanStep::new(InstallOp {
+            manifest: Arc::clone(&install_target_manifest),
+            reason: InstallReason::RequestedByUser,
+            replacing_pkg_ids: vec![installed_manifest.id()],
+        });
+        let install_step_id = install_step.step_id;
 
         testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([
-                InstallOp {
-                    exec_id: install_exec_id,
-                    manifest: Arc::clone(&install_target_manifest),
-                    reason: InstallReason::RequestedByUser,
-                    replacing_pkg_ids: vec![installed_manifest.id()],
-                }
-                .into(),
-                UninstallOp {
-                    exec_id: ExecutionId::new(),
+                install_step,
+                PlanStep::new(UninstallOp {
                     pkg_id: incomplete_install_manifest.id(),
                     reason: UninstallReason::CleanupIncompleteInstall,
-                    conditions: vec![],
-                }
-                .into(),
-                UninstallOp {
-                    exec_id: ExecutionId::new(),
+                }),
+                PlanStep::new(UninstallOp {
                     pkg_id: incomplete_uninstall_manifest.id(),
                     reason: UninstallReason::CleanupIncompleteUninstall,
-                    conditions: vec![],
-                }
-                .into(),
-                UninstallOp {
-                    exec_id: ExecutionId::new(),
-                    pkg_id: installed_manifest.id(),
-                    reason: UninstallReason::ConflictWithInstall {
-                        pkg_id: install_target_manifest.id(),
+                }),
+                PlanStep::with_conditions(
+                    UninstallOp {
+                        pkg_id: installed_manifest.id(),
+                        reason: UninstallReason::ConflictWithInstall {
+                            pkg_id: install_target_manifest.id(),
+                        },
                     },
-                    conditions: vec![ExecutionCondition::AfterSuccess(install_exec_id)],
-                }
-                .into(),
+                    vec![StepCondition::AfterSuccess(install_step_id)],
+                ),
             ]),
         );
     }
@@ -166,11 +159,10 @@ mod tests {
 
         testing::assert_plan_eq(
             &plan,
-            &ExecutionPlan::new_for_test([SkipOp {
+            &ExecutionPlan::new_for_test([PlanStep::new(SkipOp {
                 pkg_spec: manifest.id().into(),
                 reason: SkipReason::AlreadyInstalled,
-            }
-            .into()]),
+            })]),
         );
     }
 
@@ -199,13 +191,11 @@ mod tests {
             });
             testing::assert_plan_eq(
                 &plan,
-                &ExecutionPlan::new_for_test([InstallOp {
-                    exec_id: ExecutionId::new(),
+                &ExecutionPlan::new_for_test([PlanStep::new(InstallOp {
                     manifest: Arc::clone(&manifest),
                     reason: InstallReason::RequestedByUser,
                     replacing_pkg_ids: vec![],
-                }
-                .into()]),
+                })]),
             );
         }
     }

@@ -13,37 +13,91 @@ mod uninstall;
 
 #[derive(Debug)]
 pub(crate) struct ExecutionPlan {
-    ops: Vec<ExecutionPlanOp>,
+    steps: Vec<PlanStep>,
 }
 
 impl ExecutionPlan {
-    pub(crate) fn ops(&self) -> &[ExecutionPlanOp] {
-        &self.ops
+    pub(crate) fn steps(&self) -> &[PlanStep] {
+        &self.steps
     }
 
     pub(crate) fn has_side_effects(&self) -> bool {
-        self.ops.iter().any(|op| !op.is_skip())
+        self.steps.iter().any(|step| !step.op.is_skip())
     }
 
     #[cfg(test)]
     pub(crate) fn new_for_test<I>(ops: I) -> Self
     where
-        I: IntoIterator<Item = ExecutionPlanOp>,
+        I: IntoIterator<Item = PlanStep>,
     {
         Self {
-            ops: ops.into_iter().collect(),
+            steps: ops.into_iter().collect(),
         }
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct PlanStep {
+    step_id: StepId,
+    op: PlanStepOp,
+    conditions: Vec<StepCondition>,
+}
+
+impl PlanStep {
+    pub(crate) fn new<O>(op: O) -> Self
+    where
+        O: Into<PlanStepOp>,
+    {
+        Self::with_conditions(op, vec![])
+    }
+
+    pub(crate) fn with_conditions<O>(op: O, conditions: Vec<StepCondition>) -> Self
+    where
+        O: Into<PlanStepOp>,
+    {
+        Self {
+            step_id: StepId::new(),
+            op: op.into(),
+            conditions,
+        }
+    }
+
+    pub(crate) fn step_id(&self) -> StepId {
+        self.step_id
+    }
+
+    pub(crate) fn op(&self) -> &PlanStepOp {
+        &self.op
+    }
+
+    pub(crate) fn can_execute(&self) -> bool {
+        self.conditions.is_empty()
+    }
+
+    pub(crate) fn conditions(&self) -> &[StepCondition] {
+        &self.conditions
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct StepId(u64);
+
+impl StepId {
+    pub(crate) fn new() -> Self {
+        static ID: AtomicU64 = AtomicU64::new(0);
+        let id = ID.fetch_add(1, Ordering::Relaxed);
+        Self(id)
+    }
+}
+
 #[derive(Debug, Clone, derive_more::IsVariant, derive_more::From)]
-pub(crate) enum ExecutionPlanOp {
+pub(crate) enum PlanStepOp {
     Install(InstallOp),
     Uninstall(UninstallOp),
     Skip(SkipOp),
 }
 
-impl ExecutionPlanOp {
+impl PlanStepOp {
     pub(crate) fn as_install(&self) -> Option<&InstallOp> {
         match self {
             Self::Install(op) => Some(op),
@@ -64,37 +118,16 @@ impl ExecutionPlanOp {
             _ => None,
         }
     }
-
-    #[cfg(test)]
-    pub(crate) fn exec_id(&self) -> Option<ExecutionId> {
-        match self {
-            ExecutionPlanOp::Install(op) => Some(op.exec_id),
-            ExecutionPlanOp::Uninstall(op) => Some(op.exec_id),
-            ExecutionPlanOp::Skip(_) => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct ExecutionId(u64);
-
-impl ExecutionId {
-    pub(crate) fn new() -> Self {
-        static ID: AtomicU64 = AtomicU64::new(0);
-        let id = ID.fetch_add(1, Ordering::Relaxed);
-        Self(id)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ExecutionCondition {
-    AfterSuccess(ExecutionId),
+pub(crate) enum StepCondition {
+    AfterSuccess(StepId),
     Never,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct InstallOp {
-    pub(crate) exec_id: ExecutionId,
     pub(crate) manifest: Arc<PackageManifest>,
     pub(crate) reason: InstallReason,
     pub(crate) replacing_pkg_ids: Vec<PackageId>,
@@ -102,10 +135,8 @@ pub(crate) struct InstallOp {
 
 #[derive(Debug, Clone)]
 pub(crate) struct UninstallOp {
-    pub(crate) exec_id: ExecutionId,
     pub(crate) pkg_id: PackageId,
     pub(crate) reason: UninstallReason,
-    pub(crate) conditions: Vec<ExecutionCondition>,
 }
 
 #[derive(Debug, Clone)]

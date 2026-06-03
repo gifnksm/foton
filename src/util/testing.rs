@@ -11,9 +11,9 @@ use crate::{
     },
     db::PackageDatabase,
     engine::{
-        self, ExecutionCondition, ExecutionId, ExecutionPlan, ExecutionPlanOp, InstallOp,
-        InstallReason, InstallTargetSource, ResolvedInstallTarget, ResolvedUninstallTarget, SkipOp,
-        UninstallOp, UninstallReason,
+        self, ExecutionPlan, InstallOp, InstallReason, InstallTargetSource, PlanStep, PlanStepOp,
+        ResolvedInstallTarget, ResolvedUninstallTarget, SkipOp, StepCondition, StepId, UninstallOp,
+        UninstallReason,
     },
     package::{InstallationState, PackageDirs, PackageId, PackageManifest},
     registry::{RegistryId, RegistryIndex, RegistrySource, RegistrySpec},
@@ -210,26 +210,24 @@ pub(crate) fn make_install_plan(
     manifest: &Arc<PackageManifest>,
     replacing_pkg_ids: Vec<PackageId>,
 ) -> ExecutionPlan {
-    ExecutionPlan::new_for_test([InstallOp {
-        exec_id: ExecutionId::new(),
+    ExecutionPlan::new_for_test([PlanStep::new(InstallOp {
         manifest: Arc::clone(manifest),
         reason: InstallReason::RequestedByUser,
         replacing_pkg_ids,
-    }
-    .into()])
+    })])
 }
 
 pub(crate) fn make_uninstall_plan(
     pkg_id: &PackageId,
-    conditions: Vec<ExecutionCondition>,
+    conditions: Vec<StepCondition>,
 ) -> ExecutionPlan {
-    ExecutionPlan::new_for_test([UninstallOp {
-        exec_id: ExecutionId::new(),
-        pkg_id: pkg_id.clone(),
-        reason: UninstallReason::RequestedByUser,
+    ExecutionPlan::new_for_test([PlanStep::with_conditions(
+        UninstallOp {
+            pkg_id: pkg_id.clone(),
+            reason: UninstallReason::RequestedByUser,
+        },
         conditions,
-    }
-    .into()])
+    )])
 }
 
 pub(crate) fn mark_as_state(
@@ -286,29 +284,32 @@ pub(crate) fn mark_as_incomplete_uninstall(
 
 #[track_caller]
 pub(crate) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
-    let actual_ops = actual.ops();
-    let expected_ops = expected.ops();
+    let actual_steps = actual.steps();
+    let expected_steps = expected.steps();
     assert_eq!(
-        expected_ops.len(),
-        actual_ops.len(),
-        "plan op count mismatch:\n  actual: {actual_ops:?}\nexpected: {expected_ops:?}",
+        expected_steps.len(),
+        actual_steps.len(),
+        "plan step count mismatch:\n  actual: {actual_steps:?}\nexpected: {expected_steps:?}",
     );
-    let exec_id_map = actual_ops
+    let step_id_map = actual_steps
         .iter()
-        .zip(expected_ops)
-        .filter_map(|(actual_op, expected_op)| Some((actual_op.exec_id()?, expected_op.exec_id()?)))
+        .zip(expected_steps)
+        .map(|(actual_step, expected_step)| (actual_step.step_id(), expected_step.step_id()))
         .collect::<HashMap<_, _>>();
-    for (actual_op, expected_op) in actual_ops.iter().zip(expected_ops) {
-        match (actual_op, expected_op) {
+    for (actual_step, expected_step) in actual_steps.iter().zip(expected_steps) {
+        assert_conditions_eq(
+            &step_id_map,
+            actual_step.conditions(),
+            expected_step.conditions(),
+        );
+        match (actual_step.op(), expected_step.op()) {
             (
-                ExecutionPlanOp::Install(InstallOp {
-                    exec_id: _,
+                PlanStepOp::Install(InstallOp {
                     manifest: actual_manifest,
                     reason: actual_reason,
                     replacing_pkg_ids: actual_replacing_pkg_ids,
                 }),
-                ExecutionPlanOp::Install(InstallOp {
-                    exec_id: _,
+                PlanStepOp::Install(InstallOp {
                     manifest: expected_manifest,
                     reason: expected_reason,
                     replacing_pkg_ids: expected_replacing_pkg_ids,
@@ -319,29 +320,24 @@ pub(crate) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
                 assert_eq!(actual_replacing_pkg_ids, expected_replacing_pkg_ids);
             }
             (
-                ExecutionPlanOp::Uninstall(UninstallOp {
-                    exec_id: _,
+                PlanStepOp::Uninstall(UninstallOp {
                     pkg_id: actual_pkg_id,
                     reason: actual_reason,
-                    conditions: actual_conditions,
                 }),
-                ExecutionPlanOp::Uninstall(UninstallOp {
-                    exec_id: _,
+                PlanStepOp::Uninstall(UninstallOp {
                     pkg_id: expected_pkg_id,
                     reason: expected_reason,
-                    conditions: expected_conditions,
                 }),
             ) => {
                 assert_eq!(actual_pkg_id, expected_pkg_id);
                 assert_eq!(actual_reason, expected_reason);
-                assert_conditions_eq(&exec_id_map, actual_conditions, expected_conditions);
             }
             (
-                ExecutionPlanOp::Skip(SkipOp {
+                PlanStepOp::Skip(SkipOp {
                     pkg_spec: actual_pkg_spec,
                     reason: actual_reason,
                 }),
-                ExecutionPlanOp::Skip(SkipOp {
+                PlanStepOp::Skip(SkipOp {
                     pkg_spec: expected_pkg_spec,
                     reason: expected_reason,
                 }),
@@ -357,17 +353,17 @@ pub(crate) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
 }
 
 fn assert_conditions_eq(
-    exec_id_map: &HashMap<ExecutionId, ExecutionId>,
-    actual_conditions: &[ExecutionCondition],
-    expected_conditions: &[ExecutionCondition],
+    step_id_map: &HashMap<StepId, StepId>,
+    actual_conditions: &[StepCondition],
+    expected_conditions: &[StepCondition],
 ) {
     let converted_actual_conditions = actual_conditions
         .iter()
         .map(|condition| match condition {
-            ExecutionCondition::AfterSuccess(exec_id) => {
-                ExecutionCondition::AfterSuccess(exec_id_map[exec_id])
+            StepCondition::AfterSuccess(step_id) => {
+                StepCondition::AfterSuccess(step_id_map[step_id])
             }
-            ExecutionCondition::Never => ExecutionCondition::Never,
+            StepCondition::Never => StepCondition::Never,
         })
         .collect::<Vec<_>>();
     assert_eq!(converted_actual_conditions, expected_conditions);
