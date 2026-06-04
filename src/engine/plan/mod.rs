@@ -7,6 +7,8 @@ use crate::package::{PackageId, PackageManifest, PackageSpec};
 
 pub(crate) use self::{install::*, repair::*, uninstall::*};
 
+use super::StepResult;
+
 mod install;
 mod repair;
 mod uninstall;
@@ -19,6 +21,10 @@ pub(crate) struct ExecutionPlan {
 impl ExecutionPlan {
     pub(crate) fn steps(&self) -> &[PlanStep] {
         &self.steps
+    }
+
+    pub(crate) fn into_steps(self) -> Vec<PlanStep> {
+        self.steps
     }
 
     pub(crate) fn has_side_effects(&self) -> bool {
@@ -70,12 +76,26 @@ impl PlanStep {
         &self.op
     }
 
-    pub(crate) fn can_execute(&self) -> bool {
+    pub(in crate::engine) fn can_execute(&self) -> bool {
         self.conditions.is_empty()
     }
 
+    #[cfg(test)]
     pub(crate) fn conditions(&self) -> &[StepCondition] {
         &self.conditions
+    }
+
+    pub(in crate::engine) fn notify_result(&mut self, step_id: StepId, result: StepResult) {
+        self.conditions.retain_mut(|condition| match condition {
+            StepCondition::AfterSuccess(cond_id) if *cond_id == step_id => match result {
+                StepResult::Success => false,
+                StepResult::Failure => {
+                    *condition = StepCondition::Never;
+                    true
+                }
+            },
+            StepCondition::AfterSuccess(_) | StepCondition::Never => true,
+        });
     }
 }
 

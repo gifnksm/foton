@@ -77,8 +77,7 @@ pub(crate) async fn update_package(cx: &RootContext, args: &UpdateArgs) -> Resul
     engine::confirm(&cx, "Do you want to continue?").await?;
 
     let db = Arc::new(Mutex::new(db));
-    let prepared_plan = engine::prepare(&cx, &db, &plan)?;
-    engine::execute_plan(&cx, prepared_plan).await?;
+    engine::execute_plan(&cx, &db, plan).await?;
 
     Ok(())
 }
