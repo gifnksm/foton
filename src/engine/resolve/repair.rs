@@ -35,10 +35,16 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RepairKind {
+    IncompleteInstall,
+    IncompleteUninstall,
+}
+
 #[derive(Debug, Clone, derive_more::IsVariant)]
 pub(crate) enum ResolvedRepairTarget {
     NotBroken { pkg_spec: PackageSpec },
-    Uninstall { pkg_id: PackageId },
+    Uninstall { pkg_id: PackageId, kind: RepairKind },
     AlreadyUninstalled { pkg_spec: PackageSpec },
 }
 
@@ -55,11 +61,14 @@ where
         .entries()
         .filter_map(|entry| match entry.installation_state {
             InstallationState::Installed => None,
-            InstallationState::IncompleteInstall | InstallationState::IncompleteUninstall => {
-                Some(ResolvedRepairTarget::Uninstall {
-                    pkg_id: entry.manifest.id(),
-                })
-            }
+            InstallationState::IncompleteInstall => Some(ResolvedRepairTarget::Uninstall {
+                pkg_id: entry.manifest.id(),
+                kind: RepairKind::IncompleteInstall,
+            }),
+            InstallationState::IncompleteUninstall => Some(ResolvedRepairTarget::Uninstall {
+                pkg_id: entry.manifest.id(),
+                kind: RepairKind::IncompleteUninstall,
+            }),
         })
         .collect::<Vec<_>>();
     dedup_targets(&mut targets);
@@ -95,9 +104,14 @@ fn resolve_spec(db: &PackageDatabase<'_>, pkg_spec: &PackageSpec) -> Vec<Resolve
     for entry in candidates {
         match entry.installation_state {
             InstallationState::Installed => {}
-            InstallationState::IncompleteInstall | InstallationState::IncompleteUninstall => {
+            InstallationState::IncompleteInstall => targets.push(ResolvedRepairTarget::Uninstall {
+                pkg_id: entry.manifest.id(),
+                kind: RepairKind::IncompleteInstall,
+            }),
+            InstallationState::IncompleteUninstall => {
                 targets.push(ResolvedRepairTarget::Uninstall {
                     pkg_id: entry.manifest.id(),
+                    kind: RepairKind::IncompleteUninstall,
                 });
             }
         }
@@ -115,7 +129,7 @@ fn dedup_targets(targets: &mut Vec<ResolvedRepairTarget>) {
     let mut seen_pkg_spec = BTreeSet::new();
     targets.retain(|target| match target {
         ResolvedRepairTarget::NotBroken { pkg_spec } => seen_pkg_spec.insert(pkg_spec.clone()),
-        ResolvedRepairTarget::Uninstall { pkg_id } => seen_pkg_id.insert(pkg_id.clone()),
+        ResolvedRepairTarget::Uninstall { pkg_id, .. } => seen_pkg_id.insert(pkg_id.clone()),
         ResolvedRepairTarget::AlreadyUninstalled { pkg_spec } => {
             seen_pkg_spec.insert(pkg_spec.clone())
         }
@@ -134,24 +148,24 @@ mod tests {
 
     fn assert_uninstall_targets_eq(
         targets: &[ResolvedRepairTarget],
-        expected_pkg_ids: &[PackageId],
+        expected: &[(PackageId, RepairKind)],
     ) {
-        let mut actual_pkg_ids = targets
+        let mut actual = targets
             .iter()
             .map(|target| match target {
-                ResolvedRepairTarget::Uninstall { pkg_id } => pkg_id.to_string(),
+                ResolvedRepairTarget::Uninstall { pkg_id, kind } => (pkg_id.to_string(), *kind),
                 other => panic!("unexpected target: {other:?}"),
             })
             .collect::<Vec<_>>();
-        actual_pkg_ids.sort();
+        actual.sort_by(|a, b| a.0.cmp(&b.0));
 
-        let mut expected_pkg_ids = expected_pkg_ids
+        let mut expected = expected
             .iter()
-            .map(ToString::to_string)
+            .map(|(pkg_id, kind)| (pkg_id.to_string(), *kind))
             .collect::<Vec<_>>();
-        expected_pkg_ids.sort();
+        expected.sort_by(|a, b| a.0.cmp(&b.0));
 
-        assert_eq!(actual_pkg_ids, expected_pkg_ids);
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -174,8 +188,14 @@ mod tests {
             assert_uninstall_targets_eq(
                 &targets,
                 &[
-                    incomplete_install_manifest.id(),
-                    incomplete_uninstall_manifest.id(),
+                    (
+                        incomplete_install_manifest.id(),
+                        RepairKind::IncompleteInstall,
+                    ),
+                    (
+                        incomplete_uninstall_manifest.id(),
+                        RepairKind::IncompleteUninstall,
+                    ),
                 ],
             );
         });
@@ -252,8 +272,14 @@ mod tests {
             assert_uninstall_targets_eq(
                 &targets,
                 &[
-                    incomplete_install_manifest.id(),
-                    incomplete_uninstall_manifest.id(),
+                    (
+                        incomplete_install_manifest.id(),
+                        RepairKind::IncompleteInstall,
+                    ),
+                    (
+                        incomplete_uninstall_manifest.id(),
+                        RepairKind::IncompleteUninstall,
+                    ),
                 ],
             );
         });

@@ -183,14 +183,6 @@ impl<'lock> PackageDatabase<'lock> {
         }
     }
 
-    pub(crate) fn check_uninstallability(&self, pkg_id: &PackageId) -> Uninstallability {
-        if self.entry_by_id(pkg_id).is_some() {
-            Uninstallability::Uninstallable
-        } else {
-            Uninstallability::AlreadyUninstalled
-        }
-    }
-
     pub(crate) fn transaction(&mut self) -> PackageDatabaseTransaction<'_, 'lock> {
         PackageDatabaseTransaction {
             persist_db: self.persist_db.clone(),
@@ -372,12 +364,6 @@ pub(crate) enum Installability {
         incomplete_uninstalls: Vec<PackageId>,
     },
     AlreadyInstalled,
-}
-
-#[derive(Debug, Clone, derive_more::IsVariant)]
-pub(crate) enum Uninstallability {
-    Uninstallable,
-    AlreadyUninstalled,
 }
 
 #[cfg(test)]

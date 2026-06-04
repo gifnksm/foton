@@ -188,6 +188,10 @@ pub(crate) enum UninstallReason {
     CleanupIncompleteInstall,
     #[display("cleanup after incomplete uninstall")]
     CleanupIncompleteUninstall,
+    #[display("repairing incomplete install")]
+    RepairIncompleteInstall,
+    #[display("repairing incomplete uninstall")]
+    RepairIncompleteUninstall,
 }
 
 #[derive(Debug, Clone, derive_more::Display, PartialEq, Eq)]
@@ -198,6 +202,6 @@ pub(crate) enum SkipReason {
     AlreadyUninstalled,
     #[display("not broken")]
     NotBroken,
-    #[display("already repaired")]
-    AlreadyRepaired,
+    #[display("nothing to repair")]
+    NothingToRepair,
 }

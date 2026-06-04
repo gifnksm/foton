@@ -109,6 +109,10 @@ impl PreparedUninstallStep {
         execute_uninstall(cx, &self.pkg_id)
     }
 
+    pub(in crate::engine) fn pkg_id(&self) -> &PackageId {
+        &self.pkg_id
+    }
+
     pub(in crate::engine) fn on_complete<S>(
         &mut self,
         cx: &ReportContext<S>,
