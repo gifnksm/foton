@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use snafu::Snafu;
 
 use crate::{
@@ -57,7 +55,7 @@ pub(crate) async fn uninstall_package(
     );
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
-    let db = engine::load_database(&cx, &mut db_lock_file)?;
+    let mut db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let targets = engine::resolve_uninstall_targets(&cx, &db, pkg_specs)?;
     let plan = engine::plan_uninstall(&db, &targets);
@@ -71,8 +69,7 @@ pub(crate) async fn uninstall_package(
 
     engine::confirm(&cx, "Do you want to continue?").await?;
 
-    let db = Arc::new(Mutex::new(db));
-    engine::execute_plan(&cx, &db, plan).await?;
+    engine::execute_plan(&cx, &mut db, plan).await?;
 
     Ok(())
 }

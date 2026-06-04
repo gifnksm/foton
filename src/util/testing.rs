@@ -235,7 +235,7 @@ pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &Arc<Pac
     let pkg_id = manifest.id();
     let mut tx = db.transaction();
     tx.begin_install(Arc::clone(manifest));
-    tx.complete_install(&pkg_id, &[], &[]).unwrap();
+    tx.complete_install(&pkg_id, &[]).unwrap();
     tx.commit().unwrap();
     assert_eq!(
         db.entry_by_id(&pkg_id).unwrap().installation_state,
@@ -250,7 +250,7 @@ pub(crate) fn mark_as_incomplete_uninstall(
     let pkg_id = manifest.id();
     let mut tx = db.transaction();
     tx.begin_install(Arc::clone(manifest));
-    tx.complete_install(&pkg_id, &[], &[]).unwrap();
+    tx.complete_install(&pkg_id, &[]).unwrap();
     tx.begin_uninstall(&pkg_id).unwrap();
     tx.commit().unwrap();
     assert_eq!(
@@ -284,17 +284,14 @@ pub(crate) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
                 PlanStepOp::Install(InstallOp {
                     manifest: actual_manifest,
                     reason: actual_reason,
-                    replacing_pkg_ids: actual_replacing_pkg_ids,
                 }),
                 PlanStepOp::Install(InstallOp {
                     manifest: expected_manifest,
                     reason: expected_reason,
-                    replacing_pkg_ids: expected_replacing_pkg_ids,
                 }),
             ) => {
                 assert!(Arc::ptr_eq(actual_manifest, expected_manifest));
                 assert_eq!(actual_reason, expected_reason);
-                assert_eq!(actual_replacing_pkg_ids, expected_replacing_pkg_ids);
             }
             (
                 PlanStepOp::Uninstall(UninstallOp {

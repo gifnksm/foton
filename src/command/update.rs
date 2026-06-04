@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use snafu::Snafu;
 
 use crate::{
@@ -62,7 +60,7 @@ pub(crate) async fn update_package(cx: &RootContext, args: &UpdateArgs) -> Resul
     let registries = engine::resolve_registries_by_id(&cx, registries.as_deref())?;
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
-    let db = engine::load_database(&cx, &mut db_lock_file)?;
+    let mut db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let targets = engine::resolve_update_targets(&cx, &db, &registries, pkg_specs, *pre_release)?;
     let plan = engine::plan_install(&db, &targets);
@@ -76,8 +74,7 @@ pub(crate) async fn update_package(cx: &RootContext, args: &UpdateArgs) -> Resul
 
     engine::confirm(&cx, "Do you want to continue?").await?;
 
-    let db = Arc::new(Mutex::new(db));
-    engine::execute_plan(&cx, &db, plan).await?;
+    engine::execute_plan(&cx, &mut db, plan).await?;
 
     Ok(())
 }

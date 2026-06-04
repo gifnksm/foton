@@ -112,12 +112,6 @@ impl<'lock> PackageDatabase<'lock> {
         })
     }
 
-    #[cfg(test)]
-    pub(crate) fn reload(&mut self) -> Result<(), PackageDatabaseError> {
-        self.persist_db = load(&self.persist_path)?;
-        Ok(())
-    }
-
     pub(crate) fn entries(&self) -> impl Iterator<Item = PackageDbEntry> {
         self.persist_db
             .packages
@@ -205,39 +199,6 @@ impl<'lock> PackageDatabase<'lock> {
             db: self,
         }
     }
-
-    pub(crate) fn complete_install(
-        &mut self,
-        pkg_id: &PackageId,
-        font_entries: &[FontEntry],
-        replacing_pkg_ids: &[PackageId],
-    ) -> Result<(), PackageDatabaseError> {
-        let mut tx = self.transaction();
-        tx.complete_install(pkg_id, font_entries, replacing_pkg_ids)?;
-        tx.commit()?;
-        Ok(())
-    }
-
-    pub(crate) fn cancel_install(
-        &mut self,
-        pkg_id: &PackageId,
-        cleanup_required: bool,
-    ) -> Result<(), PackageDatabaseError> {
-        let mut tx = self.transaction();
-        tx.cancel_install(pkg_id, cleanup_required)?;
-        tx.commit()?;
-        Ok(())
-    }
-
-    pub(crate) fn complete_uninstall(
-        &mut self,
-        pkg_id: &PackageId,
-    ) -> Result<(), PackageDatabaseError> {
-        let mut tx = self.transaction();
-        tx.complete_uninstall(pkg_id)?;
-        tx.commit()?;
-        Ok(())
-    }
 }
 
 #[derive(Debug)]
@@ -319,7 +280,6 @@ impl PackageDatabaseTransaction<'_, '_> {
         &mut self,
         pkg_id: &PackageId,
         font_entries: &[FontEntry],
-        replacing_pkg_ids: &[PackageId],
     ) -> Result<(), PackageDatabaseError> {
         let entry = self
             .entry_mut(pkg_id)
@@ -332,30 +292,11 @@ impl PackageDatabaseTransaction<'_, '_> {
                 actual: entry.installation_state,
             }
         );
-        for replacing_pkg_id in replacing_pkg_ids {
-            let entry = self
-                .entry_mut(replacing_pkg_id)
-                .context(EntryNotFoundSnafu {
-                    pkg_id: replacing_pkg_id,
-                })?;
-            snafu::ensure!(
-                entry.installation_state == InstallationState::Installed,
-                UnexpectedStateSnafu {
-                    pkg_id: replacing_pkg_id,
-                    expected: InstallationState::Installed,
-                    actual: entry.installation_state,
-                }
-            );
-        }
 
         let db_entry = self.entry_mut(pkg_id).unwrap();
         db_entry.installation_state = InstallationState::Installed;
         db_entry.activation_state = ActivationState::Active;
         db_entry.font_entries = font_entries.iter().map(Into::into).collect();
-        for replacing_pkg_id in replacing_pkg_ids {
-            self.entry_mut(replacing_pkg_id).unwrap().installation_state =
-                InstallationState::IncompleteUninstall;
-        }
         Ok(())
     }
 
@@ -621,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn transaction_commit_persists_multiple_changes_together() {
+    fn transaction_commit_persists_multiple_install_changes_together() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
@@ -629,16 +570,13 @@ mod tests {
         let installed_pkg_id = installed_manifest.id();
         let manifest = testing::make_manifest("example-font@0.2.0");
         let pkg_id = manifest.id();
-        let replacing_pkg_ids = vec![installed_pkg_id.clone()];
+
         let before = [
             (&installed_pkg_id, Some(InstallationState::Installed)),
             (&pkg_id, None),
         ];
         let staged = [
-            (
-                &installed_pkg_id,
-                Some(InstallationState::IncompleteUninstall),
-            ),
+            (&installed_pkg_id, Some(InstallationState::Installed)),
             (&pkg_id, Some(InstallationState::Installed)),
         ];
 
@@ -652,8 +590,7 @@ mod tests {
 
             let mut tx = db.transaction();
             tx.begin_install(Arc::clone(&manifest));
-            tx.complete_install(&pkg_id, &[], &replacing_pkg_ids)
-                .unwrap();
+            tx.complete_install(&pkg_id, &[]).unwrap();
             assert_transaction_states(&tx, &staged);
 
             tx.commit().unwrap();
@@ -685,8 +622,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_install_marks_target_installed_and_replacements_incomplete_uninstall_in_transaction()
-     {
+    fn complete_install_marks_target_installed_without_touching_other_versions_in_transaction() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
 
@@ -694,16 +630,13 @@ mod tests {
         let installed_pkg_id = installed_manifest.id();
         let manifest = testing::make_manifest("example-font@0.2.0");
         let pkg_id = manifest.id();
-        let replacing_pkg_ids = vec![installed_pkg_id.clone()];
+
         let before = [
             (&installed_pkg_id, Some(InstallationState::Installed)),
             (&pkg_id, Some(InstallationState::IncompleteInstall)),
         ];
         let staged = [
-            (
-                &installed_pkg_id,
-                Some(InstallationState::IncompleteUninstall),
-            ),
+            (&installed_pkg_id, Some(InstallationState::Installed)),
             (&pkg_id, Some(InstallationState::Installed)),
         ];
 
@@ -717,8 +650,7 @@ mod tests {
         assert_persisted_states(&app_dirs, &mut lock_file, &before);
         with_db(&app_dirs, &mut lock_file, |db| {
             assert_transaction_stages_without_commit(db, &before, &staged, |tx| {
-                tx.complete_install(&pkg_id, &[], &replacing_pkg_ids)
-                    .unwrap();
+                tx.complete_install(&pkg_id, &[]).unwrap();
             });
         });
         assert_persisted_states(&app_dirs, &mut lock_file, &before);
