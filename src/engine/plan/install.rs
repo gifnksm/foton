@@ -6,7 +6,7 @@ use crate::{
         ExecutionPlan, InstallOp, InstallReason, PlanStep, ResolvedInstallTarget, SkipOp,
         StepCondition, UninstallOp, UninstallReason, plan::SkipReason,
     },
-    package::{PackageId, PackageManifest},
+    package::PackageManifest,
 };
 
 pub(crate) fn plan_install(
@@ -23,7 +23,7 @@ pub(crate) fn plan_install(
                 incomplete_installs,
                 incomplete_uninstalls,
             } => {
-                let install_op = install_target_op(manifest, installed_other_versions.clone());
+                let install_op = install_target_op(manifest);
                 let install_step_id = install_op.step_id;
                 ops.push(install_op);
                 let mut uninstall_ops = vec![];
@@ -72,14 +72,10 @@ pub(crate) fn plan_install(
     ExecutionPlan { steps: ops }
 }
 
-fn install_target_op(
-    manifest: &Arc<PackageManifest>,
-    replacing_pkg_ids: Vec<PackageId>,
-) -> PlanStep {
+fn install_target_op(manifest: &Arc<PackageManifest>) -> PlanStep {
     PlanStep::new(InstallOp {
         manifest: Arc::clone(manifest),
         reason: InstallReason::RequestedByUser,
-        replacing_pkg_ids,
     })
 }
 
@@ -115,7 +111,6 @@ mod tests {
         let install_step = PlanStep::new(InstallOp {
             manifest: Arc::clone(&install_target_manifest),
             reason: InstallReason::RequestedByUser,
-            replacing_pkg_ids: vec![installed_manifest.id()],
         });
         let install_step_id = install_step.step_id;
 
@@ -194,7 +189,6 @@ mod tests {
                 &ExecutionPlan::new_for_test([PlanStep::new(InstallOp {
                     manifest: Arc::clone(&manifest),
                     reason: InstallReason::RequestedByUser,
-                    replacing_pkg_ids: vec![],
                 })]),
             );
         }

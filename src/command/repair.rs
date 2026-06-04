@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use snafu::Snafu;
 
 use crate::{
@@ -56,7 +54,7 @@ pub(crate) async fn repair_package(cx: &RootContext, args: &RepairArgs) -> Resul
     let cx = RepairScope::start_with_report(cx, report);
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
-    let db = engine::load_database(&cx, &mut db_lock_file)?;
+    let mut db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let targets = if pkg_specs.is_empty() {
         engine::resolve_all_repair_targets(&cx, &db)
@@ -74,8 +72,7 @@ pub(crate) async fn repair_package(cx: &RootContext, args: &RepairArgs) -> Resul
 
     engine::confirm(&cx, "Do you want to continue?").await?;
 
-    let db = Arc::new(Mutex::new(db));
-    engine::execute_plan(&cx, &db, plan).await?;
+    engine::execute_plan(&cx, &mut db, plan).await?;
 
     Ok(())
 }

@@ -1,7 +1,4 @@
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{path::PathBuf, sync::Arc};
 
 use snafu::Snafu;
 
@@ -66,7 +63,7 @@ pub(crate) async fn install_package(
     let targets = CheckedInstallTargets::try_from_args(&cx, targets)?;
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
-    let db = engine::load_database(&cx, &mut db_lock_file)?;
+    let mut db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let targets = targets.resolve_target(&cx, &db)?;
     let plan = engine::plan_install(&db, &targets);
@@ -80,8 +77,7 @@ pub(crate) async fn install_package(
 
     engine::confirm(&cx, "Do you want to continue?").await?;
 
-    let db = Arc::new(Mutex::new(db));
-    engine::execute_plan(&cx, &db, plan).await?;
+    engine::execute_plan(&cx, &mut db, plan).await?;
 
     Ok(())
 }

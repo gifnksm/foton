@@ -12,14 +12,13 @@ use crate::{
             NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
         },
     },
-    db::PackageDatabase,
-    engine::{execute::install::db_guard::InstallDbGuard, support},
-    package::{self, PackageDirs, PackageId, PackageManifest},
+    db::{PackageDatabaseError, PackageDatabaseTransaction},
+    engine::{InstallOp, execute::install::package_dirs_guard::PackageDirsGuard, support},
+    package::{self, Package, PackageDirs, PackageId, PackageManifest},
     platform::windows::steps::unregistration,
     util::{fs::FsError, macros::concat_line},
 };
 
-mod db_guard;
 mod package_dirs_guard;
 mod registration;
 
@@ -66,6 +65,23 @@ enum InstallExecutionErrorReport {
         pkg_id = pkg_id,
     ))]
     RemovePackageFiles { pkg_id: PackageId, source: FsError },
+    #[snafu(display("failed to complete install transaction for package {pkg_id}"))]
+    CompleteInstall {
+        pkg_id: PackageId,
+        source: PackageDatabaseError,
+    },
+    #[snafu(display(
+        concat_line!(
+            "failed to roll back install transaction for package {pkg_id}",
+            "run `foton repair {pkg_id}` to retry cleanup",
+            "if repair does not resolve the problem, manual database cleanup may be required",
+        ),
+        pkg_id = pkg_id,
+    ))]
+    CancelInstall {
+        pkg_id: PackageId,
+        source: PackageDatabaseError,
+    },
 }
 
 // Tracks whether a failed install can be treated as cleanly rolled back.
@@ -118,42 +134,40 @@ impl CleanupTracker {
 }
 
 #[derive(Debug)]
-pub(in crate::engine) struct PreparedInstallStep<'db, S>
+pub(in crate::engine) struct PreparedInstallStep<S>
 where
     S: ReportScope,
 {
-    db_guard: InstallDbGuard<'db, S>,
     manifest: Arc<PackageManifest>,
     cleanup_tracker: CleanupTracker,
+    package: Option<Package>,
+    pkg_dirs_guard: Option<PackageDirsGuard<InstallExecutionScope<S>>>,
+    registration_guard: Option<registration::RegistrationGuard<InstallExecutionScope<S>>>,
+    installation_persisted: bool,
 }
 
-impl<'db, S> PreparedInstallStep<'db, S>
+impl<S> PreparedInstallStep<S>
 where
     S: ReportScope,
 {
-    pub(in crate::engine) fn new(
-        cx: &ReportContext<S>,
-        db: Arc<Mutex<PackageDatabase<'db>>>,
-        manifest: Arc<PackageManifest>,
-        replacing_pkg_ids: Vec<PackageId>,
+    pub(in crate::engine) fn from_plan_step(
+        tx: &mut PackageDatabaseTransaction<'_, '_>,
+        step: InstallOp,
     ) -> Self {
-        let cleanup_tracker = CleanupTracker::default();
-        let db_guard = db_guard::begin_install(
-            cx,
-            db,
-            cleanup_tracker.clone(),
-            &manifest,
-            replacing_pkg_ids,
-        );
+        let InstallOp { manifest, .. } = step;
+        tx.begin_install(Arc::clone(&manifest));
         Self {
-            db_guard,
             manifest,
-            cleanup_tracker,
+            cleanup_tracker: CleanupTracker::default(),
+            package: None,
+            pkg_dirs_guard: None,
+            registration_guard: None,
+            installation_persisted: false,
         }
     }
 
     pub(in crate::engine) async fn execute(
-        mut self,
+        &mut self,
         cx: &ReportContext<S>,
     ) -> Result<(), S::Error> {
         let pkg_id = self.manifest.id();
@@ -169,21 +183,169 @@ where
             Ok(())
         })?;
 
-        let pkg_dirs_guard = package_dirs_guard::create_new_package_dirs(
+        self.pkg_dirs_guard = Some(package_dirs_guard::create_new_package_dirs(
             &cx,
             self.cleanup_tracker.clone(),
             &pkg_id,
-        )?;
-        let (package, _) = support::stage_package(&cx, &pkg_dirs_guard, &self.manifest).await?;
+        )?);
+        let pkg_dirs_guard = self.pkg_dirs_guard.as_ref().unwrap();
+        let (package, _) = support::stage_package(&cx, pkg_dirs_guard, &self.manifest).await?;
 
-        let registration_guard =
-            registration::register_package_fonts(&cx, self.cleanup_tracker.clone(), &package)?;
-
-        self.db_guard.complete_install(package.entries())?;
-
-        pkg_dirs_guard.disarm();
-        registration_guard.disarm();
+        self.registration_guard = Some(registration::register_package_fonts(
+            &cx,
+            self.cleanup_tracker.clone(),
+            &package,
+        )?);
+        self.package = Some(package);
 
         Ok(())
+    }
+
+    pub(in crate::engine) fn on_complete(
+        &mut self,
+        cx: &ReportContext<S>,
+        tx: &mut PackageDatabaseTransaction<'_, '_>,
+    ) -> Result<(), S::Error> {
+        let cx = InstallExecutionScope::start(cx);
+
+        let package = self.package.as_ref().unwrap();
+        tx.complete_install(&self.manifest.id(), package.entries())
+            .context(CompleteInstallSnafu {
+                pkg_id: &self.manifest.id(),
+            })
+            .report_error(cx.reporter())?;
+
+        Ok(())
+    }
+
+    pub(in crate::engine) fn after_commit(&mut self) {
+        if let Some(guard) = self.pkg_dirs_guard.take() {
+            guard.disarm();
+        }
+        if let Some(guard) = self.registration_guard.take() {
+            guard.disarm();
+        }
+        self.installation_persisted = true;
+    }
+
+    pub(in crate::engine) fn on_failure(
+        &mut self,
+        cx: &ReportContext<S>,
+        tx: &mut PackageDatabaseTransaction<'_, '_>,
+    ) {
+        assert!(!self.installation_persisted);
+
+        let cx = InstallExecutionScope::start(cx);
+        cx.reporter()
+            .report_info(format_args!("rolling back database changes..."));
+
+        let _ = self.registration_guard.take();
+        let _ = self.pkg_dirs_guard.take();
+
+        let cleanup_required = self.cleanup_tracker.cleanup_required();
+        let _ = tx
+            .cancel_install(&self.manifest.id(), cleanup_required)
+            .context(CancelInstallSnafu {
+                pkg_id: &self.manifest.id(),
+            })
+            .report_error(cx.reporter());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        cli::reporter::RootReportScope as _,
+        engine::InstallReason,
+        package::InstallationState,
+        util::testing::{self, TempdirContext, TestScope},
+    };
+
+    fn install_op(manifest: &Arc<PackageManifest>) -> InstallOp {
+        InstallOp {
+            manifest: Arc::clone(manifest),
+            reason: InstallReason::RequestedByUser,
+        }
+    }
+
+    fn set_staged_package(
+        step: &mut PreparedInstallStep<TestScope>,
+        cx: &ReportContext<TestScope>,
+    ) {
+        let pkg_id = step.manifest.id();
+        step.package = Some(Package::new(
+            pkg_id.clone(),
+            PackageDirs::new(cx.app_dirs(), &pkg_id),
+            vec![],
+        ));
+    }
+
+    #[test]
+    fn prepared_install_step_after_commit_marks_installation_persisted() {
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+        let manifest = testing::make_manifest("example-font@0.1.0");
+        let pkg_id = manifest.id();
+
+        testing::with_db(&cx, |mut db| {
+            let mut tx = db.transaction();
+            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&manifest));
+            set_staged_package(&mut step, &cx);
+
+            step.on_complete(&cx, &mut tx).unwrap();
+            assert!(!step.installation_persisted);
+
+            tx.commit().unwrap();
+            assert_eq!(
+                db.entry_by_id(&pkg_id).unwrap().installation_state,
+                InstallationState::Installed,
+            );
+            assert!(!step.installation_persisted);
+
+            step.after_commit();
+
+            assert!(step.installation_persisted);
+        });
+    }
+
+    #[test]
+    fn prepared_install_step_on_failure_removes_incomplete_install_without_cleanup() {
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+        let manifest = testing::make_manifest("example-font@0.1.0");
+        let pkg_id = manifest.id();
+
+        testing::with_db(&cx, |mut db| {
+            let mut tx = db.transaction();
+            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&manifest));
+
+            step.on_failure(&cx, &mut tx);
+            tx.commit().unwrap();
+
+            assert!(db.entry_by_id(&pkg_id).is_none());
+        });
+    }
+
+    #[test]
+    fn prepared_install_step_on_failure_marks_incomplete_uninstall_when_cleanup_is_required() {
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+        let manifest = testing::make_manifest("example-font@0.1.0");
+        let pkg_id = manifest.id();
+
+        testing::with_db(&cx, |mut db| {
+            let mut tx = db.transaction();
+            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&manifest));
+            step.cleanup_tracker.request_cleanup();
+
+            step.on_failure(&cx, &mut tx);
+            tx.commit().unwrap();
+
+            assert_eq!(
+                db.entry_by_id(&pkg_id).unwrap().installation_state,
+                InstallationState::IncompleteUninstall,
+            );
+        });
     }
 }

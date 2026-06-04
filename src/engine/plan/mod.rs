@@ -7,8 +7,6 @@ use crate::package::{PackageId, PackageManifest, PackageSpec};
 
 pub(crate) use self::{install::*, repair::*, uninstall::*};
 
-use super::StepResult;
-
 mod install;
 mod repair;
 mod uninstall;
@@ -70,6 +68,10 @@ impl PlanStep {
 
     pub(crate) fn step_id(&self) -> StepId {
         self.step_id
+    }
+
+    pub(crate) fn into_op(self) -> PlanStepOp {
+        self.op
     }
 
     pub(crate) fn op(&self) -> &PlanStepOp {
@@ -140,6 +142,12 @@ impl PlanStepOp {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::IsVariant)]
+pub(in crate::engine) enum StepResult {
+    Success,
+    Failure,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StepCondition {
     AfterSuccess(StepId),
@@ -150,7 +158,6 @@ pub(crate) enum StepCondition {
 pub(crate) struct InstallOp {
     pub(crate) manifest: Arc<PackageManifest>,
     pub(crate) reason: InstallReason,
-    pub(crate) replacing_pkg_ids: Vec<PackageId>,
 }
 
 #[derive(Debug, Clone)]
