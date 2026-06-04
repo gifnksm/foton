@@ -1,4 +1,4 @@
-pub(crate) use self::{execute::*, plan::*, prepare::*, resolve::*, support::*};
+pub(crate) use self::{execute::*, plan::*, resolve::*, support::*};
 
 mod execute;
 mod plan;
