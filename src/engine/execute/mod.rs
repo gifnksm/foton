@@ -310,10 +310,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        str::FromStr as _,
-        sync::{Arc, Mutex},
-    };
+    use std::{str::FromStr as _, sync::Arc};
 
     use super::*;
     use crate::{
@@ -328,11 +325,10 @@ mod tests {
 
     fn prepare_ready_steps(
         cx: &ReportContext<TestScope>,
-        db: &Arc<Mutex<PackageDatabase<'_>>>,
+        db: &mut PackageDatabase<'_>,
         state: &mut ExecutionState<TestScope>,
     ) {
-        let mut db_guard = db.lock().unwrap();
-        let mut tx = db_guard.transaction();
+        let mut tx = db.transaction();
         let prepared_count = state.prepare_ready_steps(cx, &mut tx).unwrap();
         if prepared_count > 0 {
             tx.commit().unwrap();
@@ -426,7 +422,6 @@ mod tests {
         testing::with_db(&cx, |mut db| {
             testing::mark_as_installed(&mut db, &dependency_manifest);
             testing::mark_as_installed(&mut db, &dependent_manifest);
-            let db = Arc::new(Mutex::new(db));
             let dependency_step = PlanStep::new(UninstallOp {
                 pkg_id: dependency_pkg_id.clone(),
                 reason: UninstallReason::RequestedByUser,
@@ -441,20 +436,16 @@ mod tests {
             );
             let mut state = ExecutionState::new([dependent_step, dependency_step]);
 
-            prepare_ready_steps(&cx, &db, &mut state);
+            prepare_ready_steps(&cx, &mut db, &mut state);
 
             assert_eq!(
-                db.lock()
-                    .unwrap()
-                    .entry_by_id(&dependency_pkg_id)
+                db.entry_by_id(&dependency_pkg_id)
                     .unwrap()
                     .installation_state,
                 InstallationState::IncompleteUninstall,
             );
             assert_eq!(
-                db.lock()
-                    .unwrap()
-                    .entry_by_id(&dependent_pkg_id)
+                db.entry_by_id(&dependent_pkg_id)
                     .unwrap()
                     .installation_state,
                 InstallationState::Installed,
@@ -474,7 +465,6 @@ mod tests {
         testing::with_db(&cx, |mut db| {
             testing::mark_as_installed(&mut db, &dependency_manifest);
             testing::mark_as_installed(&mut db, &dependent_manifest);
-            let db = Arc::new(Mutex::new(db));
             let dependency_step = PlanStep::new(UninstallOp {
                 pkg_id: dependency_pkg_id.clone(),
                 reason: UninstallReason::RequestedByUser,
@@ -489,7 +479,7 @@ mod tests {
             );
             let mut state = ExecutionState::new([dependent_step, dependency_step]);
 
-            prepare_ready_steps(&cx, &db, &mut state);
+            prepare_ready_steps(&cx, &mut db, &mut state);
 
             let first = state.pop_ready().unwrap();
             assert!(matches!(
@@ -498,7 +488,7 @@ mod tests {
             ));
 
             state.notify_result(dependency_step_id, StepResult::Success);
-            prepare_ready_steps(&cx, &db, &mut state);
+            prepare_ready_steps(&cx, &mut db, &mut state);
 
             let second = state.pop_ready().unwrap();
             assert!(matches!(
@@ -521,7 +511,6 @@ mod tests {
         testing::with_db(&cx, |mut db| {
             testing::mark_as_installed(&mut db, &dependency_manifest);
             testing::mark_as_installed(&mut db, &dependent_manifest);
-            let db = Arc::new(Mutex::new(db));
             let dependency_step = PlanStep::new(UninstallOp {
                 pkg_id: dependency_pkg_id.clone(),
                 reason: UninstallReason::RequestedByUser,
@@ -536,7 +525,7 @@ mod tests {
             );
             let mut state = ExecutionState::new([dependent_step, dependency_step]);
 
-            prepare_ready_steps(&cx, &db, &mut state);
+            prepare_ready_steps(&cx, &mut db, &mut state);
 
             let first = state.pop_ready().unwrap();
             assert!(matches!(
@@ -545,7 +534,7 @@ mod tests {
             ));
 
             state.notify_result(dependency_step_id, StepResult::Failure);
-            prepare_ready_steps(&cx, &db, &mut state);
+            prepare_ready_steps(&cx, &mut db, &mut state);
 
             assert!(state.pop_ready().is_none());
             assert_eq!(state.pending_len(), 1);
