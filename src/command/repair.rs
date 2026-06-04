@@ -61,12 +61,11 @@ pub(crate) async fn repair_package(cx: &RootContext, args: &RepairArgs) -> Resul
     } else {
         engine::resolve_repair_targets(&cx, &db, pkg_specs)
     };
-    let plan = engine::plan_repair(&db, &targets);
+    let plan = engine::plan_repair(&targets);
     engine::report_plan(&cx, &plan);
 
     if !plan.has_side_effects() {
-        cx.reporter()
-            .report_info(format_args!("already repaired, nothing to do"));
+        cx.reporter().report_info(format_args!("nothing to repair"));
         return Ok(());
     }
 

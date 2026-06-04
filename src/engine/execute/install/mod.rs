@@ -201,6 +201,10 @@ where
         Ok(())
     }
 
+    pub(in crate::engine) fn pkg_id(&self) -> PackageId {
+        self.manifest.id()
+    }
+
     pub(in crate::engine) fn on_complete(
         &mut self,
         cx: &ReportContext<S>,

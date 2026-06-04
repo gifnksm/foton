@@ -12,6 +12,8 @@ use crate::{
     },
     db::{PackageDatabase, PackageDatabaseError, PackageDatabaseTransaction},
     engine::{ExecutionPlan, PlanStep, PlanStepOp, StepId, StepResult},
+    package::PackageId,
+    util::macros::concat_line,
 };
 
 pub(in crate::engine) use self::{install::*, uninstall::*};
@@ -46,9 +48,35 @@ where
 }
 
 #[derive(Debug, Snafu)]
+#[expect(clippy::enum_variant_names)]
 enum ExecuteErrorReport {
     #[snafu(display("failed to commit execution plan transaction"))]
     CommitTransaction { source: PackageDatabaseError },
+    #[snafu(display(
+        concat_line!(
+            "failed to commit database changes after attempting to install package {pkg_id}",
+            "run `foton repair {pkg_id}` to restore a consistent state",
+            "if repair does not resolve the problem, manual cleanup may be required",
+        ),
+        pkg_id = pkg_id,
+    ))]
+    CommitInstallTransaction {
+        pkg_id: PackageId,
+        source: PackageDatabaseError,
+    },
+    #[snafu(display(
+        concat_line!(
+            "failed to commit database changes after attempting to uninstall package {pkg_id}",
+            "font unregistration and package file removal may already have been applied",
+            "run `foton repair {pkg_id}` to restore a consistent state",
+            "if repair does not resolve the problem, manual database cleanup may be required",
+        ),
+        pkg_id = pkg_id,
+    ))]
+    CommitUninstallTransaction {
+        pkg_id: PackageId,
+        source: PackageDatabaseError,
+    },
 }
 
 impl From<ExecuteErrorReport> for ReportValue<'static> {
@@ -198,6 +226,19 @@ where
             PreparedStepOp::Uninstall(op) => op.on_failure(cx, tx),
         }
     }
+
+    fn commit_error_report(&self, source: PackageDatabaseError) -> ExecuteErrorReport {
+        match &self.op {
+            PreparedStepOp::Install(op) => ExecuteErrorReport::CommitInstallTransaction {
+                pkg_id: op.pkg_id(),
+                source,
+            },
+            PreparedStepOp::Uninstall(op) => ExecuteErrorReport::CommitUninstallTransaction {
+                pkg_id: op.pkg_id().clone(),
+                source,
+            },
+        }
+    }
 }
 
 pub(crate) async fn execute_plan<S>(
@@ -246,9 +287,10 @@ where
         };
         state.notify_result(step_id, res);
         state.prepare_ready_steps(&cx, &mut tx)?;
-        tx.commit()
-            .context(CommitTransactionSnafu)
-            .report_error(cx.reporter())?;
+        let commit_result = tx.commit();
+        if let Err(source) = commit_result {
+            return Err(cx.reporter().report_error(step.commit_error_report(source)));
+        }
         if res.is_success() {
             step.after_commit();
         }
@@ -268,7 +310,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::{
+        str::FromStr as _,
+        sync::{Arc, Mutex},
+    };
 
     use super::*;
     use crate::{
@@ -277,7 +322,7 @@ mod tests {
             InstallOp, InstallReason, PlanStep, PreparedStepOp, SkipOp, SkipReason, StepCondition,
             UninstallOp, UninstallReason,
         },
-        package::InstallationState,
+        package::{InstallationState, PackageId},
         util::testing::{self, TempdirContext, TestScope},
     };
 
@@ -353,9 +398,7 @@ mod tests {
     fn prepared_step_from_plan_step_returns_none_for_skip_ops() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
-        let skipped_pkg_id = "skipped-font@0.1.0"
-            .parse::<crate::package::PackageId>()
-            .unwrap();
+        let skipped_pkg_id = PackageId::from_str("skipped-font@0.1.0").unwrap();
 
         testing::with_db(&cx, |mut db| {
             let step = PlanStep::new(SkipOp {

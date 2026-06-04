@@ -1,9 +1,60 @@
+use snafu::Snafu;
+
 use crate::{
-    cli::{context::ReportContext, reporter::ReportScope},
+    cli::{
+        context::ReportContext,
+        reporter::{ReportScope, ReportValue, SubReportScope},
+    },
     engine::execute::install::CleanupTracker,
     package::{Package, PackageId},
     platform::windows::steps::{registration, unregistration},
+    util::macros::concat_line,
 };
+
+#[derive(Debug)]
+struct RegistrationScope<S> {
+    _base_scope: std::marker::PhantomData<S>,
+}
+
+impl<S> ReportScope for RegistrationScope<S>
+where
+    S: ReportScope,
+{
+    type NoticeReportValue = RegistrationNoticeReport;
+    type WarnReportValue = S::WarnReportValue;
+    type ErrorReportValue = S::ErrorReportValue;
+    type Error = S::Error;
+}
+
+impl<S> SubReportScope<S> for RegistrationScope<S>
+where
+    S: ReportScope,
+{
+    fn new() -> Self {
+        Self {
+            _base_scope: std::marker::PhantomData,
+        }
+    }
+}
+
+#[derive(Debug, Snafu)]
+enum RegistrationNoticeReport {
+    #[snafu(display(
+        concat_line!(
+            "failed to roll back registration of package fonts after install failure",
+            "run `foton repair {pkg_id}` to retry cleanup",
+            "if repair does not resolve the problem, manual cleanup may be required",
+        ),
+        pkg_id = pkg_id,
+    ))]
+    RollbackRegistrationAfterInstallFailure { pkg_id: PackageId },
+}
+
+impl From<RegistrationNoticeReport> for ReportValue<'static> {
+    fn from(report: RegistrationNoticeReport) -> Self {
+        ReportValue::BoxedError(report.into())
+    }
+}
 
 pub(super) fn register_package_fonts<S>(
     cx: &ReportContext<S>,
@@ -13,6 +64,7 @@ pub(super) fn register_package_fonts<S>(
 where
     S: ReportScope,
 {
+    let cx = RegistrationScope::start(cx);
     let mut guard = RegistrationGuard {
         armed: true,
         registered: false,
@@ -20,7 +72,7 @@ where
         cleanup_tracker,
         pkg_id: package.id().clone(),
     };
-    registration::register_package_fonts(cx, package)?;
+    registration::register_package_fonts(&cx, package)?;
     guard.registered = true;
     Ok(guard)
 }
@@ -33,7 +85,7 @@ where
 {
     armed: bool,
     registered: bool,
-    cx: ReportContext<S>,
+    cx: ReportContext<RegistrationScope<S>>,
     cleanup_tracker: CleanupTracker,
     pkg_id: PackageId,
 }
@@ -56,9 +108,20 @@ where
         self.cx.reporter().report_info(format_args!(
             "rolling back registration of package fonts..."
         ));
-        let _ = self.cleanup_tracker.do_rollback_cleanup(|| {
-            unregistration::unregister_package_fonts(&self.cx, &self.pkg_id)
-        });
+        if self
+            .cleanup_tracker
+            .do_rollback_cleanup(|| {
+                unregistration::unregister_package_fonts(&self.cx, &self.pkg_id)
+            })
+            .is_err()
+        {
+            self.cx.reporter().report_notice(
+                RollbackRegistrationAfterInstallFailureSnafu {
+                    pkg_id: self.pkg_id.clone(),
+                }
+                .build(),
+            );
+        }
     }
 }
 
@@ -107,7 +170,7 @@ mod tests {
         let guard = RegistrationGuard {
             armed: true,
             registered: false,
-            cx: cx.clone(),
+            cx: RegistrationScope::start(&cx),
             cleanup_tracker: cleanup_tracker.clone(),
             pkg_id: PKG_ID.clone(),
         };
@@ -125,7 +188,7 @@ mod tests {
         let guard = RegistrationGuard {
             armed: true,
             registered: false,
-            cx: cx.clone(),
+            cx: RegistrationScope::start(&cx),
             cleanup_tracker: cleanup_tracker.clone(),
             pkg_id: PKG_ID.clone(),
         };
@@ -147,7 +210,7 @@ mod tests {
         let guard = RegistrationGuard {
             armed: true,
             registered: true,
-            cx: cx.clone(),
+            cx: RegistrationScope::start(&cx),
             cleanup_tracker: cleanup_tracker.clone(),
             pkg_id: PKG_ID.clone(),
         };

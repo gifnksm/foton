@@ -58,7 +58,7 @@ pub(crate) async fn uninstall_package(
     let mut db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let targets = engine::resolve_uninstall_targets(&cx, &db, pkg_specs)?;
-    let plan = engine::plan_uninstall(&db, &targets);
+    let plan = engine::plan_uninstall(&targets);
     engine::report_plan(&cx, &plan);
 
     if !plan.has_side_effects() {
