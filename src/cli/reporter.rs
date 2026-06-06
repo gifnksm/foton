@@ -173,7 +173,7 @@ pub(crate) trait OperationError: Debug {
     fn cancelled() -> Self;
 }
 
-pub(crate) trait ReportScope: Debug {
+pub(crate) trait ReportScope: Debug + Send + Sync + 'static {
     type NoticeReportValue: Into<ReportValue<'static>>;
     type WarnReportValue: Into<ReportValue<'static>>;
     type ErrorReportValue: Into<ReportValue<'static>>;
