@@ -1,4 +1,14 @@
-use std::{collections::HashMap, fmt::Debug, fs, ops::Deref, path::Path, sync::Arc};
+use std::{
+    fmt::Debug,
+    fs,
+    ops::Deref,
+    path::Path,
+    process,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
 
 use tempfile::TempDir;
 
@@ -7,19 +17,16 @@ use crate::{
         args::GlobalArgs,
         config::FotonConfig,
         context::{ReportContext, RootContext},
-        reporter::{NeverReport, OperationError, ReportScope, RootReportScope, RootReporter},
+        reporter::{
+            NeverReport, OperationError, ReportScope, RootReportScope, RootReporter, SubReportScope,
+        },
     },
     db::PackageDatabase,
-    engine::{
-        self, ExecutionPlan, InstallOp, InstallTargetSource, PlanStepOp, ResolvedInstallTarget,
-        ResolvedUninstallTarget, SkipOp, StepCondition, StepId, UninstallOp,
-    },
+    engine::{self, InstallTargetSource, ResolvedInstallTarget, ResolvedUninstallTarget},
     package::{InstallationState, PackageDirs, PackageId, PackageManifest},
     registry::{RegistryId, RegistryIndex, RegistrySource, RegistrySpec},
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
-
-const APP_ID: &str = "io.github.gifnksm.foton-test";
 
 #[derive(Debug)]
 pub(crate) struct TestScope {}
@@ -37,7 +44,7 @@ impl RootReportScope for TestScope {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::IsVariant)]
 pub(crate) enum TestError {
     Failed,
     Cancelled,
@@ -54,17 +61,23 @@ impl OperationError for TestError {
 }
 
 #[derive(Debug)]
-pub(crate) struct TempdirContext {
+struct TempdirContext {
     _tempdir_guard: TempDir,
     cx: RootContext,
 }
 
 impl TempdirContext {
-    pub(crate) fn new() -> Self {
-        Self::with_app_id(APP_ID)
+    fn new() -> Self {
+        static TEST_ID: AtomicUsize = AtomicUsize::new(0);
+        let app_id = format!(
+            "io.github.gifnksm.foton.test.{}.{}",
+            process::id(),
+            TEST_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        Self::with_app_id(app_id)
     }
 
-    pub(crate) fn with_app_id<S>(app_id: S) -> Self
+    fn with_app_id<S>(app_id: S) -> Self
     where
         S: Into<Arc<str>>,
     {
@@ -259,96 +272,47 @@ pub(crate) fn mark_as_incomplete_uninstall(
     );
 }
 
-#[track_caller]
-pub(crate) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
-    let actual_steps = actual.steps();
-    let expected_steps = expected.steps();
-    assert_eq!(
-        expected_steps.len(),
-        actual_steps.len(),
-        "plan step count mismatch:\n  actual: {actual_steps:?}\nexpected: {expected_steps:?}",
-    );
-    let step_id_map = actual_steps
-        .iter()
-        .zip(expected_steps)
-        .map(|(actual_step, expected_step)| (actual_step.step_id(), expected_step.step_id()))
-        .collect::<HashMap<_, _>>();
-    for (actual_step, expected_step) in actual_steps.iter().zip(expected_steps) {
-        assert_conditions_eq(
-            &step_id_map,
-            actual_step.conditions(),
-            expected_step.conditions(),
-        );
-        match (actual_step.op(), expected_step.op()) {
-            (
-                PlanStepOp::Install(InstallOp {
-                    manifest: actual_manifest,
-                    reason: actual_reason,
-                }),
-                PlanStepOp::Install(InstallOp {
-                    manifest: expected_manifest,
-                    reason: expected_reason,
-                }),
-            ) => {
-                assert!(Arc::ptr_eq(actual_manifest, expected_manifest));
-                assert_eq!(actual_reason, expected_reason);
-            }
-            (
-                PlanStepOp::Uninstall(UninstallOp {
-                    pkg_id: actual_pkg_id,
-                    reason: actual_reason,
-                }),
-                PlanStepOp::Uninstall(UninstallOp {
-                    pkg_id: expected_pkg_id,
-                    reason: expected_reason,
-                }),
-            ) => {
-                assert_eq!(actual_pkg_id, expected_pkg_id);
-                assert_eq!(actual_reason, expected_reason);
-            }
-            (
-                PlanStepOp::Skip(SkipOp {
-                    pkg_spec: actual_pkg_spec,
-                    reason: actual_reason,
-                }),
-                PlanStepOp::Skip(SkipOp {
-                    pkg_spec: expected_pkg_spec,
-                    reason: expected_reason,
-                }),
-            ) => {
-                assert_eq!(actual_pkg_spec, expected_pkg_spec);
-                assert_eq!(actual_reason, expected_reason);
-            }
-            (actual_op, expected_op) => {
-                panic!("mismatched plan ops\n  actual: {actual_op:?}\nexpected: {expected_op:?}")
-            }
-        }
-    }
+pub(crate) fn with_context<F, T>(f: F) -> T
+where
+    F: FnOnce(&ReportContext<TestScope>) -> T,
+{
+    let cx = TempdirContext::new();
+    let cx = TestScope::start(&cx);
+    f(&cx)
 }
 
-fn assert_conditions_eq(
-    step_id_map: &HashMap<StepId, StepId>,
-    actual_conditions: &[StepCondition],
-    expected_conditions: &[StepCondition],
-) {
-    let converted_actual_conditions = actual_conditions
-        .iter()
-        .map(|condition| match condition {
-            StepCondition::AfterSuccess(step_id) => {
-                StepCondition::AfterSuccess(step_id_map[step_id])
-            }
-            StepCondition::Never => StepCondition::Never,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(converted_actual_conditions, expected_conditions);
+pub(crate) fn with_scoped_context<S, F, T>(f: F) -> T
+where
+    S: SubReportScope<TestScope, Error = TestError>,
+    F: FnOnce(&ReportContext<S>) -> T,
+{
+    with_context(|cx| {
+        let cx = S::start(cx);
+        f(&cx)
+    })
 }
 
-pub(crate) fn with_db<S, F, T>(cx: &ReportContext<S>, f: F) -> T
+fn with_db_in_context<S, F, T>(cx: &ReportContext<S>, f: F) -> T
 where
     S: ReportScope,
-    F: FnOnce(PackageDatabase<'_>) -> T,
+    F: FnOnce(&mut PackageDatabase<'_>) -> T,
 {
     let mut lock_file = engine::open_db_lock_file(cx).unwrap();
-    let db = engine::load_database(cx, &mut lock_file).unwrap();
-    f(db)
+    let mut db = engine::load_database(cx, &mut lock_file).unwrap();
+    f(&mut db)
+}
+
+pub(crate) fn with_db<F, T>(f: F) -> T
+where
+    F: FnOnce(&ReportContext<TestScope>, &mut PackageDatabase<'_>) -> T,
+{
+    with_context(|cx| with_db_in_context(cx, |db| f(cx, db)))
+}
+
+pub(crate) fn with_scoped_db<S, F, T>(f: F) -> T
+where
+    S: SubReportScope<TestScope, Error = TestError>,
+    F: FnOnce(&ReportContext<S>, &mut PackageDatabase<'_>) -> T,
+{
+    with_scoped_context(|cx| with_db_in_context(cx, |db| f(cx, db)))
 }

@@ -267,13 +267,18 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
     use super::*;
     use crate::{
-        cli::reporter::RootReportScope as _,
         engine::InstallReason,
         package::InstallationState,
-        util::testing::{self, TempdirContext, TestScope},
+        util::testing::{self, TestScope},
     };
+
+    static MANIFEST: LazyLock<Arc<PackageManifest>> =
+        LazyLock::new(|| testing::make_manifest("example-font@0.1.0"));
+    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| MANIFEST.id());
 
     fn install_op(manifest: &Arc<PackageManifest>) -> InstallOp {
         InstallOp {
@@ -296,43 +301,33 @@ mod tests {
 
     #[test]
     fn prepared_install_step_from_plan_step_begins_incomplete_install_in_transaction() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.id();
-
-        testing::with_db(&cx, |mut db| {
+        testing::with_db(|_cx, db| {
             let mut tx = db.transaction();
             let step: PreparedInstallStep<TestScope> =
-                PreparedInstallStep::from_plan_step(&mut tx, install_op(&manifest));
+                PreparedInstallStep::from_plan_step(&mut tx, install_op(&MANIFEST));
             tx.commit().unwrap();
 
             assert_eq!(
-                db.entry_by_id(&pkg_id).unwrap().installation_state,
+                db.entry_by_id(&PKG_ID).unwrap().installation_state,
                 InstallationState::IncompleteInstall,
             );
-            assert_eq!(step.manifest.id(), pkg_id);
+            assert_eq!(step.manifest.id(), *PKG_ID);
         });
     }
 
     #[test]
     fn prepared_install_step_after_commit_marks_installation_persisted() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.id();
-
-        testing::with_db(&cx, |mut db| {
+        testing::with_db(|cx, db| {
             let mut tx = db.transaction();
-            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&manifest));
-            set_staged_package(&mut step, &cx);
+            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&MANIFEST));
+            set_staged_package(&mut step, cx);
 
-            step.on_complete(&cx, &mut tx).unwrap();
+            step.on_complete(cx, &mut tx).unwrap();
             assert!(!step.installation_persisted);
 
             tx.commit().unwrap();
             assert_eq!(
-                db.entry_by_id(&pkg_id).unwrap().installation_state,
+                db.entry_by_id(&PKG_ID).unwrap().installation_state,
                 InstallationState::Installed,
             );
             assert!(!step.installation_persisted);
@@ -345,39 +340,29 @@ mod tests {
 
     #[test]
     fn prepared_install_step_on_failure_removes_incomplete_install_without_cleanup() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.id();
-
-        testing::with_db(&cx, |mut db| {
+        testing::with_db(|cx, db| {
             let mut tx = db.transaction();
-            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&manifest));
+            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&MANIFEST));
 
-            step.on_failure(&cx, &mut tx);
+            step.on_failure(cx, &mut tx);
             tx.commit().unwrap();
 
-            assert!(db.entry_by_id(&pkg_id).is_none());
+            assert!(db.entry_by_id(&PKG_ID).is_none());
         });
     }
 
     #[test]
     fn prepared_install_step_on_failure_marks_incomplete_uninstall_when_cleanup_is_required() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.id();
-
-        testing::with_db(&cx, |mut db| {
+        testing::with_db(|cx, db| {
             let mut tx = db.transaction();
-            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&manifest));
+            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&MANIFEST));
             step.cleanup_tracker.request_cleanup();
 
-            step.on_failure(&cx, &mut tx);
+            step.on_failure(cx, &mut tx);
             tx.commit().unwrap();
 
             assert_eq!(
-                db.entry_by_id(&pkg_id).unwrap().installation_state,
+                db.entry_by_id(&PKG_ID).unwrap().installation_state,
                 InstallationState::IncompleteUninstall,
             );
         });

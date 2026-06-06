@@ -246,13 +246,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{assert_matches, str::FromStr as _};
+    use std::str::FromStr as _;
 
     use super::*;
-    use crate::{
-        cli::reporter::RootReportScope as _,
-        util::testing::{self, TempdirContext, TestError, TestScope},
-    };
+    use crate::util::testing;
 
     #[test]
     fn resolve_update_targets_updates_installed_packages_with_newer_versions_only() {
@@ -261,19 +258,16 @@ mod tests {
         testing::write_manifest(registry_dir.path(), "current-font@1.0.0");
         testing::write_manifest(registry_dir.path(), "incomplete-font@2.0.0");
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
-        testing::with_db(&cx, |mut db| {
+        testing::with_db(|cx, db| {
             let update_manifest = testing::make_manifest("update-font@1.0.0");
             let current_manifest = testing::make_manifest("current-font@1.0.0");
             let incomplete_manifest = testing::make_manifest("incomplete-font@1.0.0");
 
-            testing::mark_as_installed(&mut db, &update_manifest);
-            testing::mark_as_installed(&mut db, &current_manifest);
-            testing::mark_as_incomplete_install(&mut db, &incomplete_manifest);
+            testing::mark_as_installed(db, &update_manifest);
+            testing::mark_as_installed(db, &current_manifest);
+            testing::mark_as_incomplete_install(db, &incomplete_manifest);
 
-            let targets = resolve_update_targets(&cx, &db, &[registry], &[], false).unwrap();
+            let targets = resolve_update_targets(cx, db, &[registry], &[], false).unwrap();
             let target_ids = targets
                 .iter()
                 .map(|target| target.manifest.id().to_string())
@@ -288,18 +282,16 @@ mod tests {
         let (registry_dir, registry) = testing::make_registry_spec("test-registry");
         testing::write_manifest(registry_dir.path(), "example-font@2.0.0");
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
         let pkg_specs = vec![
             PackageSpec::from_str("example-font@1.0.0").unwrap(),
             PackageSpec::from_str("example-font").unwrap(),
         ];
 
-        testing::with_db(&cx, |mut db| {
+        testing::with_db(|cx, db| {
             let manifest = testing::make_manifest("example-font@1.0.0");
-            testing::mark_as_installed(&mut db, &manifest);
+            testing::mark_as_installed(db, &manifest);
 
-            let targets = resolve_update_targets(&cx, &db, &[registry], &pkg_specs, false).unwrap();
+            let targets = resolve_update_targets(cx, db, &[registry], &pkg_specs, false).unwrap();
 
             assert_eq!(targets.len(), 1);
             assert_eq!(targets[0].manifest.id().to_string(), "example-font@2.0.0");
@@ -312,20 +304,18 @@ mod tests {
         let (registry_dir, registry) = testing::make_registry_spec("test-registry");
         testing::write_manifest(registry_dir.path(), "example-font@2.0.0");
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
         let pkg_specs = vec![
             PackageSpec::from_str("example-font@1.0.0").unwrap(),
             PackageSpec::from_str("example-font@3.0.0").unwrap(),
         ];
 
-        testing::with_db(&cx, |mut db| {
+        testing::with_db(|cx, db| {
             let older_manifest = testing::make_manifest("example-font@1.0.0");
             let newer_manifest = testing::make_manifest("example-font@3.0.0");
-            testing::mark_as_installed(&mut db, &older_manifest);
-            testing::mark_as_installed(&mut db, &newer_manifest);
+            testing::mark_as_installed(db, &older_manifest);
+            testing::mark_as_installed(db, &newer_manifest);
 
-            let targets = resolve_update_targets(&cx, &db, &[registry], &pkg_specs, false).unwrap();
+            let targets = resolve_update_targets(cx, db, &[registry], &pkg_specs, false).unwrap();
 
             assert!(targets.is_empty());
         });
@@ -338,18 +328,16 @@ mod tests {
         testing::write_manifest(registry_dir1.path(), "example-font@2.0.0");
         testing::write_manifest(registry_dir2.path(), "example-font@3.0.0");
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
         let registries = [registry1, registry2];
         let pkg_specs = vec![PackageSpec::from_str("example-font").unwrap()];
 
-        testing::with_db(&cx, |mut db| {
+        testing::with_db(|cx, db| {
             let manifest = testing::make_manifest("example-font@1.0.0");
-            testing::mark_as_installed(&mut db, &manifest);
+            testing::mark_as_installed(db, &manifest);
 
-            let err = resolve_update_targets(&cx, &db, &registries, &pkg_specs, false).unwrap_err();
+            let err = resolve_update_targets(cx, db, &registries, &pkg_specs, false).unwrap_err();
 
-            assert_matches!(err, TestError::Failed);
+            assert!(err.is_failed());
         });
     }
 
@@ -359,15 +347,13 @@ mod tests {
         testing::write_manifest(registry_dir.path(), "example-font@1.0.1");
         testing::write_manifest(registry_dir.path(), "example-font@2.0.0-rc-1");
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
         let registries = [registry];
 
-        testing::with_db(&cx, |mut db| {
+        testing::with_db(|cx, db| {
             let manifest = testing::make_manifest("example-font@1.0.0");
-            testing::mark_as_installed(&mut db, &manifest);
+            testing::mark_as_installed(db, &manifest);
 
-            let targets = resolve_update_targets(&cx, &db, &registries, &[], false).unwrap();
+            let targets = resolve_update_targets(cx, db, &registries, &[], false).unwrap();
 
             assert_eq!(targets.len(), 1);
             assert_eq!(targets[0].manifest.id().to_string(), "example-font@1.0.1");
@@ -380,15 +366,13 @@ mod tests {
         testing::write_manifest(registry_dir.path(), "example-font@1.0.1");
         testing::write_manifest(registry_dir.path(), "example-font@2.0.0-rc-1");
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
         let registries = [registry];
 
-        testing::with_db(&cx, |mut db| {
+        testing::with_db(|cx, db| {
             let manifest = testing::make_manifest("example-font@1.0.0");
-            testing::mark_as_installed(&mut db, &manifest);
+            testing::mark_as_installed(db, &manifest);
 
-            let targets = resolve_update_targets(&cx, &db, &registries, &[], true).unwrap();
+            let targets = resolve_update_targets(cx, db, &registries, &[], true).unwrap();
 
             assert_eq!(targets.len(), 1);
             assert_eq!(

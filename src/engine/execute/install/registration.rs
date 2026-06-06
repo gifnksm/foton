@@ -136,65 +136,47 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        process,
-        sync::{
-            LazyLock,
-            atomic::{AtomicUsize, Ordering},
-        },
-    };
+    use std::sync::LazyLock;
 
     use super::*;
-    use crate::{
-        cli::reporter::RootReportScope as _,
-        util::testing::{TempdirContext, TestScope},
-    };
-
-    fn test_app_id() -> String {
-        static TEST_ID: AtomicUsize = AtomicUsize::new(0);
-        format!(
-            "io.github.gifnksm.foton.test.install-registration.{}.{}",
-            process::id(),
-            TEST_ID.fetch_add(1, Ordering::Relaxed)
-        )
-    }
+    use crate::util::testing;
 
     static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| "example-font@0.1.0".parse().unwrap());
 
     #[test]
     fn dropping_unregistered_guard_requests_cleanup() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cleanup_tracker = CleanupTracker::default();
+        testing::with_context(|cx| {
+            let cleanup_tracker = CleanupTracker::default();
 
-        let guard = RegistrationGuard {
-            armed: true,
-            registered: false,
-            cx: RegistrationScope::start(&cx),
-            cleanup_tracker: cleanup_tracker.clone(),
-            pkg_id: PKG_ID.clone(),
-        };
-        drop(guard);
+            let guard = RegistrationGuard {
+                armed: true,
+                registered: false,
+                cx: RegistrationScope::start(cx),
+                cleanup_tracker: cleanup_tracker.clone(),
+                pkg_id: PKG_ID.clone(),
+            };
+            drop(guard);
 
-        assert!(cleanup_tracker.cleanup_required());
+            assert!(cleanup_tracker.cleanup_required());
+        });
     }
 
     #[test]
     fn disarming_unregistered_guard_does_not_request_cleanup() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cleanup_tracker = CleanupTracker::default();
+        testing::with_context(|cx| {
+            let cleanup_tracker = CleanupTracker::default();
 
-        let guard = RegistrationGuard {
-            armed: true,
-            registered: false,
-            cx: RegistrationScope::start(&cx),
-            cleanup_tracker: cleanup_tracker.clone(),
-            pkg_id: PKG_ID.clone(),
-        };
-        guard.disarm();
+            let guard = RegistrationGuard {
+                armed: true,
+                registered: false,
+                cx: RegistrationScope::start(cx),
+                cleanup_tracker: cleanup_tracker.clone(),
+                pkg_id: PKG_ID.clone(),
+            };
+            guard.disarm();
 
-        assert!(!cleanup_tracker.cleanup_required());
+            assert!(!cleanup_tracker.cleanup_required());
+        });
     }
 
     #[test]
@@ -203,19 +185,19 @@ mod tests {
         ignore = "registry and session should be isolated in sandbox tests. use `cargo xtask sandbox run --test` instead."
     )]
     fn dropping_registered_guard_keeps_cleanup_clear_when_unregister_succeeds() {
-        let cx = TempdirContext::with_app_id(test_app_id());
-        let cx = TestScope::start(&cx);
-        let cleanup_tracker = CleanupTracker::default();
+        testing::with_context(|cx| {
+            let cleanup_tracker = CleanupTracker::default();
 
-        let guard = RegistrationGuard {
-            armed: true,
-            registered: true,
-            cx: RegistrationScope::start(&cx),
-            cleanup_tracker: cleanup_tracker.clone(),
-            pkg_id: PKG_ID.clone(),
-        };
-        drop(guard);
+            let guard = RegistrationGuard {
+                armed: true,
+                registered: true,
+                cx: RegistrationScope::start(cx),
+                cleanup_tracker: cleanup_tracker.clone(),
+                pkg_id: PKG_ID.clone(),
+            };
+            drop(guard);
 
-        assert!(!cleanup_tracker.cleanup_required());
+            assert!(!cleanup_tracker.cleanup_required());
+        });
     }
 }

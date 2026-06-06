@@ -84,28 +84,21 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{
-        cli::reporter::RootReportScope as _,
-        package::InstallationState,
-        util::testing::{self, TempdirContext, TestScope},
-    };
+    use crate::{engine::plan, package::InstallationState, util::testing};
 
     #[test]
     fn plan_install_uninstalls_other_versions() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
         let incomplete_install_manifest = testing::make_manifest("example-font@0.1.0");
         let incomplete_uninstall_manifest = testing::make_manifest("example-font@0.2.0");
         let installed_manifest = testing::make_manifest("example-font@0.3.0");
         let install_target_manifest = testing::make_manifest("example-font@0.4.0");
         let install_target = testing::make_resolved_install_target(&install_target_manifest);
 
-        let plan = testing::with_db(&cx, |mut db| {
-            testing::mark_as_incomplete_install(&mut db, &incomplete_install_manifest);
-            testing::mark_as_incomplete_uninstall(&mut db, &incomplete_uninstall_manifest);
-            testing::mark_as_installed(&mut db, &installed_manifest);
-            plan_install(&db, &[install_target])
+        let plan = testing::with_db(|_cx, db| {
+            testing::mark_as_incomplete_install(db, &incomplete_install_manifest);
+            testing::mark_as_incomplete_uninstall(db, &incomplete_uninstall_manifest);
+            testing::mark_as_installed(db, &installed_manifest);
+            plan_install(db, &[install_target])
         });
 
         let install_step = PlanStep::new(InstallOp {
@@ -114,7 +107,7 @@ mod tests {
         });
         let install_step_id = install_step.step_id;
 
-        testing::assert_plan_eq(
+        plan::testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([
                 install_step,
@@ -141,18 +134,15 @@ mod tests {
 
     #[test]
     fn plan_install_skips_already_installed() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
         let manifest = testing::make_manifest("example-font@0.1.0");
         let install_target = testing::make_resolved_install_target(&manifest);
 
-        let plan = testing::with_db(&cx, |mut db| {
-            testing::mark_as_installed(&mut db, &manifest);
-            plan_install(&db, &[install_target])
+        let plan = testing::with_db(|_cx, db| {
+            testing::mark_as_installed(db, &manifest);
+            plan_install(db, &[install_target])
         });
 
-        testing::assert_plan_eq(
+        plan::testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([PlanStep::new(SkipOp {
                 pkg_spec: manifest.id().into(),
@@ -163,9 +153,6 @@ mod tests {
 
     #[test]
     fn plan_install_overwrites_same_version_incomplete_states() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
         let pairs = [
             (
                 InstallationState::IncompleteUninstall,
@@ -180,11 +167,12 @@ mod tests {
             let manifest = testing::make_manifest(pkg_id);
             let install_target = testing::make_resolved_install_target(&manifest);
 
-            let plan = testing::with_db(&cx, |mut db| {
-                testing::mark_as_state(&mut db, &manifest, state);
-                plan_install(&db, &[install_target])
+            let plan = testing::with_db(|_cx, db| {
+                testing::mark_as_state(db, &manifest, state);
+                plan_install(db, &[install_target])
             });
-            testing::assert_plan_eq(
+
+            plan::testing::assert_plan_eq(
                 &plan,
                 &ExecutionPlan::new_for_test([PlanStep::new(InstallOp {
                     manifest: Arc::clone(&manifest),
