@@ -29,6 +29,7 @@ mod tests {
     use std::str::FromStr as _;
 
     use crate::{
+        engine::plan,
         package::{PackageId, PackageSpec},
         util::testing,
     };
@@ -43,7 +44,7 @@ mod tests {
 
         let plan = plan_uninstall(&[uninstall_target]);
 
-        testing::assert_plan_eq(
+        plan::testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([PlanStep::new(UninstallOp {
                 pkg_id: uninstall_pkg_id,
@@ -61,7 +62,7 @@ mod tests {
 
         let plan = plan_uninstall(&[uninstall_target]);
 
-        testing::assert_plan_eq(
+        plan::testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([PlanStep::new(SkipOp {
                 pkg_spec: uninstall_pkg_id.into(),

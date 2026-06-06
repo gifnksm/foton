@@ -141,10 +141,7 @@ mod tests {
     use std::{assert_matches, str::FromStr as _};
 
     use super::*;
-    use crate::{
-        cli::reporter::RootReportScope as _,
-        util::testing::{self, TempdirContext, TestScope},
-    };
+    use crate::util::testing;
 
     fn assert_uninstall_targets_eq(
         targets: &[ResolvedRepairTarget],
@@ -170,19 +167,16 @@ mod tests {
 
     #[test]
     fn resolve_all_repair_targets_returns_all_incomplete_entries_only() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
         let incomplete_install_manifest = testing::make_manifest("example-font@0.1.0");
         let incomplete_uninstall_manifest = testing::make_manifest("example-font@0.2.0");
         let installed_manifest = testing::make_manifest("other-font@1.0.0");
 
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_incomplete_install(&mut db, &incomplete_install_manifest);
-            testing::mark_as_incomplete_uninstall(&mut db, &incomplete_uninstall_manifest);
-            testing::mark_as_installed(&mut db, &installed_manifest);
+        testing::with_db(|cx, db| {
+            testing::mark_as_incomplete_install(db, &incomplete_install_manifest);
+            testing::mark_as_incomplete_uninstall(db, &incomplete_uninstall_manifest);
+            testing::mark_as_installed(db, &installed_manifest);
 
-            let targets = resolve_all_repair_targets(&cx, &db);
+            let targets = resolve_all_repair_targets(cx, db);
 
             assert_eq!(targets.len(), 2);
             assert_uninstall_targets_eq(
@@ -203,17 +197,14 @@ mod tests {
 
     #[test]
     fn resolve_spec_returns_already_uninstalled_for_missing_specs() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
+        let pkg_specs = [
+            PackageSpec::from_str("example-font@0.1.0").unwrap(),
+            PackageSpec::from_str("example-font").unwrap(),
+        ];
 
-        testing::with_db(&cx, |db| {
-            let pkg_specs = [
-                PackageSpec::from_str("example-font@0.1.0").unwrap(),
-                PackageSpec::from_str("example-font").unwrap(),
-            ];
-
+        testing::with_db(|_cx, db| {
             for spec in pkg_specs {
-                let targets = resolve_spec(&db, &spec);
+                let targets = resolve_spec(db, &spec);
                 assert_eq!(targets.len(), 1);
                 assert_matches!(
                     &targets[0],
@@ -225,19 +216,16 @@ mod tests {
 
     #[test]
     fn resolve_spec_returns_not_broken_for_installed_only_matches() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
         let manifest = testing::make_manifest("example-font@0.1.0");
 
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_installed(&mut db, &manifest);
+        testing::with_db(|_cx, db| {
+            testing::mark_as_installed(db, &manifest);
 
             for spec in [
                 PackageSpec::from_str("example-font@0.1.0").unwrap(),
                 PackageSpec::from_str("example-font").unwrap(),
             ] {
-                let targets = resolve_spec(&db, &spec);
+                let targets = resolve_spec(db, &spec);
                 assert_eq!(targets.len(), 1);
                 assert_matches!(
                     &targets[0],
@@ -249,9 +237,6 @@ mod tests {
 
     #[test]
     fn resolve_repair_targets_returns_all_incomplete_matches_for_name_and_dedups() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
         let incomplete_install_manifest = testing::make_manifest("example-font@0.1.0");
         let incomplete_uninstall_manifest = testing::make_manifest("example-font@0.2.0");
         let installed_manifest = testing::make_manifest("example-font@1.0.0");
@@ -261,12 +246,12 @@ mod tests {
             PackageSpec::from_str("example-font").unwrap(),
         ];
 
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_incomplete_install(&mut db, &incomplete_install_manifest);
-            testing::mark_as_incomplete_uninstall(&mut db, &incomplete_uninstall_manifest);
-            testing::mark_as_installed(&mut db, &installed_manifest);
+        testing::with_db(|cx, db| {
+            testing::mark_as_incomplete_install(db, &incomplete_install_manifest);
+            testing::mark_as_incomplete_uninstall(db, &incomplete_uninstall_manifest);
+            testing::mark_as_installed(db, &installed_manifest);
 
-            let targets = resolve_repair_targets(&cx, &db, &pkg_specs);
+            let targets = resolve_repair_targets(cx, db, &pkg_specs);
 
             assert_eq!(targets.len(), 2);
             assert_uninstall_targets_eq(

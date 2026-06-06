@@ -165,66 +165,62 @@ mod tests {
     use std::{fs, sync::LazyLock};
 
     use super::*;
-    use crate::{
-        cli::reporter::RootReportScope as _,
-        package::PackageId,
-        util::testing::{TempdirContext, TestScope},
-    };
+    use crate::{package::PackageId, util::testing};
 
     static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| "example-font@0.1.0".parse().unwrap());
 
     #[test]
     fn create_new_package_dirs_does_not_remove_existing_package_on_failure() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cleanup_tracker = CleanupTracker::default();
+        testing::with_context(|cx| {
+            let cleanup_tracker = CleanupTracker::default();
 
-        let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
-        fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
-        let existing_font = pkg_dirs.fonts_dir().join("existing.ttf");
-        fs::write(&existing_font, b"font").unwrap();
+            let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
+            fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
+            let existing_font = pkg_dirs.fonts_dir().join("existing.ttf");
+            fs::write(&existing_font, b"font").unwrap();
 
-        create_new_package_dirs(&cx, cleanup_tracker.clone(), &PKG_ID).unwrap_err();
+            create_new_package_dirs(cx, cleanup_tracker.clone(), &PKG_ID).unwrap_err();
 
-        assert!(cleanup_tracker.cleanup_required());
-        assert!(pkg_dirs.version_dir().exists());
-        assert!(pkg_dirs.fonts_dir().exists());
-        assert!(existing_font.exists());
+            assert!(cleanup_tracker.cleanup_required());
+            assert!(pkg_dirs.version_dir().exists());
+            assert!(pkg_dirs.fonts_dir().exists());
+            assert!(existing_font.exists());
+        });
     }
 
     #[test]
     fn package_dirs_guard_removes_created_directories_on_drop() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cleanup_tracker = CleanupTracker::default();
-        let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
+        testing::with_context(|cx| {
+            let cleanup_tracker = CleanupTracker::default();
+            let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
 
-        {
-            let _guard = create_new_package_dirs(&cx, cleanup_tracker.clone(), &PKG_ID).unwrap();
-            assert!(pkg_dirs.fonts_dir().exists());
-            assert!(pkg_dirs.version_dir().exists());
-        }
+            {
+                let _guard = create_new_package_dirs(cx, cleanup_tracker.clone(), &PKG_ID).unwrap();
+                assert!(pkg_dirs.fonts_dir().exists());
+                assert!(pkg_dirs.version_dir().exists());
+            }
 
-        assert!(!cleanup_tracker.cleanup_required());
-        assert!(!pkg_dirs.fonts_dir().exists());
-        assert!(!pkg_dirs.version_dir().exists());
-        assert!(!pkg_dirs.name_dir().exists());
+            assert!(!cleanup_tracker.cleanup_required());
+            assert!(!pkg_dirs.fonts_dir().exists());
+            assert!(!pkg_dirs.version_dir().exists());
+            assert!(!pkg_dirs.name_dir().exists());
+        });
     }
 
     #[test]
     fn package_dirs_guard_marks_cleanup_failed_when_drop_cleanup_fails() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cleanup_tracker = CleanupTracker::default();
-        let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
+        testing::with_context(|cx| {
+            let cleanup_tracker = CleanupTracker::default();
+            let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
 
-        {
-            let _guard = create_new_package_dirs(&cx, cleanup_tracker.clone(), &PKG_ID).unwrap();
-            fs::write(pkg_dirs.version_dir().join("leftover.txt"), b"leftover").unwrap();
-        }
+            {
+                let _guard = create_new_package_dirs(cx, cleanup_tracker.clone(), &PKG_ID).unwrap();
+                fs::write(pkg_dirs.version_dir().join("leftover.txt"), b"leftover").unwrap();
+            }
 
-        assert!(cleanup_tracker.cleanup_required());
-        assert!(pkg_dirs.version_dir().exists());
-        assert!(pkg_dirs.name_dir().exists());
+            assert!(cleanup_tracker.cleanup_required());
+            assert!(pkg_dirs.version_dir().exists());
+            assert!(pkg_dirs.name_dir().exists());
+        });
     }
 }

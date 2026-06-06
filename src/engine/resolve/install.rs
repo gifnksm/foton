@@ -306,41 +306,30 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::{
-        cli::reporter::RootReportScope as _,
-        util::testing::{self, TempdirContext, TestError, TestScope},
-    };
+    use crate::util::testing;
 
     #[test]
     fn resolve_installed_package_returns_resolved_when_matching_package_is_installed() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = InstallResolveScope::start(&cx);
-
         let manifest = testing::make_manifest("example-font@1.0.0");
         let spec = PackageSpec::from_str("example-font").unwrap();
 
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_installed(&mut db, &manifest);
+        testing::with_db(|_cx, db| {
+            testing::mark_as_installed(db, &manifest);
 
-            let target = resolve_installed_package(&db, &spec);
+            let target = resolve_installed_package(db, &spec);
             assert_matches!(target, ResolveState::Resolved { manifest: resolved_manifest, .. } if Arc::ptr_eq(&resolved_manifest, &manifest));
         });
     }
 
     #[test]
     fn resolve_installed_package_returns_unresolved_when_matching_package_is_incomplete_install() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = InstallResolveScope::start(&cx);
-
         let manifest = testing::make_manifest("example-font@1.0.0");
         let spec = PackageSpec::from_str("example-font").unwrap();
 
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_incomplete_install(&mut db, &manifest);
+        testing::with_db(|_cx, db| {
+            testing::mark_as_incomplete_install(db, &manifest);
 
-            let target = resolve_installed_package(&db, &spec);
+            let target = resolve_installed_package(db, &spec);
             assert_matches!(
                 target,
                 ResolveState::Unresolved { pkg_spec } if pkg_spec == spec
@@ -350,17 +339,13 @@ mod tests {
 
     #[test]
     fn resolve_installed_package_returns_unresolved_when_no_packages_match() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = InstallResolveScope::start(&cx);
-
         let installed_manifest = testing::make_manifest("installed-font@1.0.0");
         let missing_spec = PackageSpec::from_str("missing-font").unwrap();
 
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_installed(&mut db, &installed_manifest);
+        testing::with_db(|_cx, db| {
+            testing::mark_as_installed(db, &installed_manifest);
 
-            let target = resolve_installed_package(&db, &missing_spec);
+            let target = resolve_installed_package(db, &missing_spec);
             assert_matches!(
                 target,
                 ResolveState::Unresolved { pkg_spec } if pkg_spec == missing_spec
@@ -374,9 +359,6 @@ mod tests {
         testing::write_manifest(registry_dir.path(), "installed-font@1.0.0");
         testing::write_manifest(registry_dir.path(), "example-font@1.0.0");
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
         let installed_manifest = testing::make_manifest("installed-font@1.0.0");
 
         let pkg_specs = vec![
@@ -385,11 +367,11 @@ mod tests {
             PackageSpec::from_str("example-font").unwrap(),
         ];
 
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_installed(&mut db, &installed_manifest);
+        testing::with_db(|cx, db| {
+            testing::mark_as_installed(db, &installed_manifest);
 
             let targets =
-                resolve_install_targets_by_spec(&cx, &db, &[registry], &pkg_specs, false).unwrap();
+                resolve_install_targets_by_spec(cx, db, &[registry], &pkg_specs, false).unwrap();
             assert_eq!(targets.len(), 2);
             assert_eq!(targets[0].manifest.id(), installed_manifest.id());
             assert_eq!(targets[1].manifest.id().to_string(), "example-font@1.0.0");
@@ -401,46 +383,40 @@ mod tests {
         let registry_dir = TempDir::new().unwrap();
         let missing_registry_dir = registry_dir.path().join("missing");
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
         let registry =
             testing::make_registry_spec_at("test-registry", missing_registry_dir.as_path());
         let pkg_specs = vec![PackageSpec::from_str("example-font").unwrap()];
 
-        testing::with_db(&cx, |db| {
-            let err = resolve_install_targets_by_spec(&cx, &db, &[registry], &pkg_specs, false)
+        testing::with_db(|cx, db| {
+            let err = resolve_install_targets_by_spec(cx, db, &[registry], &pkg_specs, false)
                 .unwrap_err();
-            assert_matches!(err, TestError::Failed);
+            assert!(err.is_failed());
         });
     }
 
     #[test]
     fn resolve_install_targets_by_manifest_sets_file_source() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
         let path = PathBuf::from("example-font.toml");
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let targets =
-            resolve_install_targets_by_manifest(&cx, &[(path.clone(), Arc::clone(&manifest))])
-                .unwrap();
 
-        assert_eq!(targets.len(), 1);
-        assert_matches!(
-            &targets[0],
-            ResolvedInstallTarget {
-                source: InstallTargetSource::File(source_path),
-                manifest: resolved_manifest,
-            } if source_path == &path && Arc::ptr_eq(resolved_manifest, &manifest)
-        );
+        testing::with_context(|cx| {
+            let targets =
+                resolve_install_targets_by_manifest(cx, &[(path.clone(), Arc::clone(&manifest))])
+                    .unwrap();
+
+            assert_eq!(targets.len(), 1);
+            assert_matches!(
+                &targets[0],
+                ResolvedInstallTarget {
+                    source: InstallTargetSource::File(source_path),
+                    manifest: resolved_manifest,
+                } if source_path == &path && Arc::ptr_eq(resolved_manifest, &manifest)
+            );
+        });
     }
 
     #[test]
-    fn resolve_install_targets_by_manifest_reports_conflicting_package_ids() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
+    fn resolve_install_targets_by_manifest_reports_duplicated_package_ids() {
         let manifests = vec![
             (
                 PathBuf::from("manifest-a.toml"),
@@ -452,9 +428,10 @@ mod tests {
             ),
         ];
 
-        let err = resolve_install_targets_by_manifest(&cx, &manifests).unwrap_err();
-
-        assert_matches!(err, TestError::Failed);
+        testing::with_context(|cx| {
+            let err = resolve_install_targets_by_manifest(cx, &manifests).unwrap_err();
+            assert!(err.is_failed());
+        });
     }
 
     #[test]
@@ -463,13 +440,11 @@ mod tests {
         testing::write_manifest(registry_dir.path(), "example-font@0.1.0");
         testing::write_manifest(registry_dir.path(), "example-font@0.2.0");
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = InstallResolveScope::start(&cx);
-
-        let spec = PackageSpec::from_str("example-font").unwrap();
-        let target = resolve_spec_from_registry(&cx, &[index], &spec, false).unwrap();
-        assert_eq!(target.manifest.id().to_string(), "example-font@0.2.0");
+        testing::with_scoped_context(|cx| {
+            let spec = PackageSpec::from_str("example-font").unwrap();
+            let target = resolve_spec_from_registry(cx, &[index], &spec, false).unwrap();
+            assert_eq!(target.manifest.id().to_string(), "example-font@0.2.0");
+        });
     }
 
     #[test]
@@ -478,16 +453,14 @@ mod tests {
         testing::write_manifest(registry_dir.path(), "example-font@1.0.0");
         testing::write_manifest(registry_dir.path(), "example-font@2.0.0-rc-1");
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = InstallResolveScope::start(&cx);
-
-        let spec = PackageSpec::from_str("example-font").unwrap();
-        let stable_target = resolve_spec_from_registry(&cx, &[index], &spec, false).unwrap();
-        assert_eq!(
-            stable_target.manifest.id().to_string(),
-            "example-font@1.0.0"
-        );
+        testing::with_scoped_context(|cx| {
+            let spec = PackageSpec::from_str("example-font").unwrap();
+            let stable_target = resolve_spec_from_registry(cx, &[index], &spec, false).unwrap();
+            assert_eq!(
+                stable_target.manifest.id().to_string(),
+                "example-font@1.0.0"
+            );
+        });
     }
 
     #[test]
@@ -496,13 +469,11 @@ mod tests {
         testing::write_manifest(registry_dir.path(), "example-font@1.0.0");
         testing::write_manifest(registry_dir.path(), "example-font@2.0.0-rc-1");
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = InstallResolveScope::start(&cx);
-
-        let spec = PackageSpec::from_str("example-font").unwrap();
-        let target = resolve_spec_from_registry(&cx, &[index], &spec, true).unwrap();
-        assert_eq!(target.manifest.id().to_string(), "example-font@2.0.0-rc-1");
+        testing::with_scoped_context(|cx| {
+            let spec = PackageSpec::from_str("example-font").unwrap();
+            let target = resolve_spec_from_registry(cx, &[index], &spec, true).unwrap();
+            assert_eq!(target.manifest.id().to_string(), "example-font@2.0.0-rc-1");
+        });
     }
 
     #[test]
@@ -510,13 +481,11 @@ mod tests {
         let (registry_dir, index) = testing::make_registry_index("test-registry");
         testing::write_manifest(registry_dir.path(), "example-font@2.0.0-rc-1");
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = InstallResolveScope::start(&cx);
-
-        let spec = PackageSpec::from_str("example-font@2.0.0-rc-1").unwrap();
-        let target = resolve_spec_from_registry(&cx, &[index], &spec, false).unwrap();
-        assert_eq!(target.manifest.id().to_string(), "example-font@2.0.0-rc-1");
+        testing::with_scoped_context(|cx| {
+            let spec = PackageSpec::from_str("example-font@2.0.0-rc-1").unwrap();
+            let target = resolve_spec_from_registry(cx, &[index], &spec, false).unwrap();
+            assert_eq!(target.manifest.id().to_string(), "example-font@2.0.0-rc-1");
+        });
     }
 
     #[test]
@@ -528,21 +497,15 @@ mod tests {
 
         let indexes = [index1, index2];
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = InstallResolveScope::start(&cx);
-
-        let spec: PackageSpec = "example-font".parse().unwrap();
-        let err = resolve_spec_from_registry(&cx, &indexes, &spec, false).unwrap_err();
-        assert_matches!(err, TestError::Failed);
+        testing::with_scoped_context(|cx| {
+            let spec: PackageSpec = "example-font".parse().unwrap();
+            let err = resolve_spec_from_registry(cx, &indexes, &spec, false).unwrap_err();
+            assert!(err.is_failed());
+        });
     }
 
     #[test]
     fn check_conflicts_reports_multiple_versions_of_same_package() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = InstallResolveScope::start(&cx);
-
         let targets = vec![
             ResolvedInstallTarget {
                 source: InstallTargetSource::Installed,
@@ -554,8 +517,10 @@ mod tests {
             },
         ];
 
-        let err = check_conflicts(&cx, &targets).unwrap_err();
-        assert_matches!(err, TestError::Failed);
+        testing::with_scoped_context(|cx| {
+            let err = check_conflicts(cx, &targets).unwrap_err();
+            assert!(err.is_failed());
+        });
     }
 
     #[test]

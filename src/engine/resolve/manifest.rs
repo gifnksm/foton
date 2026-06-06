@@ -72,15 +72,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{assert_matches, fs};
+    use std::fs;
 
     use tempfile::TempDir;
 
     use super::*;
-    use crate::{
-        cli::reporter::RootReportScope as _,
-        util::testing::{self, TempdirContext, TestError, TestScope},
-    };
+    use crate::util::testing;
 
     #[test]
     fn resolve_manifests_reads_manifest_files() {
@@ -88,14 +85,12 @@ mod tests {
         let path = tempdir.path().join("manifest.toml");
         fs::write(&path, testing::make_manifest_str("example-font@0.1.0")).unwrap();
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
-        let manifests = resolve_manifests(&cx, std::slice::from_ref(&path)).unwrap();
-
-        assert_eq!(manifests.len(), 1);
-        assert_eq!(manifests[0].0, path);
-        assert_eq!(manifests[0].1.id().to_string(), "example-font@0.1.0");
+        testing::with_context(|cx| {
+            let manifests = resolve_manifests(cx, std::slice::from_ref(&path)).unwrap();
+            assert_eq!(manifests.len(), 1);
+            assert_eq!(manifests[0].0, path);
+            assert_eq!(manifests[0].1.id().to_string(), "example-font@0.1.0");
+        });
     }
 
     #[test]
@@ -104,11 +99,9 @@ mod tests {
         let path = tempdir.path().join("manifest.toml");
         fs::write(&path, "not valid toml").unwrap();
 
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
-        let err = resolve_manifests(&cx, &[path]).unwrap_err();
-
-        assert_matches!(err, TestError::Failed);
+        testing::with_context(|cx| {
+            let err = resolve_manifests(cx, &[path]).unwrap_err();
+            assert!(err.is_failed());
+        });
     }
 }

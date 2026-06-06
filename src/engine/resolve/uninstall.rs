@@ -130,48 +130,38 @@ mod tests {
     use std::{assert_matches, str::FromStr as _};
 
     use super::*;
-    use crate::{
-        cli::reporter::RootReportScope as _,
-        util::testing::{self, TempdirContext, TestError, TestScope},
-    };
+    use crate::util::testing;
 
     #[test]
-    fn resolve_spec_returns_unresolved_for_missing_specs() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let scope_cx = UninstallResolveScope::start(&cx);
-
-        testing::with_db(&cx, |db| {
+    fn resolve_spec_returns_already_uninstalled_for_missing_specs() {
+        testing::with_db(|cx, db| {
+            let scope_cx = UninstallResolveScope::start(cx);
             let pkg_specs = vec![
                 PackageSpec::from_str("example-font@0.1.0").unwrap(),
                 PackageSpec::from_str("example-font").unwrap(),
             ];
             for spec in &pkg_specs {
-                let target = resolve_spec(&scope_cx, &db, spec).unwrap();
+                let target = resolve_spec(&scope_cx, db, spec).unwrap();
                 assert_matches!(target, ResolvedUninstallTarget::AlreadyUninstalled { pkg_spec } if pkg_spec == *spec);
             }
 
-            let targets = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap();
+            let targets = resolve_uninstall_targets(cx, db, &pkg_specs).unwrap();
             assert_eq!(targets.len(), 2);
         });
     }
 
     #[test]
     fn resolve_spec_resolves_installed_entry_from_id_and_name() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = UninstallResolveScope::start(&cx);
-
-        testing::with_db(&cx, |mut db| {
+        testing::with_scoped_db(|cx, db| {
             let manifest = testing::make_manifest("example-font@0.1.0");
             let expected = manifest.id();
-            testing::mark_as_installed(&mut db, &manifest);
+            testing::mark_as_installed(db, &manifest);
 
             for spec in [
                 PackageSpec::from_str("example-font@0.1.0").unwrap(),
                 PackageSpec::from_str("example-font").unwrap(),
             ] {
-                let target = resolve_spec(&cx, &db, &spec).unwrap();
+                let target = resolve_spec(cx, db, &spec).unwrap();
                 assert_matches!(target, ResolvedUninstallTarget::Uninstall  { pkg_id } if pkg_id == expected);
             }
         });
@@ -179,28 +169,21 @@ mod tests {
 
     #[test]
     fn resolve_spec_reports_multiple_matches_for_name() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = UninstallResolveScope::start(&cx);
-
         let manifest1 = testing::make_manifest("example-font@0.1.0");
         let manifest2 = testing::make_manifest("example-font@1.0.0");
         let spec = PackageSpec::from_str("example-font").unwrap();
 
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_installed(&mut db, &manifest1);
-            testing::mark_as_installed(&mut db, &manifest2);
+        testing::with_scoped_db(|cx, db| {
+            testing::mark_as_installed(db, &manifest1);
+            testing::mark_as_installed(db, &manifest2);
 
-            let err = resolve_spec(&cx, &db, &spec).unwrap_err();
-            assert_matches!(err, TestError::Failed);
+            let err = resolve_spec(cx, db, &spec).unwrap_err();
+            assert!(err.is_failed());
         });
     }
 
     #[test]
     fn resolve_uninstall_targets_reports_ambiguous_spec_even_with_exact_target() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
         let manifest1 = testing::make_manifest("example-font@0.1.0");
         let manifest2 = testing::make_manifest("example-font@1.0.0");
         let pkg_specs = vec![
@@ -208,20 +191,17 @@ mod tests {
             PackageSpec::from_str("example-font").unwrap(),
         ];
 
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_installed(&mut db, &manifest1);
-            testing::mark_as_installed(&mut db, &manifest2);
+        testing::with_db(|cx, db| {
+            testing::mark_as_installed(db, &manifest1);
+            testing::mark_as_installed(db, &manifest2);
 
-            let err = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap_err();
-            assert_matches!(err, TestError::Failed);
+            let err = resolve_uninstall_targets(cx, db, &pkg_specs).unwrap_err();
+            assert!(err.is_failed());
         });
     }
 
     #[test]
     fn resolve_uninstall_targets_collapses_duplicate_specs() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-
         let manifest = testing::make_manifest("example-font@0.1.0");
         let expected_pkg_id = manifest.id();
         let pkg_specs = vec![
@@ -229,9 +209,9 @@ mod tests {
             PackageSpec::from_str("example-font").unwrap(),
         ];
 
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_installed(&mut db, &manifest);
-            let targets = resolve_uninstall_targets(&cx, &db, &pkg_specs).unwrap();
+        testing::with_db(|cx, db| {
+            testing::mark_as_installed(db, &manifest);
+            let targets = resolve_uninstall_targets(cx, db, &pkg_specs).unwrap();
 
             assert_eq!(targets.len(), 1);
             assert_matches!(&targets[0], ResolvedUninstallTarget::Uninstall { pkg_id } if pkg_id == &expected_pkg_id);
@@ -240,44 +220,36 @@ mod tests {
 
     #[test]
     fn resolve_spec_resolves_incomplete_entries() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = UninstallResolveScope::start(&cx);
-
         let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.id();
 
         let spec = PackageSpec::from_str("example-font").unwrap();
 
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_incomplete_install(&mut db, &manifest);
+        testing::with_scoped_db(|cx, db| {
+            testing::mark_as_incomplete_install(db, &manifest);
 
-            let target = resolve_spec(&cx, &db, &spec).unwrap();
+            let target = resolve_spec(cx, db, &spec).unwrap();
             assert_matches!(target, ResolvedUninstallTarget::Uninstall { pkg_id: target_id } if target_id == pkg_id);
 
-            testing::mark_as_incomplete_uninstall(&mut db, &manifest);
+            testing::mark_as_incomplete_uninstall(db, &manifest);
 
-            let target = resolve_spec(&cx, &db, &spec).unwrap();
+            let target = resolve_spec(cx, db, &spec).unwrap();
             assert_matches!(target, ResolvedUninstallTarget::Uninstall { pkg_id: target_id } if target_id == pkg_id);
         });
     }
 
     #[test]
     fn resolve_spec_reports_multiple_matches_for_name_across_incomplete_states() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let cx = UninstallResolveScope::start(&cx);
-
         let manifest1 = testing::make_manifest("example-font@0.1.0");
         let manifest2 = testing::make_manifest("example-font@1.0.0");
         let spec = PackageSpec::from_str("example-font").unwrap();
 
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_incomplete_install(&mut db, &manifest1);
-            testing::mark_as_incomplete_uninstall(&mut db, &manifest2);
+        testing::with_scoped_db(|cx, db| {
+            testing::mark_as_incomplete_install(db, &manifest1);
+            testing::mark_as_incomplete_uninstall(db, &manifest2);
 
-            let err = resolve_spec(&cx, &db, &spec).unwrap_err();
-            assert_matches!(err, TestError::Failed);
+            let err = resolve_spec(cx, db, &spec).unwrap_err();
+            assert!(err.is_failed());
         });
     }
 }

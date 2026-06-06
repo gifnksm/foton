@@ -168,47 +168,32 @@ where
 #[cfg(test)]
 mod tests {
     use std::{
-        fs, process,
-        sync::{
-            LazyLock,
-            atomic::{AtomicUsize, Ordering},
-        },
+        fs,
+        sync::{Arc, LazyLock},
     };
 
     use super::*;
     use crate::{
-        cli::reporter::RootReportScope as _,
         engine::UninstallReason,
-        package::{InstallationState, PackageId},
-        util::testing::{self, TempdirContext, TestScope},
+        package::{InstallationState, PackageId, PackageManifest},
+        util::testing,
     };
 
-    fn test_app_id() -> String {
-        static TEST_ID: AtomicUsize = AtomicUsize::new(0);
-        format!(
-            "io.github.gifnksm.foton.test.uninstall-transaction.{}.{}",
-            process::id(),
-            TEST_ID.fetch_add(1, Ordering::Relaxed)
-        )
-    }
-
-    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| "example-font@0.1.0".parse().unwrap());
+    static MANIFEST: LazyLock<Arc<PackageManifest>> =
+        LazyLock::new(|| testing::make_manifest("example-font@0.1.0"));
+    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| MANIFEST.id());
 
     #[test]
     fn prepared_uninstall_step_from_plan_step_begins_incomplete_uninstall_in_transaction() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let manifest = testing::make_manifest(&*PKG_ID);
-
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_installed(&mut db, &manifest);
+        testing::with_db(|cx, db| {
+            testing::mark_as_installed(db, &MANIFEST);
             let step = UninstallOp {
                 pkg_id: PKG_ID.clone(),
                 reason: UninstallReason::RequestedByUser,
             };
 
             let mut tx = db.transaction();
-            let prepared = PreparedUninstallStep::from_plan_step(&cx, &mut tx, step).unwrap();
+            let prepared = PreparedUninstallStep::from_plan_step(cx, &mut tx, step).unwrap();
             tx.commit().unwrap();
 
             assert_eq!(
@@ -221,18 +206,14 @@ mod tests {
 
     #[test]
     fn prepared_uninstall_step_on_complete_removes_db_record() {
-        let cx = TempdirContext::new();
-        let cx = TestScope::start(&cx);
-        let manifest = testing::make_manifest(&*PKG_ID);
-
-        testing::with_db(&cx, |mut db| {
-            testing::mark_as_incomplete_uninstall(&mut db, &manifest);
+        testing::with_db(|cx, db| {
+            testing::mark_as_incomplete_uninstall(db, &MANIFEST);
             let mut prepared = PreparedUninstallStep {
                 pkg_id: PKG_ID.clone(),
             };
 
             let mut tx = db.transaction();
-            prepared.on_complete(&cx, &mut tx).unwrap();
+            prepared.on_complete(cx, &mut tx).unwrap();
             tx.commit().unwrap();
 
             assert!(db.entry_by_id(&PKG_ID).is_none());
@@ -245,17 +226,17 @@ mod tests {
         ignore = "registry should be isolated in sandbox tests. use `cargo xtask sandbox run --test` instead."
     )]
     fn execute_uninstall_removes_package_files_on_success() {
-        let cx = TempdirContext::with_app_id(test_app_id());
-        let cx = TestScope::start(&cx);
-        let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
-        fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
-        fs::write(pkg_dirs.fonts_dir().join("example.ttf"), b"font").unwrap();
+        testing::with_context(|cx| {
+            let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
+            fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
+            fs::write(pkg_dirs.fonts_dir().join("example.ttf"), b"font").unwrap();
 
-        execute_uninstall(&cx, &PKG_ID).unwrap();
+            execute_uninstall(cx, &PKG_ID).unwrap();
 
-        assert!(!pkg_dirs.fonts_dir().exists());
-        assert!(!pkg_dirs.version_dir().exists());
-        assert!(!pkg_dirs.name_dir().exists());
+            assert!(!pkg_dirs.fonts_dir().exists());
+            assert!(!pkg_dirs.version_dir().exists());
+            assert!(!pkg_dirs.name_dir().exists());
+        });
     }
 
     #[test]
@@ -264,19 +245,19 @@ mod tests {
         ignore = "registry should be isolated in sandbox tests. use `cargo xtask sandbox run --test` instead."
     )]
     fn execute_uninstall_keeps_version_directory_when_leftovers_remain() {
-        let cx = TempdirContext::with_app_id(test_app_id());
-        let cx = TestScope::start(&cx);
-        let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
-        fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
-        fs::write(pkg_dirs.fonts_dir().join("example.ttf"), b"font").unwrap();
-        let leftover = pkg_dirs.version_dir().join("leftover.txt");
-        fs::write(&leftover, b"leftover").unwrap();
+        testing::with_context(|cx| {
+            let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
+            fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
+            fs::write(pkg_dirs.fonts_dir().join("example.ttf"), b"font").unwrap();
+            let leftover = pkg_dirs.version_dir().join("leftover.txt");
+            fs::write(&leftover, b"leftover").unwrap();
 
-        execute_uninstall(&cx, &PKG_ID).unwrap_err();
+            execute_uninstall(cx, &PKG_ID).unwrap_err();
 
-        assert!(!pkg_dirs.fonts_dir().exists());
-        assert!(pkg_dirs.version_dir().exists());
-        assert!(pkg_dirs.name_dir().exists());
-        assert!(leftover.exists());
+            assert!(!pkg_dirs.fonts_dir().exists());
+            assert!(pkg_dirs.version_dir().exists());
+            assert!(pkg_dirs.name_dir().exists());
+            assert!(leftover.exists());
+        });
     }
 }

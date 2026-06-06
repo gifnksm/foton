@@ -300,13 +300,12 @@ mod tests {
 
     use super::*;
     use crate::{
-        cli::reporter::RootReportScope as _,
         engine::{
             InstallOp, InstallReason, PlanStep, SkipOp, SkipReason, StepCondition, UninstallOp,
             UninstallReason,
         },
         package::PackageId,
-        util::testing::{self, TempdirContext, TestScope},
+        util::testing::{self, TestScope},
     };
 
     fn prepare_ready_steps(
@@ -358,11 +357,9 @@ mod tests {
 
         #[test]
         fn returns_prepared_step_for_install_ops() {
-            let cx = TempdirContext::new();
-            let cx = TestScope::start(&cx);
             let manifest = testing::make_manifest("install-font@0.1.0");
 
-            testing::with_db(&cx, |mut db| {
+            testing::with_db(|cx, db| {
                 let step = PlanStep::new(InstallOp {
                     manifest: Arc::clone(&manifest),
                     reason: InstallReason::RequestedByUser,
@@ -370,7 +367,7 @@ mod tests {
                 let step_id = step.step_id();
 
                 let mut tx = db.transaction();
-                let prepared = PreparedStep::from_plan_step(&cx, &mut tx, step)
+                let prepared = PreparedStep::from_plan_step(cx, &mut tx, step)
                     .unwrap()
                     .unwrap();
 
@@ -380,13 +377,11 @@ mod tests {
 
         #[test]
         fn returns_prepared_step_for_uninstall_ops() {
-            let cx = TempdirContext::new();
-            let cx = TestScope::start(&cx);
             let manifest = testing::make_manifest("uninstall-font@0.1.0");
             let pkg_id = manifest.id();
 
-            testing::with_db(&cx, |mut db| {
-                testing::mark_as_installed(&mut db, &manifest);
+            testing::with_db(|cx, db| {
+                testing::mark_as_installed(db, &manifest);
                 let step = PlanStep::new(UninstallOp {
                     pkg_id,
                     reason: UninstallReason::RequestedByUser,
@@ -394,7 +389,7 @@ mod tests {
                 let step_id = step.step_id();
 
                 let mut tx = db.transaction();
-                let prepared = PreparedStep::from_plan_step(&cx, &mut tx, step)
+                let prepared = PreparedStep::from_plan_step(cx, &mut tx, step)
                     .unwrap()
                     .unwrap();
 
@@ -404,18 +399,16 @@ mod tests {
 
         #[test]
         fn returns_none_for_skip_ops() {
-            let cx = TempdirContext::new();
-            let cx = TestScope::start(&cx);
             let skipped_pkg_id = PackageId::from_str("skipped-font@0.1.0").unwrap();
 
-            testing::with_db(&cx, |mut db| {
+            testing::with_db(|cx, db| {
                 let step = PlanStep::new(SkipOp {
                     pkg_spec: skipped_pkg_id.into(),
                     reason: SkipReason::AlreadyInstalled,
                 });
 
                 let mut tx = db.transaction();
-                let prepared = PreparedStep::from_plan_step(&cx, &mut tx, step).unwrap();
+                let prepared = PreparedStep::from_plan_step(cx, &mut tx, step).unwrap();
 
                 assert!(prepared.is_none());
             });
@@ -427,14 +420,11 @@ mod tests {
 
         #[test]
         fn prepare_ready_steps_only_enqueues_executable_steps() {
-            let cx = TempdirContext::new();
-            let cx = TestScope::start(&cx);
-
-            testing::with_db(&cx, |mut db| {
+            testing::with_db(|cx, db| {
                 let (mut state, dependency_step_id, _dependent_step_id) =
-                    conditional_uninstall_state(&mut db);
+                    conditional_uninstall_state(db);
 
-                prepare_ready_steps(&cx, &mut db, &mut state);
+                prepare_ready_steps(cx, db, &mut state);
 
                 let first = state.pop_ready().unwrap();
                 assert_eq!(first.step_id(), dependency_step_id);
@@ -445,20 +435,17 @@ mod tests {
 
         #[test]
         fn notify_result_success_unblocks_dependent_step() {
-            let cx = TempdirContext::new();
-            let cx = TestScope::start(&cx);
-
-            testing::with_db(&cx, |mut db| {
+            testing::with_db(|cx, db| {
                 let (mut state, dependency_step_id, dependent_step_id) =
-                    conditional_uninstall_state(&mut db);
+                    conditional_uninstall_state(db);
 
-                prepare_ready_steps(&cx, &mut db, &mut state);
+                prepare_ready_steps(cx, db, &mut state);
 
                 let first = state.pop_ready().unwrap();
                 assert_eq!(first.step_id(), dependency_step_id);
 
                 state.notify_result(dependency_step_id, StepResult::Success);
-                prepare_ready_steps(&cx, &mut db, &mut state);
+                prepare_ready_steps(cx, db, &mut state);
 
                 let second = state.pop_ready().unwrap();
                 assert_eq!(second.step_id(), dependent_step_id);
@@ -469,20 +456,17 @@ mod tests {
 
         #[test]
         fn notify_result_failure_keeps_dependent_step_pending() {
-            let cx = TempdirContext::new();
-            let cx = TestScope::start(&cx);
-
-            testing::with_db(&cx, |mut db| {
+            testing::with_db(|cx, db| {
                 let (mut state, dependency_step_id, _dependent_step_id) =
-                    conditional_uninstall_state(&mut db);
+                    conditional_uninstall_state(db);
 
-                prepare_ready_steps(&cx, &mut db, &mut state);
+                prepare_ready_steps(cx, db, &mut state);
 
                 let first = state.pop_ready().unwrap();
                 assert_eq!(first.step_id(), dependency_step_id);
 
                 state.notify_result(dependency_step_id, StepResult::Failure);
-                prepare_ready_steps(&cx, &mut db, &mut state);
+                prepare_ready_steps(cx, db, &mut state);
 
                 assert!(state.pop_ready().is_none());
                 assert_eq!(state.pending_len(), 1);

@@ -9,6 +9,8 @@ pub(crate) use self::{install::*, repair::*, uninstall::*};
 
 mod install;
 mod repair;
+#[cfg(test)]
+mod testing;
 mod uninstall;
 
 #[derive(Debug)]
@@ -17,11 +19,11 @@ pub(crate) struct ExecutionPlan {
 }
 
 impl ExecutionPlan {
-    pub(crate) fn steps(&self) -> &[PlanStep] {
+    pub(in crate::engine) fn steps(&self) -> &[PlanStep] {
         &self.steps
     }
 
-    pub(crate) fn into_steps(self) -> Vec<PlanStep> {
+    pub(in crate::engine) fn into_steps(self) -> Vec<PlanStep> {
         self.steps
     }
 
@@ -30,7 +32,7 @@ impl ExecutionPlan {
     }
 
     #[cfg(test)]
-    pub(crate) fn new_for_test<I>(ops: I) -> Self
+    pub(in crate::engine) fn new_for_test<I>(ops: I) -> Self
     where
         I: IntoIterator<Item = PlanStep>,
     {
@@ -41,21 +43,21 @@ impl ExecutionPlan {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PlanStep {
+pub(in crate::engine) struct PlanStep {
     step_id: StepId,
     op: PlanStepOp,
     conditions: Vec<StepCondition>,
 }
 
 impl PlanStep {
-    pub(crate) fn new<O>(op: O) -> Self
+    pub(in crate::engine) fn new<O>(op: O) -> Self
     where
         O: Into<PlanStepOp>,
     {
         Self::with_conditions(op, vec![])
     }
 
-    pub(crate) fn with_conditions<O>(op: O, conditions: Vec<StepCondition>) -> Self
+    pub(in crate::engine) fn with_conditions<O>(op: O, conditions: Vec<StepCondition>) -> Self
     where
         O: Into<PlanStepOp>,
     {
@@ -66,25 +68,20 @@ impl PlanStep {
         }
     }
 
-    pub(crate) fn step_id(&self) -> StepId {
+    pub(in crate::engine) fn step_id(&self) -> StepId {
         self.step_id
     }
 
-    pub(crate) fn into_op(self) -> PlanStepOp {
+    pub(in crate::engine) fn into_op(self) -> PlanStepOp {
         self.op
     }
 
-    pub(crate) fn op(&self) -> &PlanStepOp {
+    pub(in crate::engine) fn op(&self) -> &PlanStepOp {
         &self.op
     }
 
     pub(in crate::engine) fn can_execute(&self) -> bool {
         self.conditions.is_empty()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn conditions(&self) -> &[StepCondition] {
-        &self.conditions
     }
 
     pub(in crate::engine) fn notify_result(&mut self, step_id: StepId, result: StepResult) {
@@ -102,10 +99,10 @@ impl PlanStep {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct StepId(u64);
+pub(in crate::engine) struct StepId(u64);
 
 impl StepId {
-    pub(crate) fn new() -> Self {
+    fn new() -> Self {
         static ID: AtomicU64 = AtomicU64::new(0);
         let id = ID.fetch_add(1, Ordering::Relaxed);
         Self(id)
@@ -113,28 +110,28 @@ impl StepId {
 }
 
 #[derive(Debug, Clone, derive_more::IsVariant, derive_more::From)]
-pub(crate) enum PlanStepOp {
+pub(in crate::engine) enum PlanStepOp {
     Install(InstallOp),
     Uninstall(UninstallOp),
     Skip(SkipOp),
 }
 
 impl PlanStepOp {
-    pub(crate) fn as_install(&self) -> Option<&InstallOp> {
+    pub(in crate::engine) fn as_install(&self) -> Option<&InstallOp> {
         match self {
             Self::Install(op) => Some(op),
             _ => None,
         }
     }
 
-    pub(crate) fn as_uninstall(&self) -> Option<&UninstallOp> {
+    pub(in crate::engine) fn as_uninstall(&self) -> Option<&UninstallOp> {
         match self {
             Self::Uninstall(op) => Some(op),
             _ => None,
         }
     }
 
-    pub(crate) fn as_skip(&self) -> Option<&SkipOp> {
+    pub(in crate::engine) fn as_skip(&self) -> Option<&SkipOp> {
         match self {
             Self::Skip(op) => Some(op),
             _ => None,
@@ -149,37 +146,37 @@ pub(in crate::engine) enum StepResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum StepCondition {
+pub(in crate::engine) enum StepCondition {
     AfterSuccess(StepId),
     Never,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct InstallOp {
-    pub(crate) manifest: Arc<PackageManifest>,
-    pub(crate) reason: InstallReason,
+pub(in crate::engine) struct InstallOp {
+    pub(in crate::engine) manifest: Arc<PackageManifest>,
+    pub(in crate::engine) reason: InstallReason,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct UninstallOp {
-    pub(crate) pkg_id: PackageId,
-    pub(crate) reason: UninstallReason,
+pub(in crate::engine) struct UninstallOp {
+    pub(in crate::engine) pkg_id: PackageId,
+    pub(in crate::engine) reason: UninstallReason,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SkipOp {
-    pub(crate) pkg_spec: PackageSpec,
-    pub(crate) reason: SkipReason,
+pub(in crate::engine) struct SkipOp {
+    pub(in crate::engine) pkg_spec: PackageSpec,
+    pub(in crate::engine) reason: SkipReason,
 }
 
 #[derive(Debug, Clone, derive_more::Display, PartialEq, Eq)]
-pub(crate) enum InstallReason {
+pub(in crate::engine) enum InstallReason {
     #[display("requested by user")]
     RequestedByUser,
 }
 
 #[derive(Debug, Clone, derive_more::Display, PartialEq, Eq)]
-pub(crate) enum UninstallReason {
+pub(in crate::engine) enum UninstallReason {
     #[display("requested by user")]
     RequestedByUser,
     #[display("conflicts with package {pkg_id}")]
@@ -195,7 +192,7 @@ pub(crate) enum UninstallReason {
 }
 
 #[derive(Debug, Clone, derive_more::Display, PartialEq, Eq)]
-pub(crate) enum SkipReason {
+pub(in crate::engine) enum SkipReason {
     #[display("already installed")]
     AlreadyInstalled,
     #[display("already uninstalled")]

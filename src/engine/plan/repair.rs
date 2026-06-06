@@ -38,6 +38,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        engine::plan,
         package::{PackageId, PackageSpec},
         util::testing,
     };
@@ -61,7 +62,7 @@ mod tests {
 
         let plan = plan_repair(&targets);
 
-        testing::assert_plan_eq(
+        plan::testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([
                 PlanStep::new(UninstallOp {
@@ -85,7 +86,7 @@ mod tests {
 
         let plan = plan_repair(&[target]);
 
-        testing::assert_plan_eq(
+        plan::testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([PlanStep::new(SkipOp {
                 pkg_spec,
@@ -109,7 +110,7 @@ mod tests {
 
         let plan = plan_repair(&targets);
 
-        testing::assert_plan_eq(
+        plan::testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([
                 PlanStep::new(SkipOp {
