@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
-use snafu::{ResultExt as _, Snafu};
+use async_trait::async_trait;
+use snafu::{IntoError as _, ResultExt as _, Snafu};
 
 use crate::{
     cli::{
@@ -10,7 +11,10 @@ use crate::{
         },
     },
     db::{PackageDatabaseError, PackageDatabaseTransaction},
-    engine::UninstallOp,
+    engine::{
+        UninstallOp,
+        execute::{ExecuteErrorReport, PreparedStepOp},
+    },
     package::{self, PackageDirs, PackageId},
     platform::windows::steps::unregistration,
     util::{fs::FsError, macros::concat_line},
@@ -101,26 +105,22 @@ impl PreparedUninstallStep {
             .report_error(cx.reporter())?;
         Ok(Self { pkg_id })
     }
+}
 
-    pub(in crate::engine) fn execute<S>(&mut self, cx: &ReportContext<S>) -> Result<(), S::Error>
-    where
-        S: ReportScope,
-    {
+#[async_trait]
+impl<S> PreparedStepOp<S> for PreparedUninstallStep
+where
+    S: ReportScope,
+{
+    async fn execute(&mut self, cx: &ReportContext<S>) -> Result<(), S::Error> {
         execute_uninstall(cx, &self.pkg_id)
     }
 
-    pub(in crate::engine) fn pkg_id(&self) -> &PackageId {
-        &self.pkg_id
-    }
-
-    pub(in crate::engine) fn on_complete<S>(
+    fn on_complete(
         &mut self,
         cx: &ReportContext<S>,
         tx: &mut PackageDatabaseTransaction<'_, '_>,
-    ) -> Result<(), S::Error>
-    where
-        S: ReportScope,
-    {
+    ) -> Result<(), S::Error> {
         let cx = UninstallExecutionScope::start(cx);
 
         tx.complete_uninstall(&self.pkg_id)
@@ -131,20 +131,19 @@ impl PreparedUninstallStep {
         Ok(())
     }
 
-    #[expect(clippy::unused_self)]
-    pub(in crate::engine) fn after_commit(&mut self) {}
+    fn after_commit(&mut self) {}
 
-    #[expect(clippy::unused_self)]
-    pub(in crate::engine) fn on_failure<S>(
-        &mut self,
-        _cx: &ReportContext<S>,
-        _tx: &mut PackageDatabaseTransaction<'_, '_>,
-    ) where
-        S: ReportScope,
-    {
+    fn on_failure(&mut self, _cx: &ReportContext<S>, _tx: &mut PackageDatabaseTransaction<'_, '_>) {
         // No rollback is performed on uninstall failure since uninstall steps are designed to be
         // applied incrementally and partially-applied states are expected to be handled by the
         // repair command.
+    }
+
+    fn commit_error_report(&self, source: PackageDatabaseError) -> ExecuteErrorReport {
+        super::CommitUninstallTransactionSnafu {
+            pkg_id: &self.pkg_id,
+        }
+        .into_error(source)
     }
 }
 
@@ -196,7 +195,7 @@ mod tests {
     static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| "example-font@0.1.0".parse().unwrap());
 
     #[test]
-    fn prepared_uninstall_step_begins_incomplete_uninstall_in_transaction() {
+    fn prepared_uninstall_step_from_plan_step_begins_incomplete_uninstall_in_transaction() {
         let cx = TempdirContext::new();
         let cx = TestScope::start(&cx);
         let manifest = testing::make_manifest(&*PKG_ID);

@@ -3,7 +3,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use snafu::{ResultExt as _, Snafu};
+use async_trait::async_trait;
+use snafu::{IntoError as _, ResultExt as _, Snafu};
 
 use crate::{
     cli::{
@@ -13,7 +14,13 @@ use crate::{
         },
     },
     db::{PackageDatabaseError, PackageDatabaseTransaction},
-    engine::{InstallOp, execute::install::package_dirs_guard::PackageDirsGuard, support},
+    engine::{
+        InstallOp,
+        execute::{
+            ExecuteErrorReport, PreparedStepOp, install::package_dirs_guard::PackageDirsGuard,
+        },
+        support,
+    },
     package::{self, Package, PackageDirs, PackageId, PackageManifest},
     platform::windows::steps::unregistration,
     util::{fs::FsError, macros::concat_line},
@@ -165,11 +172,14 @@ where
             installation_persisted: false,
         }
     }
+}
 
-    pub(in crate::engine) async fn execute(
-        &mut self,
-        cx: &ReportContext<S>,
-    ) -> Result<(), S::Error> {
+#[async_trait]
+impl<S> PreparedStepOp<S> for PreparedInstallStep<S>
+where
+    S: ReportScope,
+{
+    async fn execute(&mut self, cx: &ReportContext<S>) -> Result<(), S::Error> {
         let pkg_id = self.manifest.id();
         let cx =
             InstallExecutionScope::start_with_report(cx, format_args!("Installing {pkg_id}..."));
@@ -201,11 +211,7 @@ where
         Ok(())
     }
 
-    pub(in crate::engine) fn pkg_id(&self) -> PackageId {
-        self.manifest.id()
-    }
-
-    pub(in crate::engine) fn on_complete(
+    fn on_complete(
         &mut self,
         cx: &ReportContext<S>,
         tx: &mut PackageDatabaseTransaction<'_, '_>,
@@ -222,7 +228,7 @@ where
         Ok(())
     }
 
-    pub(in crate::engine) fn after_commit(&mut self) {
+    fn after_commit(&mut self) {
         if let Some(guard) = self.pkg_dirs_guard.take() {
             guard.disarm();
         }
@@ -232,11 +238,7 @@ where
         self.installation_persisted = true;
     }
 
-    pub(in crate::engine) fn on_failure(
-        &mut self,
-        cx: &ReportContext<S>,
-        tx: &mut PackageDatabaseTransaction<'_, '_>,
-    ) {
+    fn on_failure(&mut self, cx: &ReportContext<S>, tx: &mut PackageDatabaseTransaction<'_, '_>) {
         assert!(!self.installation_persisted);
 
         let cx = InstallExecutionScope::start(cx);
@@ -253,6 +255,13 @@ where
                 pkg_id: &self.manifest.id(),
             })
             .report_error(cx.reporter());
+    }
+
+    fn commit_error_report(&self, source: PackageDatabaseError) -> ExecuteErrorReport {
+        super::CommitInstallTransactionSnafu {
+            pkg_id: self.manifest.id(),
+        }
+        .into_error(source)
     }
 }
 
@@ -283,6 +292,27 @@ mod tests {
             PackageDirs::new(cx.app_dirs(), &pkg_id),
             vec![],
         ));
+    }
+
+    #[test]
+    fn prepared_install_step_from_plan_step_begins_incomplete_install_in_transaction() {
+        let cx = TempdirContext::new();
+        let cx = TestScope::start(&cx);
+        let manifest = testing::make_manifest("example-font@0.1.0");
+        let pkg_id = manifest.id();
+
+        testing::with_db(&cx, |mut db| {
+            let mut tx = db.transaction();
+            let step: PreparedInstallStep<TestScope> =
+                PreparedInstallStep::from_plan_step(&mut tx, install_op(&manifest));
+            tx.commit().unwrap();
+
+            assert_eq!(
+                db.entry_by_id(&pkg_id).unwrap().installation_state,
+                InstallationState::IncompleteInstall,
+            );
+            assert_eq!(step.manifest.id(), pkg_id);
+        });
     }
 
     #[test]
