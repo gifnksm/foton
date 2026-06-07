@@ -13,6 +13,7 @@ use crate::{
         DbLockFileGuard,
         persist::{
             self, PersistError, PersistedFontEntry, PersistedPackageDb, PersistedPackageEntry,
+            PersistedPackageVersionMap,
         },
     },
     package::{
@@ -235,8 +236,24 @@ impl PackageDatabaseTransaction<'_, '_> {
         Ok(())
     }
 
+    fn version_map(&self, pkg_name: &PackageName) -> Option<&PersistedPackageVersionMap> {
+        self.persist_db.packages.get(pkg_name)
+    }
+
+    fn version_map_mut(
+        &mut self,
+        pkg_name: &PackageName,
+    ) -> Option<&mut PersistedPackageVersionMap> {
+        self.persist_db.packages.get_mut(pkg_name)
+    }
+
+    fn entry(&self, pkg_id: &PackageId) -> Option<&PersistedPackageEntry> {
+        let version_map = self.version_map(pkg_id.name())?;
+        version_map.versions.get(pkg_id.version())
+    }
+
     fn entry_mut(&mut self, pkg_id: &PackageId) -> Option<&mut PersistedPackageEntry> {
-        let version_map = self.persist_db.packages.get_mut(pkg_id.name())?;
+        let version_map = self.version_map_mut(pkg_id.name())?;
         version_map.versions.get_mut(pkg_id.version())
     }
 
@@ -252,12 +269,30 @@ impl PackageDatabaseTransaction<'_, '_> {
     }
 
     fn remove_entry(&mut self, pkg_id: &PackageId) -> Option<PersistedPackageEntry> {
-        let version_map = self.persist_db.packages.get_mut(pkg_id.name())?;
+        let version_map = self.version_map_mut(pkg_id.name())?;
         let entry = version_map.versions.remove(pkg_id.version())?;
         if version_map.versions.is_empty() {
             self.persist_db.packages.remove(pkg_id.name());
         }
         Some(entry)
+    }
+
+    fn check_installation_state(
+        &self,
+        pkg_id: &PackageId,
+        expected: InstallationState,
+    ) -> Result<(), PackageDatabaseError> {
+        let entry = self.entry(pkg_id).context(EntryNotFoundSnafu { pkg_id })?;
+        let actual = entry.installation_state;
+        snafu::ensure!(
+            actual == expected,
+            UnexpectedInstallationStateSnafu {
+                pkg_id,
+                expected,
+                actual,
+            }
+        );
+        Ok(())
     }
 
     pub(crate) fn begin_install(&mut self, manifest: Arc<PackageManifest>) {
@@ -275,17 +310,7 @@ impl PackageDatabaseTransaction<'_, '_> {
         pkg_id: &PackageId,
         font_entries: &[FontEntry],
     ) -> Result<(), PackageDatabaseError> {
-        let entry = self
-            .entry_mut(pkg_id)
-            .context(EntryNotFoundSnafu { pkg_id })?;
-        snafu::ensure!(
-            entry.installation_state == InstallationState::IncompleteInstall,
-            UnexpectedInstallationStateSnafu {
-                pkg_id,
-                expected: InstallationState::IncompleteInstall,
-                actual: entry.installation_state,
-            }
-        );
+        self.check_installation_state(pkg_id, InstallationState::IncompleteInstall)?;
 
         let db_entry = self.entry_mut(pkg_id).unwrap();
         db_entry.installation_state = InstallationState::Installed;
@@ -299,30 +324,12 @@ impl PackageDatabaseTransaction<'_, '_> {
         pkg_id: &PackageId,
         cleanup_required: bool,
     ) -> Result<(), PackageDatabaseError> {
-        let version_map = self
-            .persist_db
-            .packages
-            .get_mut(pkg_id.name())
-            .context(EntryNotFoundSnafu { pkg_id })?;
-        let entry = version_map
-            .versions
-            .get_mut(pkg_id.version())
-            .context(EntryNotFoundSnafu { pkg_id })?;
-        snafu::ensure!(
-            entry.installation_state == InstallationState::IncompleteInstall,
-            UnexpectedInstallationStateSnafu {
-                pkg_id,
-                expected: InstallationState::IncompleteInstall,
-                actual: entry.installation_state,
-            }
-        );
+        self.check_installation_state(pkg_id, InstallationState::IncompleteInstall)?;
         if cleanup_required {
+            let entry = self.entry_mut(pkg_id).unwrap();
             entry.installation_state = InstallationState::IncompleteUninstall;
         } else {
-            version_map.versions.remove(pkg_id.version()).unwrap();
-            if version_map.versions.is_empty() {
-                self.persist_db.packages.remove(pkg_id.name());
-            }
+            self.remove_entry(pkg_id);
         }
         Ok(())
     }
@@ -342,17 +349,7 @@ impl PackageDatabaseTransaction<'_, '_> {
         &mut self,
         pkg_id: &PackageId,
     ) -> Result<(), PackageDatabaseError> {
-        let Some(entry) = self.entry_mut(pkg_id) else {
-            return Err(EntryNotFoundSnafu { pkg_id }.build());
-        };
-        snafu::ensure!(
-            entry.installation_state == InstallationState::IncompleteUninstall,
-            UnexpectedInstallationStateSnafu {
-                pkg_id,
-                expected: InstallationState::IncompleteUninstall,
-                actual: entry.installation_state,
-            }
-        );
+        self.check_installation_state(pkg_id, InstallationState::IncompleteUninstall)?;
         self.remove_entry(pkg_id);
         Ok(())
     }
