@@ -328,8 +328,8 @@ mod tests {
         let dependent_manifest = testing::make_manifest("dependent-font@0.1.0");
         let dependent_pkg_id = dependent_manifest.id();
 
-        testing::mark_as_installed(db, &dependency_manifest);
-        testing::mark_as_installed(db, &dependent_manifest);
+        testing::mark_as_active(db, &dependency_manifest);
+        testing::mark_as_active(db, &dependent_manifest);
 
         let dependency_step = PlanStep::new(UninstallOp {
             pkg_id: dependency_pkg_id,
@@ -381,7 +381,7 @@ mod tests {
             let pkg_id = manifest.id();
 
             testing::with_db(|cx, db| {
-                testing::mark_as_installed(db, &manifest);
+                testing::mark_as_active(db, &manifest);
                 let step = PlanStep::new(UninstallOp {
                     pkg_id,
                     reason: UninstallReason::RequestedByUser,

@@ -218,13 +218,18 @@ where
     ) -> Result<(), S::Error> {
         let cx = InstallExecutionScope::start(cx);
 
+        let pkg_id = self.manifest.id();
         let package = self.package.as_ref().unwrap();
-        tx.complete_install(&self.manifest.id(), package.entries())
-            .context(CompleteInstallSnafu {
-                pkg_id: &self.manifest.id(),
-            })
+        tx.complete_install(&pkg_id, package.entries())
+            .context(CompleteInstallSnafu { pkg_id: &pkg_id })
             .report_error(cx.reporter())?;
-
+        // TODO: make activation part independent
+        tx.begin_activate(&pkg_id)
+            .context(CompleteInstallSnafu { pkg_id: &pkg_id })
+            .report_error(cx.reporter())?;
+        tx.complete_activate(&pkg_id)
+            .context(CompleteInstallSnafu { pkg_id: &pkg_id })
+            .report_error(cx.reporter())?;
         Ok(())
     }
 
@@ -272,7 +277,7 @@ mod tests {
     use super::*;
     use crate::{
         engine::InstallReason,
-        package::InstallationState,
+        package::{ActivationState, InstallationState},
         util::testing::{self, TestScope},
     };
 
@@ -326,10 +331,9 @@ mod tests {
             assert!(!step.installation_persisted);
 
             tx.commit().unwrap();
-            assert_eq!(
-                db.entry_by_id(&PKG_ID).unwrap().installation_state,
-                InstallationState::Installed,
-            );
+            let entry = db.entry_by_id(&PKG_ID).unwrap();
+            assert_eq!(entry.installation_state, InstallationState::Installed);
+            assert_eq!(entry.activation_state, ActivationState::Active);
             assert!(!step.installation_persisted);
 
             step.after_commit();

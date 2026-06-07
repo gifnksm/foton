@@ -45,6 +45,14 @@ pub(crate) enum PackageDatabaseError {
         expected: InstallationState,
         actual: InstallationState,
     },
+    #[snafu(display(
+        "database entry for package ID {pkg_id} is in unexpected activation state: expected {expected}, actual {actual}"
+    ))]
+    UnexpectedActivationState {
+        pkg_id: PackageId,
+        expected: ActivationState,
+        actual: ActivationState,
+    },
     #[snafu(display("package ID {pkg_id} is already installed"))]
     AlreadyInstalled { pkg_id: PackageId },
     #[cfg(test)]
@@ -295,6 +303,48 @@ impl PackageDatabaseTransaction<'_, '_> {
         Ok(())
     }
 
+    fn check_activation_state(
+        &self,
+        pkg_id: &PackageId,
+        expected: ActivationState,
+    ) -> Result<(), PackageDatabaseError> {
+        let entry = self.entry(pkg_id).context(EntryNotFoundSnafu { pkg_id })?;
+        let actual = entry.activation_state;
+        snafu::ensure!(
+            actual == expected,
+            UnexpectedActivationStateSnafu {
+                pkg_id,
+                expected,
+                actual,
+            }
+        );
+        Ok(())
+    }
+
+    fn update_installation_state(
+        &mut self,
+        pkg_id: &PackageId,
+        new_state: InstallationState,
+    ) -> Result<(), PackageDatabaseError> {
+        let entry = self
+            .entry_mut(pkg_id)
+            .context(EntryNotFoundSnafu { pkg_id })?;
+        entry.installation_state = new_state;
+        Ok(())
+    }
+
+    fn update_activation_state(
+        &mut self,
+        pkg_id: &PackageId,
+        new_state: ActivationState,
+    ) -> Result<(), PackageDatabaseError> {
+        let entry = self
+            .entry_mut(pkg_id)
+            .context(EntryNotFoundSnafu { pkg_id })?;
+        entry.activation_state = new_state;
+        Ok(())
+    }
+
     pub(crate) fn begin_install(&mut self, manifest: Arc<PackageManifest>) {
         let entry = PersistedPackageEntry {
             installation_state: InstallationState::IncompleteInstall,
@@ -314,7 +364,6 @@ impl PackageDatabaseTransaction<'_, '_> {
 
         let db_entry = self.entry_mut(pkg_id).unwrap();
         db_entry.installation_state = InstallationState::Installed;
-        db_entry.activation_state = ActivationState::Active;
         db_entry.font_entries = font_entries.iter().map(Into::into).collect();
         Ok(())
     }
@@ -326,8 +375,7 @@ impl PackageDatabaseTransaction<'_, '_> {
     ) -> Result<(), PackageDatabaseError> {
         self.check_installation_state(pkg_id, InstallationState::IncompleteInstall)?;
         if cleanup_required {
-            let entry = self.entry_mut(pkg_id).unwrap();
-            entry.installation_state = InstallationState::IncompleteUninstall;
+            self.update_installation_state(pkg_id, InstallationState::IncompleteUninstall)?;
         } else {
             self.remove_entry(pkg_id);
         }
@@ -338,10 +386,8 @@ impl PackageDatabaseTransaction<'_, '_> {
         &mut self,
         pkg_id: &PackageId,
     ) -> Result<(), PackageDatabaseError> {
-        let entry = self
-            .entry_mut(pkg_id)
-            .context(EntryNotFoundSnafu { pkg_id })?;
-        entry.installation_state = InstallationState::IncompleteUninstall;
+        self.check_activation_state(pkg_id, ActivationState::Inactive)?;
+        self.update_installation_state(pkg_id, InstallationState::IncompleteUninstall)?;
         Ok(())
     }
 
@@ -351,6 +397,56 @@ impl PackageDatabaseTransaction<'_, '_> {
     ) -> Result<(), PackageDatabaseError> {
         self.check_installation_state(pkg_id, InstallationState::IncompleteUninstall)?;
         self.remove_entry(pkg_id);
+        Ok(())
+    }
+
+    pub(crate) fn begin_activate(
+        &mut self,
+        pkg_id: &PackageId,
+    ) -> Result<(), PackageDatabaseError> {
+        self.check_installation_state(pkg_id, InstallationState::Installed)?;
+        self.update_activation_state(pkg_id, ActivationState::IncompleteActivate)?;
+        Ok(())
+    }
+
+    pub(crate) fn complete_activate(
+        &mut self,
+        pkg_id: &PackageId,
+    ) -> Result<(), PackageDatabaseError> {
+        self.check_activation_state(pkg_id, ActivationState::IncompleteActivate)?;
+        self.update_activation_state(pkg_id, ActivationState::Active)?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn cancel_activate(
+        &mut self,
+        pkg_id: &PackageId,
+        cleanup_required: bool,
+    ) -> Result<(), PackageDatabaseError> {
+        self.check_activation_state(pkg_id, ActivationState::IncompleteActivate)?;
+        if cleanup_required {
+            self.update_activation_state(pkg_id, ActivationState::IncompleteDeactivate)?;
+        } else {
+            self.update_activation_state(pkg_id, ActivationState::Inactive)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn begin_deactivate(
+        &mut self,
+        pkg_id: &PackageId,
+    ) -> Result<(), PackageDatabaseError> {
+        self.update_activation_state(pkg_id, ActivationState::IncompleteDeactivate)?;
+        Ok(())
+    }
+
+    pub(crate) fn complete_deactivate(
+        &mut self,
+        pkg_id: &PackageId,
+    ) -> Result<(), PackageDatabaseError> {
+        self.check_activation_state(pkg_id, ActivationState::IncompleteDeactivate)?;
+        self.update_activation_state(pkg_id, ActivationState::Inactive)?;
         Ok(())
     }
 }
@@ -636,6 +732,10 @@ mod tests {
         with_db(&app_dirs, &mut lock_file, |db| {
             assert_transaction_stages_without_commit(db, &before, &staged, |tx| {
                 tx.complete_install(&pkg_id, &[]).unwrap();
+                assert_eq!(
+                    tx.entry(&pkg_id).unwrap().activation_state,
+                    ActivationState::Inactive,
+                );
             });
         });
         assert_persisted_states(&app_dirs, &mut lock_file, &before);
@@ -685,6 +785,126 @@ mod tests {
             });
         });
         assert_persisted_states(&app_dirs, &mut lock_file, &before);
+    }
+
+    #[test]
+    fn begin_activate_and_complete_activate_mark_entry_active_in_transaction() {
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
+        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+
+        let manifest = testing::make_manifest("example-font@0.1.0");
+        let pkg_id = manifest.id();
+
+        with_db(&app_dirs, &mut lock_file, |db| {
+            testing::mark_as_installed(db, &manifest);
+
+            let mut tx = db.transaction();
+            tx.begin_activate(&pkg_id).unwrap();
+            assert_eq!(
+                tx.entry(&pkg_id).unwrap().activation_state,
+                ActivationState::IncompleteActivate,
+            );
+
+            tx.complete_activate(&pkg_id).unwrap();
+            assert_eq!(
+                tx.entry(&pkg_id).unwrap().activation_state,
+                ActivationState::Active
+            );
+
+            tx.commit().unwrap();
+            assert_eq!(
+                db.entry_by_id(&pkg_id).unwrap().activation_state,
+                ActivationState::Active,
+            );
+        });
+    }
+
+    #[test]
+    fn cancel_activate_handles_cleanup_and_non_cleanup_transitions() {
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
+        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+
+        let inactive_manifest = testing::make_manifest("example-font-inactive@0.1.0");
+        let inactive_pkg_id = inactive_manifest.id();
+        let cleanup_manifest = testing::make_manifest("example-font-cleanup@0.1.0");
+        let cleanup_pkg_id = cleanup_manifest.id();
+
+        with_db(&app_dirs, &mut lock_file, |db| {
+            testing::mark_as_installed(db, &inactive_manifest);
+            testing::mark_as_installed(db, &cleanup_manifest);
+
+            let mut tx = db.transaction();
+            tx.begin_activate(&inactive_pkg_id).unwrap();
+            tx.begin_activate(&cleanup_pkg_id).unwrap();
+
+            tx.cancel_activate(&inactive_pkg_id, false).unwrap();
+            tx.cancel_activate(&cleanup_pkg_id, true).unwrap();
+
+            assert_eq!(
+                tx.entry(&inactive_pkg_id).unwrap().activation_state,
+                ActivationState::Inactive,
+            );
+            assert_eq!(
+                tx.entry(&cleanup_pkg_id).unwrap().activation_state,
+                ActivationState::IncompleteDeactivate,
+            );
+        });
+    }
+
+    #[test]
+    fn begin_deactivate_and_complete_deactivate_mark_entry_inactive_in_transaction() {
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
+        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+
+        let manifest = testing::make_manifest("example-font@0.1.0");
+        let pkg_id = manifest.id();
+
+        with_db(&app_dirs, &mut lock_file, |db| {
+            testing::mark_as_active(db, &manifest);
+
+            let mut tx = db.transaction();
+            tx.begin_deactivate(&pkg_id).unwrap();
+            assert_eq!(
+                tx.entry(&pkg_id).unwrap().activation_state,
+                ActivationState::IncompleteDeactivate,
+            );
+
+            tx.complete_deactivate(&pkg_id).unwrap();
+            assert_eq!(
+                tx.entry(&pkg_id).unwrap().activation_state,
+                ActivationState::Inactive
+            );
+
+            tx.commit().unwrap();
+            assert_eq!(
+                db.entry_by_id(&pkg_id).unwrap().activation_state,
+                ActivationState::Inactive,
+            );
+        });
+    }
+
+    #[test]
+    fn begin_uninstall_rejects_active_entries() {
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
+        let mut lock_file = DbLockFile::open(&app_dirs).unwrap();
+
+        let manifest = testing::make_manifest("example-font@0.1.0");
+        let pkg_id = manifest.id();
+
+        with_db(&app_dirs, &mut lock_file, |db| {
+            testing::mark_as_active(db, &manifest);
+
+            let mut tx = db.transaction();
+            let err = tx.begin_uninstall(&pkg_id).unwrap_err();
+            assert_matches!(
+                err,
+                PackageDatabaseError::UnexpectedActivationState {
+                    pkg_id: actual_pkg_id,
+                    expected: ActivationState::Inactive,
+                    actual: ActivationState::Active,
+                } if actual_pkg_id == pkg_id
+            );
+        });
     }
 
     #[test]
