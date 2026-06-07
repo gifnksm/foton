@@ -172,9 +172,10 @@ pub(crate) struct RepairArgs {
 pub(crate) struct ListArgs {
     /// Include packages left by incomplete installs, uninstalls, or updates.
     ///
-    /// Without this option, only packages in the `installed` state are shown.
-    /// With this option, leftover packages are shown with states such as
-    /// `incomplete-install` and `incomplete-uninstall`.
+    /// Without this option, only packages in the `installed` state are shown,
+    /// and each line includes the activation state.
+    /// With this option, each line includes the installation state, and
+    /// installed packages also include the activation state.
     #[clap(long)]
     pub(crate) show_incomplete: bool,
 }

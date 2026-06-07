@@ -113,6 +113,7 @@ where
     }
     writeln!(writer, "Version: {version}")?;
     writeln!(writer, "Installation State: {}", entry.installation_state)?;
+    writeln!(writer, "Activation State: {}", entry.activation_state)?;
     if let Some(description) = description {
         writeln!(writer, "Description: {description}")?;
     }
@@ -170,7 +171,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        package::InstallationState,
+        package::{ActivationState, InstallationState},
         util::{macros::concat_line, testing},
     };
 
@@ -181,6 +182,7 @@ mod tests {
 
         let entry = PackageDbEntry {
             installation_state: InstallationState::Installed,
+            activation_state: ActivationState::Active,
             manifest: Arc::clone(&manifest),
         };
         render_package_info(&mut output, &entry).unwrap();
@@ -192,6 +194,7 @@ mod tests {
                 "Name: example-font",
                 "Version: 0.1.0",
                 "Installation State: installed",
+                "Activation State: active",
                 "Sources[0]:",
                 "  - URL: https://example.com/example-font-0.1.0.zip",
                 "  - Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -231,6 +234,7 @@ exclude = ["fonts/exclude.ttf"]
 
         let entry = PackageDbEntry {
             installation_state: InstallationState::IncompleteInstall,
+            activation_state: ActivationState::Inactive,
             manifest: Arc::new(manifest),
         };
         render_package_info(&mut output, &entry).unwrap();
@@ -243,6 +247,7 @@ exclude = ["fonts/exclude.ttf"]
                 "Display Name: Example Font",
                 "Version: 0.1.0",
                 "Installation State: incomplete-install",
+                "Activation State: inactive",
                 "Description: Example font family for UI and coding",
                 "Aliases:",
                 "  - Example Font UI",

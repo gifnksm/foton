@@ -37,9 +37,9 @@ pub(crate) enum PackageDatabaseError {
     #[snafu(display("database entry not found for package ID: {pkg_id}"))]
     EntryNotFound { pkg_id: PackageId },
     #[snafu(display(
-        "database entry for package ID {pkg_id} is in unexpected state: expected {expected}, actual {actual}"
+        "database entry for package ID {pkg_id} is in unexpected installation state: expected {expected}, actual {actual}"
     ))]
-    UnexpectedState {
+    UnexpectedInstallationState {
         pkg_id: PackageId,
         expected: InstallationState,
         actual: InstallationState,
@@ -54,6 +54,7 @@ pub(crate) enum PackageDatabaseError {
 #[derive(Debug)]
 pub(crate) struct PackageDbEntry {
     pub(crate) installation_state: InstallationState,
+    pub(crate) activation_state: ActivationState,
     pub(crate) manifest: Arc<PackageManifest>,
 }
 
@@ -61,6 +62,7 @@ impl From<&PersistedPackageEntry> for PackageDbEntry {
     fn from(entry: &PersistedPackageEntry) -> Self {
         Self {
             installation_state: entry.installation_state,
+            activation_state: entry.activation_state,
             manifest: Arc::clone(&entry.manifest),
         }
     }
@@ -278,7 +280,7 @@ impl PackageDatabaseTransaction<'_, '_> {
             .context(EntryNotFoundSnafu { pkg_id })?;
         snafu::ensure!(
             entry.installation_state == InstallationState::IncompleteInstall,
-            UnexpectedStateSnafu {
+            UnexpectedInstallationStateSnafu {
                 pkg_id,
                 expected: InstallationState::IncompleteInstall,
                 actual: entry.installation_state,
@@ -308,7 +310,7 @@ impl PackageDatabaseTransaction<'_, '_> {
             .context(EntryNotFoundSnafu { pkg_id })?;
         snafu::ensure!(
             entry.installation_state == InstallationState::IncompleteInstall,
-            UnexpectedStateSnafu {
+            UnexpectedInstallationStateSnafu {
                 pkg_id,
                 expected: InstallationState::IncompleteInstall,
                 actual: entry.installation_state,
@@ -345,7 +347,7 @@ impl PackageDatabaseTransaction<'_, '_> {
         };
         snafu::ensure!(
             entry.installation_state == InstallationState::IncompleteUninstall,
-            UnexpectedStateSnafu {
+            UnexpectedInstallationStateSnafu {
                 pkg_id,
                 expected: InstallationState::IncompleteUninstall,
                 actual: entry.installation_state,

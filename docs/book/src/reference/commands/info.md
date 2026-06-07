@@ -39,7 +39,7 @@ foton info <package-name>@<version>
 `info` prints detailed metadata for matching packages recorded in the local package database, including:
 
 - package name and display name
-- version and current package state
+- version, installation state, and activation state
 - description, aliases, faces, homepage, repository, and license
 - source URLs, hashes, and include or exclude patterns
 
