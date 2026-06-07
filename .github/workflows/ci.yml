@@ -232,7 +232,7 @@ jobs:
           tool: just,cargo-llvm-cov
       - run: just ci-coverage
         shell: bash
-      - uses: codecov/codecov-action@v6
+      - uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: target/codecov.json
@@ -299,7 +299,7 @@ jobs:
           cargo xtask scenario run --scenario "${{ matrix.scenario }}"
           cargo llvm-cov report -p foton -p xtask --codecov --output-path target/codecov.json
         shell: bash
-      - uses: codecov/codecov-action@v6
+      - uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: target/codecov.json
