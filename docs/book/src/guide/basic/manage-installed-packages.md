@@ -15,7 +15,8 @@ Show installed packages:
 foton list
 ```
 
-By default, `list` shows packages in the `installed` state.
+By default, `list` shows packages in the `installed` state together with each
+package's activation state.
 
 If you also want to see packages left by incomplete operations, pass
 `--show-incomplete`.
@@ -24,8 +25,9 @@ If you also want to see packages left by incomplete operations, pass
 foton list --show-incomplete
 ```
 
-With `--show-incomplete`, each entry includes its state, such as `installed`,
-`incomplete-install`, or `incomplete-uninstall`.
+With `--show-incomplete`, each entry includes its installation state, such as
+`installed`, `incomplete-install`, or `incomplete-uninstall`. Installed
+packages also include their activation state.
 
 If you see such packages, inspect them with `foton info`, then clean them up
 with `foton repair`.
@@ -43,8 +45,9 @@ foton info <package-name>
 foton info <package-name>@<version>
 ```
 
-`info` prints the package name, version, state, metadata, and source
-information for matching packages recorded in the local package database.
+`info` prints the package name, version, installation state, activation state,
+metadata, and source information for matching packages recorded in the local
+package database.
 This can include packages left by incomplete operations.
 Use this command when you want to confirm exactly what is recorded in the local package database.
 

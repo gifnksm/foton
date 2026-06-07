@@ -13,7 +13,6 @@ use crate::{
     },
     db::PackageDbEntry,
     engine,
-    package::InstallationState,
 };
 
 #[derive(Debug)]
@@ -106,12 +105,22 @@ struct AllEntryRender {}
 
 impl EntryRender for AllEntryRender {
     fn render(&self, writer: &mut dyn io::Write, entry: &PackageDbEntry) -> io::Result<()> {
-        writeln!(
-            writer,
-            "{} ({})",
-            entry.manifest.id(),
-            entry.installation_state,
-        )
+        if entry.installation_state.is_installed() {
+            writeln!(
+                writer,
+                "{} ({}, {})",
+                entry.manifest.id(),
+                entry.installation_state,
+                entry.activation_state,
+            )
+        } else {
+            writeln!(
+                writer,
+                "{} ({})",
+                entry.manifest.id(),
+                entry.installation_state,
+            )
+        }
     }
 }
 
@@ -119,8 +128,13 @@ struct InstalledEntryRender {}
 
 impl EntryRender for InstalledEntryRender {
     fn render(&self, writer: &mut dyn io::Write, entry: &PackageDbEntry) -> io::Result<()> {
-        if entry.installation_state == InstallationState::Installed {
-            writeln!(writer, "{}", entry.manifest.id())?;
+        if entry.installation_state.is_installed() {
+            writeln!(
+                writer,
+                "{} ({})",
+                entry.manifest.id(),
+                entry.activation_state,
+            )?;
         }
         Ok(())
     }
@@ -129,20 +143,41 @@ impl EntryRender for InstalledEntryRender {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::{macros::concat_line, testing};
+    use crate::{
+        package::{ActivationState, InstallationState},
+        util::{macros::concat_line, testing},
+    };
 
     fn make_entries() -> Vec<PackageDbEntry> {
         vec![
             PackageDbEntry {
                 installation_state: InstallationState::Installed,
+                activation_state: ActivationState::Inactive,
                 manifest: testing::make_manifest("installed-font@1.0.0"),
             },
             PackageDbEntry {
+                installation_state: InstallationState::Installed,
+                activation_state: ActivationState::Active,
+                manifest: testing::make_manifest("active-font@1.0.0"),
+            },
+            PackageDbEntry {
+                installation_state: InstallationState::Installed,
+                activation_state: ActivationState::IncompleteActivate,
+                manifest: testing::make_manifest("incomplete-activate-font@1.0.0"),
+            },
+            PackageDbEntry {
+                installation_state: InstallationState::Installed,
+                activation_state: ActivationState::IncompleteDeactivate,
+                manifest: testing::make_manifest("incomplete-deactivate-font@1.0.0"),
+            },
+            PackageDbEntry {
                 installation_state: InstallationState::IncompleteInstall,
+                activation_state: ActivationState::Inactive,
                 manifest: testing::make_manifest("incomplete-install-font@1.1.0"),
             },
             PackageDbEntry {
                 installation_state: InstallationState::IncompleteUninstall,
+                activation_state: ActivationState::Inactive,
                 manifest: testing::make_manifest("incomplete-uninstall-font@1.2.0"),
             },
         ]
@@ -156,7 +191,16 @@ mod tests {
         render_entries(&mut output, entries, &InstalledEntryRender {}).unwrap();
 
         let output = String::from_utf8(output).unwrap();
-        assert_eq!(output, "installed-font@1.0.0\n");
+        assert_eq!(
+            output,
+            concat_line!(
+                "installed-font@1.0.0 (inactive)",
+                "active-font@1.0.0 (active)",
+                "incomplete-activate-font@1.0.0 (incomplete-activate)",
+                "incomplete-deactivate-font@1.0.0 (incomplete-deactivate)",
+                "",
+            )
+        );
     }
 
     #[test]
@@ -170,7 +214,10 @@ mod tests {
         assert_eq!(
             output,
             concat_line!(
-                "installed-font@1.0.0 (installed)",
+                "installed-font@1.0.0 (installed, inactive)",
+                "active-font@1.0.0 (installed, active)",
+                "incomplete-activate-font@1.0.0 (installed, incomplete-activate)",
+                "incomplete-deactivate-font@1.0.0 (installed, incomplete-deactivate)",
                 "incomplete-install-font@1.1.0 (incomplete-install)",
                 "incomplete-uninstall-font@1.2.0 (incomplete-uninstall)",
                 "",

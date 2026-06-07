@@ -14,9 +14,10 @@ foton list [OPTIONS]
 
 Include packages left by incomplete installs, uninstalls, or updates.
 
-Without this option, only packages in the `installed` state are shown.
-With this option, leftover packages are shown with states such as
-`incomplete-install` and `incomplete-uninstall`.
+Without this option, only packages in the `installed` state are shown, and each
+line includes the activation state.
+With this option, each line includes the installation state, and installed
+packages also include the activation state.
 
 ### `--no-confirm`
 
@@ -43,23 +44,26 @@ foton list --show-incomplete
 
 ## Output
 
-Without `--show-incomplete`, each line contains a package name and version:
+Without `--show-incomplete`, each line contains a package name, version, and
+activation state:
 
 ```text
-example-font@1.2.3
+example-font@1.2.3 (active)
 ```
 
-With `--show-incomplete`, each line also includes the package state:
+With `--show-incomplete`, each line includes the installation state, and
+installed packages also include the activation state:
 
 ```text
-example-font@1.2.3 (installed)
+example-font@1.2.3 (installed, active)
 another-font@0.1.0 (incomplete-install)
 ```
 
 ## Notes
 
 - `list` reads the local package database and does not access package registries.
-- Use `info` when you want more than the package name, version, and state.
+- Use `info` when you want more than the package name, version, and recorded
+  states.
 
 ## Related pages
 
