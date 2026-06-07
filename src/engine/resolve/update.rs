@@ -122,44 +122,49 @@ where
     let indexes = registry::fetch_registries(&cx, registries)?;
     let targets = pkg_ids
         .into_iter()
-        .filter_map(|pkg_id| {
-            find_update_target(&cx, &indexes, &pkg_id, include_pre_release).transpose()
+        .filter_map(|(pkg_id, should_activate)| {
+            let res =
+                find_update_target(&cx, &indexes, &pkg_id, include_pre_release).transpose()?;
+            Some(res.map(|(reg_id, manifest)| (reg_id, manifest, should_activate)))
         })
         .map(|res| {
-            res.map(|(reg_id, manifest)| ResolvedInstallTarget {
-                source: InstallTargetSource::Registry(reg_id),
-                manifest,
-            })
+            res.map(
+                |(reg_id, manifest, should_activate)| ResolvedInstallTarget {
+                    source: InstallTargetSource::Registry(reg_id),
+                    manifest,
+                    should_activate,
+                },
+            )
         })
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(targets)
 }
 
-fn collect_latest_packages<I>(pkg_ids: I) -> BTreeMap<PackageName, PackageId>
+fn collect_latest_packages<I>(pkg_ids: I) -> BTreeMap<PackageName, (PackageId, bool)>
 where
-    I: IntoIterator<Item = PackageId>,
+    I: IntoIterator<Item = (PackageId, bool)>,
 {
-    let mut latest_packages: BTreeMap<PackageName, PackageId> = BTreeMap::new();
-    for pkg_id in pkg_ids {
+    let mut latest_packages: BTreeMap<PackageName, (PackageId, bool)> = BTreeMap::new();
+    for (pkg_id, should_activate) in pkg_ids {
         latest_packages
             .entry(pkg_id.name().clone())
             .and_modify(|existing| {
-                if existing.version() < pkg_id.version() {
-                    *existing = pkg_id.clone();
+                if existing.0.version() < pkg_id.version() {
+                    *existing = (pkg_id.clone(), should_activate);
                 }
             })
-            .or_insert(pkg_id);
+            .or_insert((pkg_id, should_activate));
     }
     latest_packages
 }
 
-fn all_installed_packages(db: &PackageDatabase<'_>) -> Vec<PackageId> {
+fn all_installed_packages(db: &PackageDatabase<'_>) -> Vec<(PackageId, bool)> {
     collect_latest_packages(db.entries().filter_map(|entry| {
         entry
-            .installation_state
+            .installation_state()
             .is_installed()
-            .then(|| entry.manifest.id())
+            .then(|| (entry.manifest().id(), entry.activation_state().is_active()))
     }))
     .into_values()
     .collect()
@@ -169,39 +174,46 @@ fn resolve_installed_package<S>(
     cx: &ReportContext<UpdateResolveScope<S>>,
     db: &PackageDatabase<'_>,
     pkg_spec: &PackageSpec,
-) -> Result<PackageId, S::Error>
+) -> Result<(PackageId, bool), S::Error>
 where
     S: ReportScope,
 {
     let latest_packages =
         collect_latest_packages(db.entries_by_spec(pkg_spec).filter_map(|entry| {
             entry
-                .installation_state
+                .installation_state()
                 .is_installed()
-                .then(|| entry.manifest.id())
+                .then(|| (entry.manifest().id(), entry.activation_state().is_active()))
         }));
     if latest_packages.len() > 1 {
         return Err(cx.reporter().report_error(
             MultipleMatchingPackagesSnafu {
                 pkg_spec,
-                pkg_ids: latest_packages.values().cloned().collect::<Vec<_>>(),
+                pkg_ids: latest_packages
+                    .values()
+                    .map(|(pkg_id, _activate)| pkg_id)
+                    .cloned()
+                    .collect::<Vec<_>>(),
             }
             .build(),
         ));
     }
-    let Some(pkg_id) = latest_packages.into_values().next() else {
+    let Some((pkg_id, should_activate)) = latest_packages.into_values().next() else {
         return Err(cx
             .reporter()
             .report_error(NoMatchingPackageSnafu { pkg_spec }.build()));
     };
-    Ok(pkg_id)
+    Ok((pkg_id, should_activate))
 }
 
-fn dedup(pkg_ids: &mut Vec<PackageId>) {
+fn dedup(pkg_ids: &mut Vec<(PackageId, bool)>) {
     let latest_versions = collect_latest_packages(pkg_ids.iter().cloned());
     let mut seen = BTreeSet::new();
-    pkg_ids.retain(|pkg_id| {
-        latest_versions.get(pkg_id.name()) == Some(pkg_id) && seen.insert(pkg_id.clone())
+    pkg_ids.retain(|(pkg_id, _activate)| {
+        latest_versions
+            .get(pkg_id.name())
+            .is_some_and(|(latest_pkg_id, _activate)| latest_pkg_id == pkg_id)
+            && seen.insert(pkg_id.clone())
     });
 }
 
@@ -318,6 +330,27 @@ mod tests {
             let targets = resolve_update_targets(cx, db, &[registry], &pkg_specs, false).unwrap();
 
             assert!(targets.is_empty());
+        });
+    }
+
+    #[test]
+    fn resolve_update_targets_inherits_activation_intent_from_selected_installed_version() {
+        let (registry_dir, registry) = testing::make_registry_spec("test-registry");
+        testing::write_manifest(registry_dir.path(), "example-font@4.0.0");
+
+        let pkg_specs = vec![PackageSpec::from_str("example-font").unwrap()];
+
+        testing::with_db(|cx, db| {
+            let older_manifest = testing::make_manifest("example-font@1.0.0");
+            let newer_manifest = testing::make_manifest("example-font@3.0.0");
+            testing::mark_as_active(db, &older_manifest);
+            testing::mark_as_installed(db, &newer_manifest);
+
+            let targets = resolve_update_targets(cx, db, &[registry], &pkg_specs, false).unwrap();
+
+            assert_eq!(targets.len(), 1);
+            assert_eq!(targets[0].manifest.id().to_string(), "example-font@4.0.0");
+            assert!(!targets[0].should_activate);
         });
     }
 

@@ -113,30 +113,9 @@ impl StepId {
 pub(in crate::engine) enum PlanStepOp {
     Install(InstallOp),
     Uninstall(UninstallOp),
+    Activate(ActivateOp),
+    Deactivate(DeactivateOp),
     Skip(SkipOp),
-}
-
-impl PlanStepOp {
-    pub(in crate::engine) fn as_install(&self) -> Option<&InstallOp> {
-        match self {
-            Self::Install(op) => Some(op),
-            _ => None,
-        }
-    }
-
-    pub(in crate::engine) fn as_uninstall(&self) -> Option<&UninstallOp> {
-        match self {
-            Self::Uninstall(op) => Some(op),
-            _ => None,
-        }
-    }
-
-    pub(in crate::engine) fn as_skip(&self) -> Option<&SkipOp> {
-        match self {
-            Self::Skip(op) => Some(op),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::IsVariant)]
@@ -164,6 +143,18 @@ pub(in crate::engine) struct UninstallOp {
 }
 
 #[derive(Debug, Clone)]
+pub(in crate::engine) struct ActivateOp {
+    pub(in crate::engine) pkg_id: PackageId,
+    pub(in crate::engine) reason: ActivateReason,
+}
+
+#[derive(Debug, Clone)]
+pub(in crate::engine) struct DeactivateOp {
+    pub(in crate::engine) pkg_id: PackageId,
+    pub(in crate::engine) reason: DeactivateReason,
+}
+
+#[derive(Debug, Clone)]
 pub(in crate::engine) struct SkipOp {
     pub(in crate::engine) pkg_spec: PackageSpec,
     pub(in crate::engine) reason: SkipReason,
@@ -179,16 +170,32 @@ pub(in crate::engine) enum InstallReason {
 pub(in crate::engine) enum UninstallReason {
     #[display("requested by user")]
     RequestedByUser,
-    #[display("conflicts with package {pkg_id}")]
-    ConflictWithInstall { pkg_id: PackageId },
-    #[display("cleanup after incomplete install")]
-    CleanupIncompleteInstall,
-    #[display("cleanup after incomplete uninstall")]
-    CleanupIncompleteUninstall,
     #[display("repairing incomplete install")]
     RepairIncompleteInstall,
     #[display("repairing incomplete uninstall")]
     RepairIncompleteUninstall,
+}
+
+#[derive(Debug, Clone, derive_more::Display, PartialEq, Eq)]
+pub(in crate::engine) enum ActivateReason {
+    #[display("requested by user")]
+    RequestedByUser,
+}
+
+#[derive(Debug, Clone, derive_more::Display, PartialEq, Eq)]
+pub(in crate::engine) enum DeactivateReason {
+    #[display("requested by user")]
+    RequestedByUser,
+    #[display("conflicts with package {pkg_id}")]
+    ConflictWithActive { pkg_id: PackageId },
+    #[display("cleanup after incomplete activation")]
+    CleanupIncompleteActivation,
+    #[display("cleanup after incomplete deactivation")]
+    CleanupIncompleteDeactivation,
+    #[display("repairing incomplete activation")]
+    RepairIncompleteActivation,
+    #[display("repairing incomplete deactivation")]
+    RepairIncompleteDeactivation,
 }
 
 #[derive(Debug, Clone, derive_more::Display, PartialEq, Eq)]
@@ -197,6 +204,8 @@ pub(in crate::engine) enum SkipReason {
     AlreadyInstalled,
     #[display("already uninstalled")]
     AlreadyUninstalled,
+    #[display("already active")]
+    AlreadyActive,
     #[display("not broken")]
     NotBroken,
     #[display("nothing to repair")]

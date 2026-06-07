@@ -1,7 +1,4 @@
-use std::{
-    marker::PhantomData,
-    sync::{Arc, Mutex},
-};
+use std::{marker::PhantomData, sync::Arc};
 
 use async_trait::async_trait;
 use snafu::{IntoError as _, ResultExt as _, Snafu};
@@ -13,21 +10,21 @@ use crate::{
             NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
         },
     },
-    db::{PackageDatabaseError, PackageDatabaseTransaction},
+    db::{PackageDatabase, PackageDatabaseError, PackageDatabaseTransaction},
     engine::{
         InstallOp,
         execute::{
             ExecuteErrorReport, PreparedStepOp, install::package_dirs_guard::PackageDirsGuard,
+            support::CleanupTracker,
         },
         support,
     },
-    package::{self, Package, PackageDirs, PackageId, PackageManifest},
-    platform::windows::steps::unregistration,
+    package::{self, FontEntry, PackageDirs, PackageId, PackageManifest},
+    platform::windows::steps::unregistration::{self, UnregistrationIntent},
     util::{fs::FsError, macros::concat_line},
 };
 
 mod package_dirs_guard;
-mod registration;
 
 #[derive(Debug)]
 struct InstallExecutionScope<S> {
@@ -72,72 +69,6 @@ enum InstallExecutionErrorReport {
         pkg_id = pkg_id,
     ))]
     RemovePackageFiles { pkg_id: PackageId, source: FsError },
-    #[snafu(display("failed to complete install transaction for package {pkg_id}"))]
-    CompleteInstall {
-        pkg_id: PackageId,
-        source: PackageDatabaseError,
-    },
-    #[snafu(display(
-        concat_line!(
-            "failed to roll back install transaction for package {pkg_id}",
-            "run `foton repair {pkg_id}` to retry cleanup",
-            "if repair does not resolve the problem, manual database cleanup may be required",
-        ),
-        pkg_id = pkg_id,
-    ))]
-    CancelInstall {
-        pkg_id: PackageId,
-        source: PackageDatabaseError,
-    },
-}
-
-// Tracks whether a failed install can be treated as cleanly rolled back.
-// If any step may have left registry or filesystem state behind, the DB entry
-// should stay recoverable as `IncompleteUninstall` instead of being removed.
-#[derive(Debug, Default, Clone)]
-struct CleanupTracker {
-    inner: Arc<Mutex<CleanupTrackerInner>>,
-}
-
-#[derive(Debug, Default)]
-struct CleanupTrackerInner {
-    base_cleanup_failed: bool,
-    rollback_cleanup_failed: bool,
-    cleanup_requested: bool,
-}
-
-impl CleanupTracker {
-    fn cleanup_required(&self) -> bool {
-        let inner = self.inner.lock().unwrap();
-        inner.base_cleanup_failed || inner.rollback_cleanup_failed || inner.cleanup_requested
-    }
-
-    fn request_cleanup(&self) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.cleanup_requested = true;
-    }
-
-    fn do_base_cleanup<F, T, E>(&self, f: F) -> Result<T, E>
-    where
-        F: FnOnce() -> Result<T, E>,
-    {
-        let res = f();
-        if res.is_err() {
-            self.inner.lock().unwrap().base_cleanup_failed = true;
-        }
-        res
-    }
-
-    fn do_rollback_cleanup<F, T, E>(&self, f: F) -> Result<T, E>
-    where
-        F: FnOnce() -> Result<T, E>,
-    {
-        let res = f();
-        if res.is_err() {
-            self.inner.lock().unwrap().rollback_cleanup_failed = true;
-        }
-        res
-    }
 }
 
 #[derive(Debug)]
@@ -147,9 +78,8 @@ where
 {
     manifest: Arc<PackageManifest>,
     cleanup_tracker: CleanupTracker,
-    package: Option<Package>,
+    font_entries: Option<Vec<FontEntry>>,
     pkg_dirs_guard: Option<PackageDirsGuard<InstallExecutionScope<S>>>,
-    registration_guard: Option<registration::RegistrationGuard<InstallExecutionScope<S>>>,
     installation_persisted: bool,
 }
 
@@ -166,9 +96,8 @@ where
         Self {
             manifest,
             cleanup_tracker: CleanupTracker::default(),
-            package: None,
+            font_entries: None,
             pkg_dirs_guard: None,
-            registration_guard: None,
             installation_persisted: false,
         }
     }
@@ -179,14 +108,22 @@ impl<S> PreparedStepOp<S> for PreparedInstallStep<S>
 where
     S: ReportScope,
 {
-    async fn execute(&mut self, cx: &ReportContext<S>) -> Result<(), S::Error> {
+    async fn execute(
+        &mut self,
+        cx: &ReportContext<S>,
+        _db: &PackageDatabase<'_>,
+    ) -> Result<(), S::Error> {
         let pkg_id = self.manifest.id();
         let cx =
             InstallExecutionScope::start_with_report(cx, format_args!("Installing {pkg_id}..."));
-
         let pkg_dirs = PackageDirs::new(cx.app_dirs(), &pkg_id);
+
         self.cleanup_tracker.do_base_cleanup(|| {
-            unregistration::unregister_package_fonts(&cx, &pkg_id)?;
+            unregistration::unregister_package_fonts(
+                &cx,
+                &pkg_id,
+                UnregistrationIntent::CleanupBeforeInstall,
+            )?;
             package::remove_package_dirs(&pkg_dirs)
                 .context(RemovePackageFilesSnafu { pkg_id: &pkg_id })
                 .report_error(cx.reporter())?;
@@ -199,45 +136,26 @@ where
             &pkg_id,
         )?);
         let pkg_dirs_guard = self.pkg_dirs_guard.as_ref().unwrap();
-        let (package, _) = support::stage_package(&cx, pkg_dirs_guard, &self.manifest).await?;
+        let (font_entries, _) = support::stage_package(&cx, pkg_dirs_guard, &self.manifest).await?;
 
-        self.registration_guard = Some(registration::register_package_fonts(
-            &cx,
-            self.cleanup_tracker.clone(),
-            &package,
-        )?);
-        self.package = Some(package);
+        self.font_entries = Some(font_entries);
 
         Ok(())
     }
 
     fn on_complete(
         &mut self,
-        cx: &ReportContext<S>,
+        _cx: &ReportContext<S>,
         tx: &mut PackageDatabaseTransaction<'_, '_>,
     ) -> Result<(), S::Error> {
-        let cx = InstallExecutionScope::start(cx);
-
         let pkg_id = self.manifest.id();
-        let package = self.package.as_ref().unwrap();
-        tx.complete_install(&pkg_id, package.entries())
-            .context(CompleteInstallSnafu { pkg_id: &pkg_id })
-            .report_error(cx.reporter())?;
-        // TODO: make activation part independent
-        tx.begin_activate(&pkg_id)
-            .context(CompleteInstallSnafu { pkg_id: &pkg_id })
-            .report_error(cx.reporter())?;
-        tx.complete_activate(&pkg_id)
-            .context(CompleteInstallSnafu { pkg_id: &pkg_id })
-            .report_error(cx.reporter())?;
+        let font_entries = self.font_entries.as_ref().unwrap();
+        tx.complete_install(&pkg_id, font_entries).unwrap();
         Ok(())
     }
 
     fn after_commit(&mut self) {
         if let Some(guard) = self.pkg_dirs_guard.take() {
-            guard.disarm();
-        }
-        if let Some(guard) = self.registration_guard.take() {
             guard.disarm();
         }
         self.installation_persisted = true;
@@ -248,18 +166,13 @@ where
 
         let cx = InstallExecutionScope::start(cx);
         cx.reporter()
-            .report_info(format_args!("rolling back database changes..."));
+            .report_info(format_args!("rolling back install changes..."));
 
-        let _ = self.registration_guard.take();
         let _ = self.pkg_dirs_guard.take();
 
         let cleanup_required = self.cleanup_tracker.cleanup_required();
-        let _ = tx
-            .cancel_install(&self.manifest.id(), cleanup_required)
-            .context(CancelInstallSnafu {
-                pkg_id: &self.manifest.id(),
-            })
-            .report_error(cx.reporter());
+        tx.cancel_install(&self.manifest.id(), cleanup_required)
+            .unwrap();
     }
 
     fn commit_error_report(&self, source: PackageDatabaseError) -> ExecuteErrorReport {
@@ -292,18 +205,6 @@ mod tests {
         }
     }
 
-    fn set_staged_package(
-        step: &mut PreparedInstallStep<TestScope>,
-        cx: &ReportContext<TestScope>,
-    ) {
-        let pkg_id = step.manifest.id();
-        step.package = Some(Package::new(
-            pkg_id.clone(),
-            PackageDirs::new(cx.app_dirs(), &pkg_id),
-            vec![],
-        ));
-    }
-
     #[test]
     fn prepared_install_step_from_plan_step_begins_incomplete_install_in_transaction() {
         testing::with_db(|_cx, db| {
@@ -313,7 +214,7 @@ mod tests {
             tx.commit().unwrap();
 
             assert_eq!(
-                db.entry_by_id(&PKG_ID).unwrap().installation_state,
+                db.entry_by_id(&PKG_ID).unwrap().installation_state(),
                 InstallationState::IncompleteInstall,
             );
             assert_eq!(step.manifest.id(), *PKG_ID);
@@ -321,19 +222,19 @@ mod tests {
     }
 
     #[test]
-    fn prepared_install_step_after_commit_marks_installation_persisted() {
+    fn prepared_install_step_after_commit_persists_installed_inactive_state() {
         testing::with_db(|cx, db| {
             let mut tx = db.transaction();
             let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&MANIFEST));
-            set_staged_package(&mut step, cx);
+            step.font_entries = Some(vec![]);
 
             step.on_complete(cx, &mut tx).unwrap();
             assert!(!step.installation_persisted);
 
             tx.commit().unwrap();
             let entry = db.entry_by_id(&PKG_ID).unwrap();
-            assert_eq!(entry.installation_state, InstallationState::Installed);
-            assert_eq!(entry.activation_state, ActivationState::Active);
+            assert_eq!(entry.installation_state(), InstallationState::Installed);
+            assert_eq!(entry.activation_state(), ActivationState::Inactive);
             assert!(!step.installation_persisted);
 
             step.after_commit();
@@ -366,7 +267,7 @@ mod tests {
             tx.commit().unwrap();
 
             assert_eq!(
-                db.entry_by_id(&PKG_ID).unwrap().installation_state,
+                db.entry_by_id(&PKG_ID).unwrap().installation_state(),
                 InstallationState::IncompleteUninstall,
             );
         });

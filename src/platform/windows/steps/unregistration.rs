@@ -50,7 +50,7 @@ enum UnregistrationNoticeReport {
     ListInstalledFonts { source: RegistryError },
     #[snafu(display(
         concat_line!(
-            "failed to broadcast font change after uninstall",
+            "failed to broadcast font change after font unregistration",
             "applications may continue to use stale font information until refresh",
         )
     ))]
@@ -75,14 +75,30 @@ impl From<UnregistrationErrorReport> for ReportValue<'static> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum UnregistrationIntent {
+    CleanupBeforeInstall,
+    CleanupBeforeActivation,
+    RollbackAfterActivationFailure,
+    DeactivationStep,
+}
+
 pub(crate) fn unregister_package_fonts<S>(
     cx: &ReportContext<S>,
     pkg_id: &PackageId,
+    intent: UnregistrationIntent,
 ) -> Result<(), S::Error>
 where
     S: ReportScope,
 {
-    let cx = UnregistrationScope::start_with_report(cx, "Unregistering fonts...");
+    let cx = match intent {
+        UnregistrationIntent::CleanupBeforeInstall
+        | UnregistrationIntent::CleanupBeforeActivation
+        | UnregistrationIntent::RollbackAfterActivationFailure => UnregistrationScope::start(cx),
+        UnregistrationIntent::DeactivationStep => {
+            UnregistrationScope::start_with_report(cx, "Unregistering fonts...")
+        }
+    };
     let reporter = cx.reporter();
 
     let entries = registry::list_registered_package_fonts(cx.app_id(), pkg_id)

@@ -54,7 +54,8 @@ For more details, see
 
 ## Update installed packages
 
-Update every installed package that has a newer version available:
+Update the latest installed version of each package that has a newer version
+available:
 
 ```console
 foton update
@@ -72,10 +73,14 @@ You can also select an exact installed version first:
 foton update <package-name>@<version>
 ```
 
-When you specify an exact version, `update` selects the matching installed
-package first, then looks for a newer version of the same package name.
+Without an exact version, `update` selects the latest installed version for
+that package name.
+When you specify an exact version, `update` selects that installed package
+first, then looks for a newer version of the same package name.
 By default, `update` does not look for pre-release versions.
 Use `--pre-release` if you want pre-release updates to be considered.
+Updating a package installs the newer version without automatically removing
+older installed versions.
 
 If you want to control which package registries are used to find updates, pass
 `--registry`.

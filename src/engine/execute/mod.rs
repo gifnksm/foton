@@ -12,14 +12,20 @@ use crate::{
         },
     },
     db::{PackageDatabase, PackageDatabaseError, PackageDatabaseTransaction},
-    engine::{ExecutionPlan, PlanStep, PlanStepOp, StepId, StepResult},
+    engine::{
+        ExecutionPlan, PlanStep, PlanStepOp, StepId, StepResult,
+        execute::{activate::PreparedActivateStep, deactivate::PreparedDeactivateStep},
+    },
     package::PackageId,
     util::macros::concat_line,
 };
 
 pub(in crate::engine) use self::{install::*, uninstall::*};
 
+mod activate;
+mod deactivate;
 mod install;
+mod support;
 mod uninstall;
 
 #[derive(Debug)]
@@ -56,6 +62,7 @@ enum ExecuteErrorReport {
     #[snafu(display(
         concat_line!(
             "failed to commit database changes after attempting to install package {pkg_id}",
+            "package files may already be present on disk",
             "run `foton repair {pkg_id}` to restore a consistent state",
             "if repair does not resolve the problem, manual cleanup may be required",
         ),
@@ -68,13 +75,39 @@ enum ExecuteErrorReport {
     #[snafu(display(
         concat_line!(
             "failed to commit database changes after attempting to uninstall package {pkg_id}",
-            "font unregistration and package file removal may already have been applied",
+            "the package files may already have been removed",
             "run `foton repair {pkg_id}` to restore a consistent state",
             "if repair does not resolve the problem, manual database cleanup may be required",
         ),
         pkg_id = pkg_id,
     ))]
     CommitUninstallTransaction {
+        pkg_id: PackageId,
+        source: PackageDatabaseError,
+    },
+    #[snafu(display(
+        concat_line!(
+            "failed to commit database changes after attempting to activate package {pkg_id}",
+            "the package may already be active",
+            "run `foton repair {pkg_id}` to restore a consistent state",
+            "if repair does not resolve the problem, manual cleanup may be required",
+        ),
+        pkg_id = pkg_id,
+    ))]
+    CommitActivateTransaction {
+        pkg_id: PackageId,
+        source: PackageDatabaseError,
+    },
+    #[snafu(display(
+        concat_line!(
+            "failed to commit database changes after attempting to deactivate package {pkg_id}",
+            "the package may already be inactive",
+            "run `foton repair {pkg_id}` to restore a consistent state",
+            "if repair does not resolve the problem, manual cleanup may be required",
+        ),
+        pkg_id = pkg_id,
+    ))]
+    CommitDeactivateTransaction {
         pkg_id: PackageId,
         source: PackageDatabaseError,
     },
@@ -113,11 +146,7 @@ where
         self.pending.len()
     }
 
-    fn prepare_ready_steps(
-        &mut self,
-        cx: &ReportContext<S>,
-        tx: &mut PackageDatabaseTransaction<'_, '_>,
-    ) -> Result<usize, S::Error>
+    fn prepare_ready_steps(&mut self, tx: &mut PackageDatabaseTransaction<'_, '_>) -> usize
     where
         S: ReportScope,
     {
@@ -129,13 +158,13 @@ where
                 self.pending.push_back(step);
                 continue;
             }
-            let prepared = PreparedStep::from_plan_step(cx, tx, step)?;
+            let prepared = PreparedStep::from_plan_step(tx, step);
             if let Some(prepared) = prepared {
                 self.ready.push_back(prepared);
                 prepared_count += 1;
             }
         }
-        Ok(prepared_count)
+        prepared_count
     }
 
     fn pop_ready(&mut self) -> Option<PreparedStep<S>> {
@@ -163,22 +192,21 @@ where
     S: ReportScope,
 {
     pub(in crate::engine) fn from_plan_step(
-        cx: &ReportContext<S>,
         tx: &mut PackageDatabaseTransaction<'_, '_>,
         step: PlanStep,
-    ) -> Result<Option<Self>, S::Error> {
+    ) -> Option<Self> {
         assert!(step.can_execute());
         let step_id = step.step_id();
         let op = match step.into_op() {
             PlanStepOp::Install(op) => {
                 Box::new(PreparedInstallStep::from_plan_step(tx, op)) as Box<dyn PreparedStepOp<S>>
             }
-            PlanStepOp::Uninstall(op) => {
-                Box::new(PreparedUninstallStep::from_plan_step(cx, tx, op)?)
-            }
-            PlanStepOp::Skip(_) => return Ok(None),
+            PlanStepOp::Uninstall(op) => Box::new(PreparedUninstallStep::from_plan_step(tx, op)),
+            PlanStepOp::Activate(op) => Box::new(PreparedActivateStep::from_plan_step(tx, op)),
+            PlanStepOp::Deactivate(op) => Box::new(PreparedDeactivateStep::from_plan_step(tx, op)),
+            PlanStepOp::Skip(_) => return None,
         };
-        Ok(Some(Self { step_id, op }))
+        Some(Self { step_id, op })
     }
 
     #[cfg(test)]
@@ -186,8 +214,12 @@ where
         self.step_id
     }
 
-    async fn execute(&mut self, cx: &ReportContext<S>) -> Result<(), S::Error> {
-        self.op.execute(cx).await
+    async fn execute(
+        &mut self,
+        cx: &ReportContext<S>,
+        db: &PackageDatabase<'_>,
+    ) -> Result<(), S::Error> {
+        self.op.execute(cx, db).await
     }
 
     fn on_complete(
@@ -216,7 +248,11 @@ trait PreparedStepOp<S>: Debug + Send + Sync
 where
     S: ReportScope,
 {
-    async fn execute(&mut self, cx: &ReportContext<S>) -> Result<(), S::Error>;
+    async fn execute(
+        &mut self,
+        cx: &ReportContext<S>,
+        db: &PackageDatabase<'_>,
+    ) -> Result<(), S::Error>;
     fn on_complete(
         &mut self,
         cx: &ReportContext<S>,
@@ -239,7 +275,7 @@ where
     let mut state = ExecutionState::new(plan.into_steps());
     {
         let mut tx = db.transaction();
-        let prepared_count = state.prepare_ready_steps(&cx, &mut tx)?;
+        let prepared_count = state.prepare_ready_steps(&mut tx);
         if prepared_count > 0 {
             tx.commit()
                 .context(CommitTransactionSnafu)
@@ -254,7 +290,7 @@ where
             return Err(S::Error::cancelled());
         }
 
-        let mut res = step.execute(&cx).await;
+        let mut res = step.execute(&cx, db).await;
         let mut tx = db.transaction();
         if res.is_ok()
             && let Err(err) = step.on_complete(&cx, &mut tx)
@@ -272,7 +308,7 @@ where
             }
         };
         state.notify_result(step_id, res);
-        state.prepare_ready_steps(&cx, &mut tx)?;
+        state.prepare_ready_steps(&mut tx);
         let commit_result = tx.commit();
         if let Err(source) = commit_result {
             return Err(cx.reporter().report_error(step.commit_error_report(source)));
@@ -301,20 +337,16 @@ mod tests {
     use super::*;
     use crate::{
         engine::{
-            InstallOp, InstallReason, PlanStep, SkipOp, SkipReason, StepCondition, UninstallOp,
-            UninstallReason,
+            ActivateOp, ActivateReason, DeactivateOp, DeactivateReason, InstallOp, InstallReason,
+            PlanStep, SkipOp, SkipReason, StepCondition, UninstallOp, UninstallReason,
         },
         package::PackageId,
         util::testing::{self, TestScope},
     };
 
-    fn prepare_ready_steps(
-        cx: &ReportContext<TestScope>,
-        db: &mut PackageDatabase<'_>,
-        state: &mut ExecutionState<TestScope>,
-    ) {
+    fn prepare_ready_steps(db: &mut PackageDatabase<'_>, state: &mut ExecutionState<TestScope>) {
         let mut tx = db.transaction();
-        let prepared_count = state.prepare_ready_steps(cx, &mut tx).unwrap();
+        let prepared_count = state.prepare_ready_steps(&mut tx);
         if prepared_count > 0 {
             tx.commit().unwrap();
         }
@@ -328,8 +360,8 @@ mod tests {
         let dependent_manifest = testing::make_manifest("dependent-font@0.1.0");
         let dependent_pkg_id = dependent_manifest.id();
 
-        testing::mark_as_active(db, &dependency_manifest);
-        testing::mark_as_active(db, &dependent_manifest);
+        testing::mark_as_installed(db, &dependency_manifest);
+        testing::mark_as_installed(db, &dependent_manifest);
 
         let dependency_step = PlanStep::new(UninstallOp {
             pkg_id: dependency_pkg_id,
@@ -359,7 +391,7 @@ mod tests {
         fn returns_prepared_step_for_install_ops() {
             let manifest = testing::make_manifest("install-font@0.1.0");
 
-            testing::with_db(|cx, db| {
+            testing::with_db(|_cx, db| {
                 let step = PlanStep::new(InstallOp {
                     manifest: Arc::clone(&manifest),
                     reason: InstallReason::RequestedByUser,
@@ -367,9 +399,7 @@ mod tests {
                 let step_id = step.step_id();
 
                 let mut tx = db.transaction();
-                let prepared = PreparedStep::from_plan_step(cx, &mut tx, step)
-                    .unwrap()
-                    .unwrap();
+                let prepared = PreparedStep::<TestScope>::from_plan_step(&mut tx, step).unwrap();
 
                 assert_eq!(prepared.step_id(), step_id);
             });
@@ -380,8 +410,8 @@ mod tests {
             let manifest = testing::make_manifest("uninstall-font@0.1.0");
             let pkg_id = manifest.id();
 
-            testing::with_db(|cx, db| {
-                testing::mark_as_active(db, &manifest);
+            testing::with_db(|_cx, db| {
+                testing::mark_as_installed(db, &manifest);
                 let step = PlanStep::new(UninstallOp {
                     pkg_id,
                     reason: UninstallReason::RequestedByUser,
@@ -389,9 +419,47 @@ mod tests {
                 let step_id = step.step_id();
 
                 let mut tx = db.transaction();
-                let prepared = PreparedStep::from_plan_step(cx, &mut tx, step)
-                    .unwrap()
-                    .unwrap();
+                let prepared = PreparedStep::<TestScope>::from_plan_step(&mut tx, step).unwrap();
+
+                assert_eq!(prepared.step_id(), step_id);
+            });
+        }
+
+        #[test]
+        fn returns_prepared_step_for_activate_ops() {
+            let manifest = testing::make_manifest("activate-font@0.1.0");
+            let pkg_id = manifest.id();
+
+            testing::with_db(|_cx, db| {
+                testing::mark_as_installed(db, &manifest);
+                let step = PlanStep::new(ActivateOp {
+                    pkg_id,
+                    reason: ActivateReason::RequestedByUser,
+                });
+                let step_id = step.step_id();
+
+                let mut tx = db.transaction();
+                let prepared = PreparedStep::<TestScope>::from_plan_step(&mut tx, step).unwrap();
+
+                assert_eq!(prepared.step_id(), step_id);
+            });
+        }
+
+        #[test]
+        fn returns_prepared_step_for_deactivate_ops() {
+            let manifest = testing::make_manifest("deactivate-font@0.1.0");
+            let pkg_id = manifest.id();
+
+            testing::with_db(|_cx, db| {
+                testing::mark_as_active(db, &manifest);
+                let step = PlanStep::new(DeactivateOp {
+                    pkg_id,
+                    reason: DeactivateReason::RequestedByUser,
+                });
+                let step_id = step.step_id();
+
+                let mut tx = db.transaction();
+                let prepared = PreparedStep::<TestScope>::from_plan_step(&mut tx, step).unwrap();
 
                 assert_eq!(prepared.step_id(), step_id);
             });
@@ -401,14 +469,14 @@ mod tests {
         fn returns_none_for_skip_ops() {
             let skipped_pkg_id = PackageId::from_str("skipped-font@0.1.0").unwrap();
 
-            testing::with_db(|cx, db| {
+            testing::with_db(|_cx, db| {
                 let step = PlanStep::new(SkipOp {
                     pkg_spec: skipped_pkg_id.into(),
                     reason: SkipReason::AlreadyInstalled,
                 });
 
                 let mut tx = db.transaction();
-                let prepared = PreparedStep::from_plan_step(cx, &mut tx, step).unwrap();
+                let prepared = PreparedStep::<TestScope>::from_plan_step(&mut tx, step);
 
                 assert!(prepared.is_none());
             });
@@ -420,11 +488,11 @@ mod tests {
 
         #[test]
         fn prepare_ready_steps_only_enqueues_executable_steps() {
-            testing::with_db(|cx, db| {
+            testing::with_db(|_cx, db| {
                 let (mut state, dependency_step_id, _dependent_step_id) =
                     conditional_uninstall_state(db);
 
-                prepare_ready_steps(cx, db, &mut state);
+                prepare_ready_steps(db, &mut state);
 
                 let first = state.pop_ready().unwrap();
                 assert_eq!(first.step_id(), dependency_step_id);
@@ -435,17 +503,17 @@ mod tests {
 
         #[test]
         fn notify_result_success_unblocks_dependent_step() {
-            testing::with_db(|cx, db| {
+            testing::with_db(|_cx, db| {
                 let (mut state, dependency_step_id, dependent_step_id) =
                     conditional_uninstall_state(db);
 
-                prepare_ready_steps(cx, db, &mut state);
+                prepare_ready_steps(db, &mut state);
 
                 let first = state.pop_ready().unwrap();
                 assert_eq!(first.step_id(), dependency_step_id);
 
                 state.notify_result(dependency_step_id, StepResult::Success);
-                prepare_ready_steps(cx, db, &mut state);
+                prepare_ready_steps(db, &mut state);
 
                 let second = state.pop_ready().unwrap();
                 assert_eq!(second.step_id(), dependent_step_id);
@@ -456,17 +524,17 @@ mod tests {
 
         #[test]
         fn notify_result_failure_keeps_dependent_step_pending() {
-            testing::with_db(|cx, db| {
+            testing::with_db(|_cx, db| {
                 let (mut state, dependency_step_id, _dependent_step_id) =
                     conditional_uninstall_state(db);
 
-                prepare_ready_steps(cx, db, &mut state);
+                prepare_ready_steps(db, &mut state);
 
                 let first = state.pop_ready().unwrap();
                 assert_eq!(first.step_id(), dependency_step_id);
 
                 state.notify_result(dependency_step_id, StepResult::Failure);
-                prepare_ready_steps(cx, db, &mut state);
+                prepare_ready_steps(db, &mut state);
 
                 assert!(state.pop_ready().is_none());
                 assert_eq!(state.pending_len(), 1);

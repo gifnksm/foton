@@ -5,9 +5,12 @@ use crate::{
         context::ReportContext,
         reporter::{ReportScope, ReportValue, SubReportScope},
     },
-    engine::execute::install::CleanupTracker,
-    package::{Package, PackageId},
-    platform::windows::steps::{registration, unregistration},
+    engine::execute::support::CleanupTracker,
+    package::{FontEntry, PackageId},
+    platform::windows::steps::{
+        registration,
+        unregistration::{self, UnregistrationIntent},
+    },
     util::macros::concat_line,
 };
 
@@ -41,13 +44,13 @@ where
 enum RegistrationNoticeReport {
     #[snafu(display(
         concat_line!(
-            "failed to roll back registration of package fonts after install failure",
+            "failed to roll back registration of package fonts after activation failure",
             "run `foton repair {pkg_id}` to retry cleanup",
             "if repair does not resolve the problem, manual cleanup may be required",
         ),
         pkg_id = pkg_id,
     ))]
-    RollbackRegistrationAfterInstallFailure { pkg_id: PackageId },
+    RollbackRegistrationAfterActivationFailure { pkg_id: PackageId },
 }
 
 impl From<RegistrationNoticeReport> for ReportValue<'static> {
@@ -56,13 +59,15 @@ impl From<RegistrationNoticeReport> for ReportValue<'static> {
     }
 }
 
-pub(super) fn register_package_fonts<S>(
+pub(super) fn register_package_fonts<S, I>(
     cx: &ReportContext<S>,
     cleanup_tracker: CleanupTracker,
-    package: &Package,
+    pkg_id: &PackageId,
+    font_entries: I,
 ) -> Result<RegistrationGuard<S>, S::Error>
 where
     S: ReportScope,
+    I: IntoIterator<Item = FontEntry>,
 {
     let cx = RegistrationScope::start(cx);
     let mut guard = RegistrationGuard {
@@ -70,9 +75,9 @@ where
         registered: false,
         cx: cx.clone(),
         cleanup_tracker,
-        pkg_id: package.id().clone(),
+        pkg_id: pkg_id.clone(),
     };
-    registration::register_package_fonts(&cx, package)?;
+    registration::register_package_fonts(&cx, pkg_id, font_entries)?;
     guard.registered = true;
     Ok(guard)
 }
@@ -111,12 +116,16 @@ where
         if self
             .cleanup_tracker
             .do_rollback_cleanup(|| {
-                unregistration::unregister_package_fonts(&self.cx, &self.pkg_id)
+                unregistration::unregister_package_fonts(
+                    &self.cx,
+                    &self.pkg_id,
+                    UnregistrationIntent::RollbackAfterActivationFailure,
+                )
             })
             .is_err()
         {
             self.cx.reporter().report_notice(
-                RollbackRegistrationAfterInstallFailureSnafu {
+                RollbackRegistrationAfterActivationFailureSnafu {
                     pkg_id: self.pkg_id.clone(),
                 }
                 .build(),

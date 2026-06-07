@@ -51,7 +51,7 @@ pub(crate) async fn update_package(cx: &RootContext, args: &UpdateArgs) -> Resul
     } = args;
 
     let report = if pkg_specs.is_empty() {
-        format_args!("Updating all packages...")
+        format_args!("Updating installed packages...")
     } else {
         format_args!("Updating {} package(s)...", pkg_specs.len())
     };

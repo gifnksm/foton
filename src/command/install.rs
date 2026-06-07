@@ -52,8 +52,12 @@ pub(crate) async fn install_package(
     cx: &RootContext,
     args: &InstallArgs,
 ) -> Result<(), InstallError> {
-    let InstallArgs { target } = args;
+    let InstallArgs {
+        target,
+        no_activate,
+    } = args;
     let targets = target.to_targets();
+    let should_activate = !no_activate;
 
     let cx = InstallScope::start_with_report(
         cx,
@@ -65,7 +69,7 @@ pub(crate) async fn install_package(
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
     let mut db = engine::load_database(&cx, &mut db_lock_file)?;
 
-    let targets = targets.resolve_target(&cx, &db)?;
+    let targets = targets.resolve_target(&cx, &db, should_activate)?;
     let plan = engine::plan_install(&db, &targets);
     engine::report_plan(&cx, &plan);
 
@@ -122,18 +126,24 @@ impl CheckedInstallTargets {
         &self,
         cx: &ReportContext<InstallScope>,
         db: &PackageDatabase<'_>,
+        should_activate: bool,
     ) -> Result<Vec<ResolvedInstallTarget>, InstallError> {
         match self {
             CheckedInstallTargets::Manifest { manifests } => {
-                engine::resolve_install_targets_by_manifest(cx, manifests)
+                engine::resolve_install_targets_by_manifest(cx, manifests, should_activate)
             }
             CheckedInstallTargets::PackageSpec {
                 registries,
                 pkg_specs,
                 pre_release,
-            } => {
-                engine::resolve_install_targets_by_spec(cx, db, registries, pkg_specs, *pre_release)
-            }
+            } => engine::resolve_install_targets_by_spec(
+                cx,
+                db,
+                registries,
+                pkg_specs,
+                *pre_release,
+                should_activate,
+            ),
         }
     }
 }

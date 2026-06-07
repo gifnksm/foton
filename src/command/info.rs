@@ -91,7 +91,7 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
     res
 }
 
-fn render_package_info<W>(mut writer: W, entry: &PackageDbEntry) -> io::Result<()>
+fn render_package_info<W>(mut writer: W, entry: &PackageDbEntry<'_>) -> io::Result<()>
 where
     W: io::Write,
 {
@@ -106,14 +106,14 @@ where
         repository,
         license,
         sources,
-    } = &*entry.manifest;
+    } = &*entry.manifest();
     writeln!(writer, "Name: {name}")?;
     if let Some(display_name) = display_name {
         writeln!(writer, "Display Name: {display_name}")?;
     }
     writeln!(writer, "Version: {version}")?;
-    writeln!(writer, "Installation State: {}", entry.installation_state)?;
-    writeln!(writer, "Activation State: {}", entry.activation_state)?;
+    writeln!(writer, "Installation State: {}", entry.installation_state())?;
+    writeln!(writer, "Activation State: {}", entry.activation_state())?;
     if let Some(description) = description {
         writeln!(writer, "Description: {description}")?;
     }
@@ -170,24 +170,21 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{
-        package::{ActivationState, InstallationState},
-        util::{macros::concat_line, testing},
-    };
+    use crate::util::{macros::concat_line, testing};
 
     #[test]
     fn render_package_info_prints_all_present_fields() {
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let mut output = Vec::new();
 
-        let entry = PackageDbEntry {
-            installation_state: InstallationState::Installed,
-            activation_state: ActivationState::Active,
-            manifest: Arc::clone(&manifest),
-        };
-        render_package_info(&mut output, &entry).unwrap();
+        let output = testing::with_db(|_cx, db| {
+            testing::mark_as_active(db, &manifest);
 
-        let output = String::from_utf8(output).unwrap();
+            let mut output = Vec::new();
+            let entry = db.entry_by_id(&manifest.id()).unwrap();
+            render_package_info(&mut output, &entry).unwrap();
+            String::from_utf8(output).unwrap()
+        });
+
         assert_eq!(
             output,
             concat_line!(
@@ -230,16 +227,17 @@ exclude = ["fonts/exclude.ttf"]
 "#,
         )
         .unwrap();
-        let mut output = Vec::new();
+        let manifest = Arc::new(manifest);
 
-        let entry = PackageDbEntry {
-            installation_state: InstallationState::IncompleteInstall,
-            activation_state: ActivationState::Inactive,
-            manifest: Arc::new(manifest),
-        };
-        render_package_info(&mut output, &entry).unwrap();
+        let output = testing::with_db(|_cx, db| {
+            testing::mark_as_incomplete_install(db, &manifest);
 
-        let output = String::from_utf8(output).unwrap();
+            let mut output = Vec::new();
+            let entry = db.entry_by_id(&manifest.id()).unwrap();
+            render_package_info(&mut output, &entry).unwrap();
+            String::from_utf8(output).unwrap()
+        });
+
         assert_eq!(
             output,
             concat_line!(

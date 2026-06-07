@@ -18,7 +18,7 @@ use crate::{
         },
     },
     engine::{self, ExtractDetail},
-    package::{self, Package, PackageDirs, PackageId, PackageManifest, PackageManifestError},
+    package::{self, FontEntry, PackageDirs, PackageId, PackageManifest, PackageManifestError},
     util::{
         fs::FsError, glob::PathPattern, macros::concat_line, path::AbsolutePath,
         text::NormalizedString,
@@ -232,8 +232,8 @@ pub(crate) async fn check_manifest(
         .context(CreatePackageDirsSnafu { pkg_id })
         .report_error(cx.reporter())?;
 
-    let (package, extract_details) = engine::stage_package(&cx, &pkg_dirs, &manifest).await?;
-    check_manifest_fields(&cx, &manifest, &package, &extract_details)?;
+    let (font_entries, extract_details) = engine::stage_package(&cx, &pkg_dirs, &manifest).await?;
+    check_manifest_fields(&cx, &manifest, &font_entries, &extract_details)?;
 
     Ok(())
 }
@@ -241,7 +241,7 @@ pub(crate) async fn check_manifest(
 fn check_manifest_fields(
     cx: &ReportContext<CheckManifestScope>,
     manifest: &PackageManifest,
-    package: &Package,
+    font_entries: &[FontEntry],
     extract_details: &[ExtractDetail],
 ) -> Result<(), CheckManifestError> {
     let mut reports = vec![];
@@ -250,7 +250,7 @@ fn check_manifest_fields(
     check_homepage_and_repository_url(manifest, &mut reports);
     check_display_name_duplication(manifest, &mut reports);
     check_face_duplication(manifest, &mut reports);
-    check_face_completeness(manifest, package, &mut reports);
+    check_face_completeness(manifest, font_entries, &mut reports);
     check_include_extraction(manifest, extract_details, &mut reports);
     check_exclude_extraction(manifest, extract_details, &mut reports);
     check_suspicious_skips(extract_details, &mut reports);
@@ -340,10 +340,10 @@ fn check_face_duplication(manifest: &PackageManifest, reports: &mut Vec<CheckMan
 
 fn check_face_completeness(
     manifest: &PackageManifest,
-    package: &Package,
+    font_entries: &[FontEntry],
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
-    for entry in package.entries() {
+    for entry in font_entries {
         if !manifest.faces.iter().any(|face| entry.title() == face) {
             reports.push(
                 UnlistedFaceSnafu {
@@ -479,29 +479,21 @@ fn check_suspicious_skips(
 
 #[cfg(test)]
 mod tests {
-    use std::{assert_matches, sync::LazyLock};
+    use std::assert_matches;
 
     use super::*;
-    use crate::{
-        engine::ExtractEntry,
-        package::FontEntry,
-        util::{path::FileName, testing},
-    };
-
-    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| "example-font@0.1.0".parse().unwrap());
+    use crate::{engine::ExtractEntry, package::FontEntry, util::path::FileName};
 
     fn parse_manifest(input: &str) -> PackageManifest {
         toml::from_str(input).unwrap()
     }
 
-    fn make_package(entries: &[(&str, &str)]) -> Package {
-        let (_tempdir, _app_dirs, pkg_dirs) = testing::make_package_dirs(&PKG_ID);
-        let entries = entries
+    fn make_font_entries(entries: &[(&str, &str)]) -> Vec<FontEntry> {
+        entries
             .iter()
             .copied()
             .map(|(title, file_name)| FontEntry::new(title, FileName::new(file_name).unwrap()))
-            .collect();
-        Package::new(PKG_ID.clone(), pkg_dirs, entries)
+            .collect()
     }
 
     fn to_extract_entries(paths: &[&str]) -> Vec<ExtractEntry> {
@@ -638,10 +630,10 @@ url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 "#,
         );
-        let package = make_package(&[("Actual Face", "actual.ttf")]);
+        let font_entries = make_font_entries(&[("Actual Face", "actual.ttf")]);
         let mut reports = vec![];
 
-        check_face_completeness(&manifest, &package, &mut reports);
+        check_face_completeness(&manifest, &font_entries, &mut reports);
 
         assert_matches!(
             reports.as_slice(),

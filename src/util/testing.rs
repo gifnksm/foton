@@ -23,7 +23,7 @@ use crate::{
     },
     db::PackageDatabase,
     engine::{self, InstallTargetSource, ResolvedInstallTarget, ResolvedUninstallTarget},
-    package::{ActivationState, InstallationState, PackageDirs, PackageId, PackageManifest},
+    package::{InstallationState, PackageDirs, PackageId, PackageManifest},
     registry::{RegistryId, RegistryIndex, RegistrySource, RegistrySpec},
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
@@ -203,9 +203,17 @@ where
 pub(crate) fn make_resolved_install_target(
     manifest: &Arc<PackageManifest>,
 ) -> ResolvedInstallTarget {
+    make_resolved_install_target_with_activation(manifest, true)
+}
+
+pub(crate) fn make_resolved_install_target_with_activation(
+    manifest: &Arc<PackageManifest>,
+    should_activate: bool,
+) -> ResolvedInstallTarget {
     ResolvedInstallTarget {
         source: InstallTargetSource::Installed,
         manifest: Arc::clone(manifest),
+        should_activate,
     }
 }
 
@@ -213,8 +221,19 @@ pub(crate) fn make_resolved_uninstall_target<I>(pkg_id: I) -> ResolvedUninstallT
 where
     I: TryInto<PackageId, Error: Debug>,
 {
+    make_resolved_uninstall_target_with_deactivation(pkg_id, true)
+}
+
+pub(crate) fn make_resolved_uninstall_target_with_deactivation<I>(
+    pkg_id: I,
+    should_deactivate: bool,
+) -> ResolvedUninstallTarget
+where
+    I: TryInto<PackageId, Error: Debug>,
+{
     ResolvedUninstallTarget::Uninstall {
         pkg_id: pkg_id.try_into().unwrap(),
+        should_deactivate,
     }
 }
 
@@ -238,10 +257,9 @@ pub(crate) fn mark_as_incomplete_install(
     let mut tx = db.transaction();
     tx.begin_install(Arc::clone(manifest));
     tx.commit().unwrap();
-    assert_eq!(
-        db.entry_by_id(&pkg_id).unwrap().installation_state,
-        InstallationState::IncompleteInstall
-    );
+    let entry = db.entry_by_id(&pkg_id).unwrap();
+    assert!(entry.installation_state().is_incomplete_install());
+    assert!(entry.activation_state().is_inactive());
 }
 
 pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &Arc<PackageManifest>) {
@@ -252,8 +270,24 @@ pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &Arc<Pac
     tx.commit().unwrap();
 
     let entry = db.entry_by_id(&pkg_id).unwrap();
-    assert_eq!(entry.installation_state, InstallationState::Installed);
-    assert_eq!(entry.activation_state, ActivationState::Inactive);
+    assert!(entry.installation_state().is_installed());
+    assert!(entry.activation_state().is_inactive());
+}
+
+pub(crate) fn mark_as_incomplete_activation(
+    db: &mut PackageDatabase<'_>,
+    manifest: &Arc<PackageManifest>,
+) {
+    let pkg_id = manifest.id();
+    let mut tx = db.transaction();
+    tx.begin_install(Arc::clone(manifest));
+    tx.complete_install(&pkg_id, &[]).unwrap();
+    tx.begin_activate(&pkg_id).unwrap();
+    tx.commit().unwrap();
+
+    let entry = db.entry_by_id(&pkg_id).unwrap();
+    assert!(entry.installation_state().is_installed());
+    assert!(entry.activation_state().is_incomplete_activation());
 }
 
 pub(crate) fn mark_as_active(db: &mut PackageDatabase<'_>, manifest: &Arc<PackageManifest>) {
@@ -266,8 +300,26 @@ pub(crate) fn mark_as_active(db: &mut PackageDatabase<'_>, manifest: &Arc<Packag
     tx.commit().unwrap();
 
     let entry = db.entry_by_id(&pkg_id).unwrap();
-    assert_eq!(entry.installation_state, InstallationState::Installed);
-    assert_eq!(entry.activation_state, ActivationState::Active);
+    assert!(entry.installation_state().is_installed());
+    assert!(entry.activation_state().is_active());
+}
+
+pub(crate) fn mark_as_incomplete_deactivation(
+    db: &mut PackageDatabase<'_>,
+    manifest: &Arc<PackageManifest>,
+) {
+    let pkg_id = manifest.id();
+    let mut tx = db.transaction();
+    tx.begin_install(Arc::clone(manifest));
+    tx.complete_install(&pkg_id, &[]).unwrap();
+    tx.begin_activate(&pkg_id).unwrap();
+    tx.complete_activate(&pkg_id).unwrap();
+    tx.begin_deactivate(&pkg_id).unwrap();
+    tx.commit().unwrap();
+
+    let entry = db.entry_by_id(&pkg_id).unwrap();
+    assert!(entry.installation_state().is_installed());
+    assert!(entry.activation_state().is_incomplete_deactivation());
 }
 
 pub(crate) fn mark_as_incomplete_uninstall(
@@ -282,11 +334,8 @@ pub(crate) fn mark_as_incomplete_uninstall(
     tx.commit().unwrap();
 
     let entry = db.entry_by_id(&pkg_id).unwrap();
-    assert_eq!(
-        entry.installation_state,
-        InstallationState::IncompleteUninstall
-    );
-    assert_eq!(entry.activation_state, ActivationState::Inactive);
+    assert!(entry.installation_state().is_incomplete_uninstall());
+    assert!(entry.activation_state().is_inactive());
 }
 
 pub(crate) fn with_context<F, T>(f: F) -> T

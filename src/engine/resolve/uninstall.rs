@@ -63,8 +63,13 @@ impl From<UninstallResolveErrorReport> for ReportValue<'static> {
 
 #[derive(Debug, Clone, derive_more::IsVariant)]
 pub(crate) enum ResolvedUninstallTarget {
-    Uninstall { pkg_id: PackageId },
-    AlreadyUninstalled { pkg_spec: PackageSpec },
+    Uninstall {
+        pkg_id: PackageId,
+        should_deactivate: bool,
+    },
+    AlreadyUninstalled {
+        pkg_spec: PackageSpec,
+    },
 }
 
 pub(crate) fn resolve_uninstall_targets<S>(
@@ -99,14 +104,15 @@ where
             pkg_spec: pkg_spec.clone(),
         }),
         [entry] => Ok(ResolvedUninstallTarget::Uninstall {
-            pkg_id: entry.manifest.id(),
+            pkg_id: entry.manifest().id(),
+            should_deactivate: !entry.activation_state().is_inactive(),
         }),
         _ => Err(cx.reporter().report_error(
             MultipleMatchingPackagesSnafu {
                 pkg_spec: pkg_spec.clone(),
                 pkg_ids: candidates
                     .into_iter()
-                    .map(|entry| entry.manifest.id())
+                    .map(|entry| entry.manifest().id())
                     .collect::<Vec<_>>(),
             }
             .build(),
@@ -118,7 +124,10 @@ fn dedup_targets(targets: &mut Vec<ResolvedUninstallTarget>) {
     let mut seen_pkg_id = BTreeSet::new();
     let mut seen_pkg_spec = BTreeSet::new();
     targets.retain(|target| match target {
-        ResolvedUninstallTarget::Uninstall { pkg_id } => seen_pkg_id.insert(pkg_id.clone()),
+        ResolvedUninstallTarget::Uninstall {
+            pkg_id,
+            should_deactivate: _,
+        } => seen_pkg_id.insert(pkg_id.clone()),
         ResolvedUninstallTarget::AlreadyUninstalled { pkg_spec } => {
             seen_pkg_spec.insert(pkg_spec.clone())
         }
@@ -151,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_spec_resolves_installed_entry_from_id_and_name() {
+    fn resolve_spec_resolves_installed_entry_from_id_and_name_without_deactivation() {
         testing::with_scoped_db(|cx, db| {
             let manifest = testing::make_manifest("example-font@0.1.0");
             let expected = manifest.id();
@@ -162,8 +171,29 @@ mod tests {
                 PackageSpec::from_str("example-font").unwrap(),
             ] {
                 let target = resolve_spec(cx, db, &spec).unwrap();
-                assert_matches!(target, ResolvedUninstallTarget::Uninstall  { pkg_id } if pkg_id == expected);
+                assert_matches!(
+                    target,
+                    ResolvedUninstallTarget::Uninstall { pkg_id, should_deactivate }
+                        if pkg_id == expected && !should_deactivate
+                );
             }
+        });
+    }
+
+    #[test]
+    fn resolve_spec_requests_deactivation_for_active_entries() {
+        testing::with_scoped_db(|cx, db| {
+            let manifest = testing::make_manifest("example-font@0.1.0");
+            let expected = manifest.id();
+            let spec = PackageSpec::from_str("example-font").unwrap();
+            testing::mark_as_active(db, &manifest);
+
+            let target = resolve_spec(cx, db, &spec).unwrap();
+            assert_matches!(
+                target,
+                ResolvedUninstallTarget::Uninstall { pkg_id, should_deactivate }
+                    if pkg_id == expected && should_deactivate
+            );
         });
     }
 
@@ -214,12 +244,12 @@ mod tests {
             let targets = resolve_uninstall_targets(cx, db, &pkg_specs).unwrap();
 
             assert_eq!(targets.len(), 1);
-            assert_matches!(&targets[0], ResolvedUninstallTarget::Uninstall { pkg_id } if pkg_id == &expected_pkg_id);
+            assert_matches!(&targets[0], ResolvedUninstallTarget::Uninstall { pkg_id, .. } if pkg_id == &expected_pkg_id);
         });
     }
 
     #[test]
-    fn resolve_spec_resolves_incomplete_entries() {
+    fn resolve_spec_resolves_incomplete_entries_without_deactivation() {
         let manifest = testing::make_manifest("example-font@0.1.0");
         let pkg_id = manifest.id();
 
@@ -229,12 +259,20 @@ mod tests {
             testing::mark_as_incomplete_install(db, &manifest);
 
             let target = resolve_spec(cx, db, &spec).unwrap();
-            assert_matches!(target, ResolvedUninstallTarget::Uninstall { pkg_id: target_id } if target_id == pkg_id);
+            assert_matches!(
+                target,
+                ResolvedUninstallTarget::Uninstall { pkg_id: target_id, should_deactivate }
+                    if target_id == pkg_id && !should_deactivate
+            );
 
             testing::mark_as_incomplete_uninstall(db, &manifest);
 
             let target = resolve_spec(cx, db, &spec).unwrap();
-            assert_matches!(target, ResolvedUninstallTarget::Uninstall { pkg_id: target_id } if target_id == pkg_id);
+            assert_matches!(
+                target,
+                ResolvedUninstallTarget::Uninstall { pkg_id: target_id, should_deactivate }
+                    if target_id == pkg_id && !should_deactivate
+            );
         });
     }
 

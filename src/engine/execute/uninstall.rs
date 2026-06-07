@@ -10,13 +10,12 @@ use crate::{
             NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
         },
     },
-    db::{PackageDatabaseError, PackageDatabaseTransaction},
+    db::{PackageDatabase, PackageDatabaseError, PackageDatabaseTransaction},
     engine::{
         UninstallOp,
         execute::{ExecuteErrorReport, PreparedStepOp},
     },
     package::{self, PackageDirs, PackageId},
-    platform::windows::steps::unregistration,
     util::{fs::FsError, macros::concat_line},
 };
 
@@ -48,11 +47,6 @@ where
 
 #[derive(Debug, Snafu)]
 enum UninstallExecutionErrorReport {
-    #[snafu(display("failed to start uninstall transaction for package {pkg_id}"))]
-    BeginUninstall {
-        pkg_id: PackageId,
-        source: PackageDatabaseError,
-    },
     #[snafu(display(
         concat_line!(
             "failed to remove package files for package {pkg_id}",
@@ -62,19 +56,6 @@ enum UninstallExecutionErrorReport {
         pkg_id = pkg_id,
     ))]
     RemovePackageFiles { pkg_id: PackageId, source: FsError },
-    #[snafu(display(
-        concat_line!(
-            "failed to finalize uninstall transaction for package {pkg_id}",
-            "font unregistration and package file removal may already have been applied",
-            "run `foton repair {pkg_id}` to restore a consistent state",
-            "if repair does not resolve the problem, manual database cleanup may be required",
-        ),
-        pkg_id = pkg_id,
-    ))]
-    CompleteUninstall {
-        pkg_id: PackageId,
-        source: PackageDatabaseError,
-    },
 }
 
 impl From<UninstallExecutionErrorReport> for ReportValue<'static> {
@@ -89,28 +70,14 @@ pub(in crate::engine) struct PreparedUninstallStep {
 }
 
 impl PreparedUninstallStep {
-    pub(in crate::engine) fn from_plan_step<S>(
-        cx: &ReportContext<S>,
+    pub(in crate::engine) fn from_plan_step(
         tx: &mut PackageDatabaseTransaction<'_, '_>,
         step: UninstallOp,
-    ) -> Result<Self, S::Error>
-    where
-        S: ReportScope,
-    {
-        let cx = UninstallExecutionScope::start(cx);
+    ) -> Self {
         let UninstallOp { pkg_id, .. } = step;
 
-        // TODO: make deactivation part independent
-        tx.begin_deactivate(&pkg_id)
-            .context(BeginUninstallSnafu { pkg_id: &pkg_id })
-            .report_error(cx.reporter())?;
-        tx.complete_deactivate(&pkg_id)
-            .context(BeginUninstallSnafu { pkg_id: &pkg_id })
-            .report_error(cx.reporter())?;
-        tx.begin_uninstall(&pkg_id)
-            .context(BeginUninstallSnafu { pkg_id: &pkg_id })
-            .report_error(cx.reporter())?;
-        Ok(Self { pkg_id })
+        tx.begin_uninstall(&pkg_id).unwrap();
+        Self { pkg_id }
     }
 }
 
@@ -119,31 +86,26 @@ impl<S> PreparedStepOp<S> for PreparedUninstallStep
 where
     S: ReportScope,
 {
-    async fn execute(&mut self, cx: &ReportContext<S>) -> Result<(), S::Error> {
+    async fn execute(
+        &mut self,
+        cx: &ReportContext<S>,
+        _db: &PackageDatabase<'_>,
+    ) -> Result<(), S::Error> {
         execute_uninstall(cx, &self.pkg_id)
     }
 
     fn on_complete(
         &mut self,
-        cx: &ReportContext<S>,
+        _cx: &ReportContext<S>,
         tx: &mut PackageDatabaseTransaction<'_, '_>,
     ) -> Result<(), S::Error> {
-        let cx = UninstallExecutionScope::start(cx);
-
-        tx.complete_uninstall(&self.pkg_id)
-            .context(CompleteUninstallSnafu {
-                pkg_id: &self.pkg_id,
-            })
-            .report_error(cx.reporter())?;
+        tx.complete_uninstall(&self.pkg_id).unwrap();
         Ok(())
     }
 
     fn after_commit(&mut self) {}
 
     fn on_failure(&mut self, _cx: &ReportContext<S>, _tx: &mut PackageDatabaseTransaction<'_, '_>) {
-        // No rollback is performed on uninstall failure since uninstall steps are designed to be
-        // applied incrementally and partially-applied states are expected to be handled by the
-        // repair command.
     }
 
     fn commit_error_report(&self, source: PackageDatabaseError) -> ExecuteErrorReport {
@@ -161,8 +123,6 @@ where
     let cx =
         UninstallExecutionScope::start_with_report(cx, format_args!("Uninstalling {pkg_id}..."));
     let reporter = cx.reporter();
-
-    unregistration::unregister_package_fonts(&cx, pkg_id)?;
 
     let pkg_dirs = PackageDirs::new(cx.app_dirs(), pkg_id);
     package::remove_package_dirs(&pkg_dirs)
@@ -192,8 +152,8 @@ mod tests {
 
     #[test]
     fn prepared_uninstall_step_from_plan_step_begins_incomplete_uninstall_in_transaction() {
-        testing::with_db(|cx, db| {
-            testing::mark_as_active(db, &MANIFEST);
+        testing::with_db(|_cx, db| {
+            testing::mark_as_installed(db, &MANIFEST);
 
             let step = UninstallOp {
                 pkg_id: PKG_ID.clone(),
@@ -201,15 +161,15 @@ mod tests {
             };
 
             let mut tx = db.transaction();
-            let prepared = PreparedUninstallStep::from_plan_step(cx, &mut tx, step).unwrap();
+            let prepared = PreparedUninstallStep::from_plan_step(&mut tx, step);
             tx.commit().unwrap();
 
             let entry = db.entry_by_id(&PKG_ID).unwrap();
             assert_eq!(
-                entry.installation_state,
+                entry.installation_state(),
                 InstallationState::IncompleteUninstall
             );
-            assert_eq!(entry.activation_state, ActivationState::Inactive);
+            assert_eq!(entry.activation_state(), ActivationState::Inactive);
             assert_eq!(prepared.pkg_id, *PKG_ID);
         });
     }
