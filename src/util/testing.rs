@@ -23,7 +23,7 @@ use crate::{
     },
     db::PackageDatabase,
     engine::{self, InstallTargetSource, ResolvedInstallTarget, ResolvedUninstallTarget},
-    package::{InstallationState, PackageDirs, PackageId, PackageManifest},
+    package::{ActivationState, InstallationState, PackageDirs, PackageId, PackageManifest},
     registry::{RegistryId, RegistryIndex, RegistrySource, RegistrySpec},
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
@@ -250,10 +250,24 @@ pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &Arc<Pac
     tx.begin_install(Arc::clone(manifest));
     tx.complete_install(&pkg_id, &[]).unwrap();
     tx.commit().unwrap();
-    assert_eq!(
-        db.entry_by_id(&pkg_id).unwrap().installation_state,
-        InstallationState::Installed
-    );
+
+    let entry = db.entry_by_id(&pkg_id).unwrap();
+    assert_eq!(entry.installation_state, InstallationState::Installed);
+    assert_eq!(entry.activation_state, ActivationState::Inactive);
+}
+
+pub(crate) fn mark_as_active(db: &mut PackageDatabase<'_>, manifest: &Arc<PackageManifest>) {
+    let pkg_id = manifest.id();
+    let mut tx = db.transaction();
+    tx.begin_install(Arc::clone(manifest));
+    tx.complete_install(&pkg_id, &[]).unwrap();
+    tx.begin_activate(&pkg_id).unwrap();
+    tx.complete_activate(&pkg_id).unwrap();
+    tx.commit().unwrap();
+
+    let entry = db.entry_by_id(&pkg_id).unwrap();
+    assert_eq!(entry.installation_state, InstallationState::Installed);
+    assert_eq!(entry.activation_state, ActivationState::Active);
 }
 
 pub(crate) fn mark_as_incomplete_uninstall(
@@ -266,10 +280,13 @@ pub(crate) fn mark_as_incomplete_uninstall(
     tx.complete_install(&pkg_id, &[]).unwrap();
     tx.begin_uninstall(&pkg_id).unwrap();
     tx.commit().unwrap();
+
+    let entry = db.entry_by_id(&pkg_id).unwrap();
     assert_eq!(
-        db.entry_by_id(&pkg_id).unwrap().installation_state,
+        entry.installation_state,
         InstallationState::IncompleteUninstall
     );
+    assert_eq!(entry.activation_state, ActivationState::Inactive);
 }
 
 pub(crate) fn with_context<F, T>(f: F) -> T

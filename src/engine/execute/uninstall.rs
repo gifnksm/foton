@@ -100,6 +100,13 @@ impl PreparedUninstallStep {
         let cx = UninstallExecutionScope::start(cx);
         let UninstallOp { pkg_id, .. } = step;
 
+        // TODO: make deactivation part independent
+        tx.begin_deactivate(&pkg_id)
+            .context(BeginUninstallSnafu { pkg_id: &pkg_id })
+            .report_error(cx.reporter())?;
+        tx.complete_deactivate(&pkg_id)
+            .context(BeginUninstallSnafu { pkg_id: &pkg_id })
+            .report_error(cx.reporter())?;
         tx.begin_uninstall(&pkg_id)
             .context(BeginUninstallSnafu { pkg_id: &pkg_id })
             .report_error(cx.reporter())?;
@@ -175,7 +182,7 @@ mod tests {
     use super::*;
     use crate::{
         engine::UninstallReason,
-        package::{InstallationState, PackageId, PackageManifest},
+        package::{ActivationState, InstallationState, PackageId, PackageManifest},
         util::testing,
     };
 
@@ -186,7 +193,8 @@ mod tests {
     #[test]
     fn prepared_uninstall_step_from_plan_step_begins_incomplete_uninstall_in_transaction() {
         testing::with_db(|cx, db| {
-            testing::mark_as_installed(db, &MANIFEST);
+            testing::mark_as_active(db, &MANIFEST);
+
             let step = UninstallOp {
                 pkg_id: PKG_ID.clone(),
                 reason: UninstallReason::RequestedByUser,
@@ -196,10 +204,12 @@ mod tests {
             let prepared = PreparedUninstallStep::from_plan_step(cx, &mut tx, step).unwrap();
             tx.commit().unwrap();
 
+            let entry = db.entry_by_id(&PKG_ID).unwrap();
             assert_eq!(
-                db.entry_by_id(&PKG_ID).unwrap().installation_state,
-                InstallationState::IncompleteUninstall,
+                entry.installation_state,
+                InstallationState::IncompleteUninstall
             );
+            assert_eq!(entry.activation_state, ActivationState::Inactive);
             assert_eq!(prepared.pkg_id, *PKG_ID);
         });
     }
