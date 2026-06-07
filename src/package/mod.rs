@@ -10,34 +10,9 @@ mod state;
 mod version;
 
 #[derive(Debug, Clone)]
-pub(crate) struct Package {
-    id: PackageId,
-    dirs: PackageDirs,
-    entries: Vec<FontEntry>,
-}
-
-#[derive(Debug, Clone)]
 pub(crate) struct FontEntry {
     title: String,
     file_name: FileName,
-}
-
-impl Package {
-    pub(crate) fn new(id: PackageId, dirs: PackageDirs, entries: Vec<FontEntry>) -> Self {
-        Self { id, dirs, entries }
-    }
-
-    pub(crate) fn id(&self) -> &PackageId {
-        &self.id
-    }
-
-    pub(crate) fn dirs(&self) -> &PackageDirs {
-        &self.dirs
-    }
-
-    pub(crate) fn entries(&self) -> &[FontEntry] {
-        &self.entries
-    }
 }
 
 impl FontEntry {

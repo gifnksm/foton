@@ -10,7 +10,7 @@ use crate::{
             ScopeResultNoticeExt as _, SubReportScope,
         },
     },
-    engine::execute::install::CleanupTracker,
+    engine::execute::support::CleanupTracker,
     package::{self, PackageDirs, PackageId},
     util::{fs::FsError, macros::concat_line},
 };

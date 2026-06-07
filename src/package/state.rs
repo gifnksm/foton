@@ -35,6 +35,6 @@ pub(crate) enum InstallationState {
 pub(crate) enum ActivationState {
     Active,
     Inactive,
-    IncompleteActivate,
-    IncompleteDeactivate,
+    IncompleteActivation,
+    IncompleteDeactivation,
 }

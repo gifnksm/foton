@@ -106,6 +106,7 @@ pub(crate) enum InstallTargetSource {
 pub(crate) struct ResolvedInstallTarget {
     pub(crate) source: InstallTargetSource,
     pub(crate) manifest: Arc<PackageManifest>,
+    pub(crate) should_activate: bool,
 }
 
 #[derive(Debug, Clone, derive_more::IsVariant)]
@@ -125,6 +126,7 @@ pub(crate) fn resolve_install_targets_by_spec<S>(
     registries: &[RegistrySpec],
     pkg_specs: &[PackageSpec],
     include_pre_release: bool,
+    should_activate: bool,
 ) -> Result<Vec<ResolvedInstallTarget>, S::Error>
 where
     S: ReportScope,
@@ -141,9 +143,11 @@ where
         targets
             .into_iter()
             .map(|target| match target {
-                ResolveState::Resolved { source, manifest } => {
-                    ResolvedInstallTarget { source, manifest }
-                }
+                ResolveState::Resolved { source, manifest } => ResolvedInstallTarget {
+                    source,
+                    manifest,
+                    should_activate,
+                },
                 ResolveState::Unresolved { .. } => unreachable!(),
             })
             .collect()
@@ -151,7 +155,9 @@ where
         let indexes = registry::fetch_registries(&cx, registries)?;
         targets
             .into_iter()
-            .map(|target| resolve_from_registry(&cx, &indexes, target, include_pre_release))
+            .map(|target| {
+                resolve_from_registry(&cx, &indexes, target, include_pre_release, should_activate)
+            })
             .collect_to_end()?
     };
 
@@ -164,6 +170,7 @@ where
 pub(crate) fn resolve_install_targets_by_manifest<S>(
     cx: &ReportContext<S>,
     manifests: &[(PathBuf, Arc<PackageManifest>)],
+    should_activate: bool,
 ) -> Result<Vec<ResolvedInstallTarget>, S::Error>
 where
     S: ReportScope,
@@ -176,6 +183,7 @@ where
         .map(|(path, manifest)| ResolvedInstallTarget {
             source: InstallTargetSource::File(path.clone()),
             manifest: Arc::clone(manifest),
+            should_activate,
         })
         .collect::<Vec<_>>();
 
@@ -188,7 +196,7 @@ fn resolve_installed_package(db: &PackageDatabase<'_>, pkg_spec: &PackageSpec) -
     let installed_pkg = db
         .entries_by_spec(pkg_spec)
         .filter_map(|entry| {
-            (entry.installation_state == InstallationState::Installed).then_some(entry.manifest)
+            (entry.installation_state() == InstallationState::Installed).then_some(entry.manifest())
         })
         .max_by(|a, b| a.version.cmp(&b.version));
     if let Some(manifest) = installed_pkg {
@@ -208,16 +216,19 @@ fn resolve_from_registry<S>(
     indexes: &[RegistryIndex],
     target: ResolveState,
     include_pre_release: bool,
+    should_activate: bool,
 ) -> Result<ResolvedInstallTarget, S::Error>
 where
     S: ReportScope,
 {
     match target {
-        ResolveState::Resolved { source, manifest } => {
-            Ok(ResolvedInstallTarget { source, manifest })
-        }
+        ResolveState::Resolved { source, manifest } => Ok(ResolvedInstallTarget {
+            source,
+            manifest,
+            should_activate,
+        }),
         ResolveState::Unresolved { pkg_spec } => {
-            resolve_spec_from_registry(cx, indexes, &pkg_spec, include_pre_release)
+            resolve_spec_from_registry(cx, indexes, &pkg_spec, include_pre_release, should_activate)
         }
     }
 }
@@ -227,6 +238,7 @@ fn resolve_spec_from_registry<S>(
     indexes: &[RegistryIndex],
     pkg_spec: &PackageSpec,
     include_pre_release: bool,
+    should_activate: bool,
 ) -> Result<ResolvedInstallTarget, S::Error>
 where
     S: ReportScope,
@@ -261,6 +273,7 @@ where
     Ok(ResolvedInstallTarget {
         source: InstallTargetSource::Registry(reg_id.clone()),
         manifest,
+        should_activate,
     })
 }
 
@@ -371,7 +384,8 @@ mod tests {
             testing::mark_as_installed(db, &installed_manifest);
 
             let targets =
-                resolve_install_targets_by_spec(cx, db, &[registry], &pkg_specs, false).unwrap();
+                resolve_install_targets_by_spec(cx, db, &[registry], &pkg_specs, false, true)
+                    .unwrap();
             assert_eq!(targets.len(), 2);
             assert_eq!(targets[0].manifest.id(), installed_manifest.id());
             assert_eq!(targets[1].manifest.id().to_string(), "example-font@1.0.0");
@@ -388,7 +402,7 @@ mod tests {
         let pkg_specs = vec![PackageSpec::from_str("example-font").unwrap()];
 
         testing::with_db(|cx, db| {
-            let err = resolve_install_targets_by_spec(cx, db, &[registry], &pkg_specs, false)
+            let err = resolve_install_targets_by_spec(cx, db, &[registry], &pkg_specs, false, true)
                 .unwrap_err();
             assert!(err.is_failed());
         });
@@ -400,9 +414,12 @@ mod tests {
         let manifest = testing::make_manifest("example-font@0.1.0");
 
         testing::with_context(|cx| {
-            let targets =
-                resolve_install_targets_by_manifest(cx, &[(path.clone(), Arc::clone(&manifest))])
-                    .unwrap();
+            let targets = resolve_install_targets_by_manifest(
+                cx,
+                &[(path.clone(), Arc::clone(&manifest))],
+                true,
+            )
+            .unwrap();
 
             assert_eq!(targets.len(), 1);
             assert_matches!(
@@ -410,6 +427,7 @@ mod tests {
                 ResolvedInstallTarget {
                     source: InstallTargetSource::File(source_path),
                     manifest: resolved_manifest,
+                    should_activate: true,
                 } if source_path == &path && Arc::ptr_eq(resolved_manifest, &manifest)
             );
         });
@@ -429,7 +447,7 @@ mod tests {
         ];
 
         testing::with_context(|cx| {
-            let err = resolve_install_targets_by_manifest(cx, &manifests).unwrap_err();
+            let err = resolve_install_targets_by_manifest(cx, &manifests, true).unwrap_err();
             assert!(err.is_failed());
         });
     }
@@ -442,7 +460,7 @@ mod tests {
 
         testing::with_scoped_context(|cx| {
             let spec = PackageSpec::from_str("example-font").unwrap();
-            let target = resolve_spec_from_registry(cx, &[index], &spec, false).unwrap();
+            let target = resolve_spec_from_registry(cx, &[index], &spec, false, true).unwrap();
             assert_eq!(target.manifest.id().to_string(), "example-font@0.2.0");
         });
     }
@@ -455,7 +473,8 @@ mod tests {
 
         testing::with_scoped_context(|cx| {
             let spec = PackageSpec::from_str("example-font").unwrap();
-            let stable_target = resolve_spec_from_registry(cx, &[index], &spec, false).unwrap();
+            let stable_target =
+                resolve_spec_from_registry(cx, &[index], &spec, false, true).unwrap();
             assert_eq!(
                 stable_target.manifest.id().to_string(),
                 "example-font@1.0.0"
@@ -471,7 +490,7 @@ mod tests {
 
         testing::with_scoped_context(|cx| {
             let spec = PackageSpec::from_str("example-font").unwrap();
-            let target = resolve_spec_from_registry(cx, &[index], &spec, true).unwrap();
+            let target = resolve_spec_from_registry(cx, &[index], &spec, true, true).unwrap();
             assert_eq!(target.manifest.id().to_string(), "example-font@2.0.0-rc-1");
         });
     }
@@ -483,7 +502,7 @@ mod tests {
 
         testing::with_scoped_context(|cx| {
             let spec = PackageSpec::from_str("example-font@2.0.0-rc-1").unwrap();
-            let target = resolve_spec_from_registry(cx, &[index], &spec, false).unwrap();
+            let target = resolve_spec_from_registry(cx, &[index], &spec, false, true).unwrap();
             assert_eq!(target.manifest.id().to_string(), "example-font@2.0.0-rc-1");
         });
     }
@@ -499,7 +518,7 @@ mod tests {
 
         testing::with_scoped_context(|cx| {
             let spec: PackageSpec = "example-font".parse().unwrap();
-            let err = resolve_spec_from_registry(cx, &indexes, &spec, false).unwrap_err();
+            let err = resolve_spec_from_registry(cx, &indexes, &spec, false, true).unwrap_err();
             assert!(err.is_failed());
         });
     }
@@ -510,10 +529,12 @@ mod tests {
             ResolvedInstallTarget {
                 source: InstallTargetSource::Installed,
                 manifest: testing::make_manifest("example-font@0.1.0"),
+                should_activate: true,
             },
             ResolvedInstallTarget {
                 source: InstallTargetSource::Installed,
                 manifest: testing::make_manifest("example-font@0.2.0"),
+                should_activate: true,
             },
         ];
 
@@ -531,10 +552,12 @@ mod tests {
             ResolvedInstallTarget {
                 source: InstallTargetSource::Installed,
                 manifest: Arc::clone(&manifest),
+                should_activate: true,
             },
             ResolvedInstallTarget {
                 source: InstallTargetSource::Installed,
                 manifest,
+                should_activate: true,
             },
         ];
 

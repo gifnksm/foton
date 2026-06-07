@@ -1,7 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::engine::{
-    ExecutionPlan, InstallOp, PlanStep, PlanStepOp, SkipOp, StepCondition, StepId, UninstallOp,
+    ActivateOp, DeactivateOp, ExecutionPlan, InstallOp, PlanStep, PlanStepOp, SkipOp,
+    StepCondition, StepId, UninstallOp,
 };
 
 #[track_caller]
@@ -54,6 +55,32 @@ pub(super) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
                     reason: actual_reason,
                 }),
                 PlanStepOp::Uninstall(UninstallOp {
+                    pkg_id: expected_pkg_id,
+                    reason: expected_reason,
+                }),
+            ) => {
+                assert_eq!(actual_pkg_id, expected_pkg_id);
+                assert_eq!(actual_reason, expected_reason);
+            }
+            (
+                PlanStepOp::Activate(ActivateOp {
+                    pkg_id: actual_pkg_id,
+                    reason: actual_reason,
+                }),
+                PlanStepOp::Activate(ActivateOp {
+                    pkg_id: expected_pkg_id,
+                    reason: expected_reason,
+                }),
+            ) => {
+                assert_eq!(actual_pkg_id, expected_pkg_id);
+                assert_eq!(actual_reason, expected_reason);
+            }
+            (
+                PlanStepOp::Deactivate(DeactivateOp {
+                    pkg_id: actual_pkg_id,
+                    reason: actual_reason,
+                }),
+                PlanStepOp::Deactivate(DeactivateOp {
                     pkg_id: expected_pkg_id,
                     reason: expected_reason,
                 }),

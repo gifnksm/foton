@@ -51,6 +51,9 @@ pub(crate) enum Command {
 pub(crate) struct InstallArgs {
     #[clap(flatten)]
     pub(crate) target: InstallTargetArgs,
+    /// Do not activate the installed packages.
+    #[clap(long)]
+    pub(crate) no_activate: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -140,8 +143,9 @@ pub(crate) struct UpdateArgs {
     pub(crate) registries: Option<Vec<RegistryId>>,
     /// Package names, optionally with an exact version as `<package-name>@<version>`.
     ///
-    /// If not specified, all installed packages will be updated if possible.
-    /// When an exact version is specified, `update` selects the matching installed
+    /// If not specified, `update` selects the latest installed version of each
+    /// package name and updates it if possible.
+    /// When an exact version is specified, `update` selects that installed
     /// package first, then looks for a newer version of the same package name.
     #[clap(value_name = "PACKAGE")]
     pub(crate) pkg_specs: Vec<PackageSpec>,
@@ -238,7 +242,7 @@ mod tests {
 
     use super::*;
 
-    fn parse_install<I, T>(args: I) -> Result<InstallTargetArgs, clap::Error>
+    fn parse_install<I, T>(args: I) -> Result<InstallArgs, clap::Error>
     where
         I: IntoIterator<Item = T>,
         T: Into<OsString> + Clone,
@@ -247,7 +251,7 @@ mod tests {
         let Command::Install(install_args) = args.command else {
             unreachable!("test helper only parses install commands");
         };
-        Ok(install_args.target)
+        Ok(install_args)
     }
 
     #[test]
@@ -275,6 +279,15 @@ mod tests {
         for case in cases {
             parse_install(case).unwrap();
         }
+    }
+
+    #[test]
+    fn install_parses_no_activate_flag() {
+        let install_args =
+            parse_install(["foton", "install", "--no-activate", "package1"]).unwrap();
+
+        assert!(install_args.no_activate);
+        assert_eq!(install_args.target.pkg_specs.len(), 1);
     }
 
     #[test]

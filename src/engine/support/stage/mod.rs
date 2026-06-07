@@ -8,7 +8,7 @@ use crate::{
         context::ReportContext,
         reporter::{NeverReport, OperationError as _, ReportScope, ReportValue, SubReportScope},
     },
-    package::{Package, PackageDirs, PackageId, PackageManifest},
+    package::{FontEntry, PackageDirs, PackageId, PackageManifest},
 };
 
 mod download;
@@ -57,7 +57,7 @@ pub(crate) async fn stage_package<S>(
     cx: &ReportContext<S>,
     pkg_dirs: &PackageDirs,
     manifest: &PackageManifest,
-) -> Result<(Package, Vec<ExtractDetail>), S::Error>
+) -> Result<(Vec<FontEntry>, Vec<ExtractDetail>), S::Error>
 where
     S: ReportScope,
 {
@@ -101,6 +101,5 @@ where
         valid_entries.len()
     ));
 
-    let package = Package::new(pkg_id.clone(), pkg_dirs.clone(), valid_entries);
-    Ok((package, extract_details))
+    Ok((valid_entries, extract_details))
 }

@@ -61,19 +61,32 @@ pub(crate) enum PackageDatabaseError {
 }
 
 #[derive(Debug)]
-pub(crate) struct PackageDbEntry {
-    pub(crate) installation_state: InstallationState,
-    pub(crate) activation_state: ActivationState,
-    pub(crate) manifest: Arc<PackageManifest>,
+pub(crate) struct PackageDbEntry<'a>(&'a PersistedPackageEntry);
+
+impl<'a> From<&'a PersistedPackageEntry> for PackageDbEntry<'a> {
+    fn from(entry: &'a PersistedPackageEntry) -> Self {
+        Self(entry)
+    }
 }
 
-impl From<&PersistedPackageEntry> for PackageDbEntry {
-    fn from(entry: &PersistedPackageEntry) -> Self {
-        Self {
-            installation_state: entry.installation_state,
-            activation_state: entry.activation_state,
-            manifest: Arc::clone(&entry.manifest),
-        }
+impl<'a> PackageDbEntry<'a> {
+    pub(crate) fn installation_state(&self) -> InstallationState {
+        self.0.installation_state
+    }
+
+    pub(crate) fn activation_state(&self) -> ActivationState {
+        self.0.activation_state
+    }
+
+    pub(crate) fn manifest(&self) -> Arc<PackageManifest> {
+        Arc::clone(&self.0.manifest)
+    }
+
+    pub(crate) fn font_entries(&self) -> impl Iterator<Item = FontEntry> + 'a {
+        self.0
+            .font_entries
+            .iter()
+            .map(|entry| FontEntry::new(entry.title.clone(), entry.file_name.clone()))
     }
 }
 
@@ -123,7 +136,16 @@ impl<'lock> PackageDatabase<'lock> {
         })
     }
 
-    pub(crate) fn entries(&self) -> impl Iterator<Item = PackageDbEntry> {
+    fn raw_version_map(&self, pkg_name: &PackageName) -> Option<&PersistedPackageVersionMap> {
+        self.persist_db.packages.get(pkg_name)
+    }
+
+    fn raw_entry(&self, pkg_id: &PackageId) -> Option<&PersistedPackageEntry> {
+        let version_map = self.raw_version_map(pkg_id.name())?;
+        version_map.versions.get(pkg_id.version())
+    }
+
+    pub(crate) fn entries(&self) -> impl Iterator<Item = PackageDbEntry<'_>> {
         self.persist_db
             .packages
             .values()
@@ -132,65 +154,72 @@ impl<'lock> PackageDatabase<'lock> {
     }
 
     pub(crate) fn entries_by_spec(
-        &'lock self,
+        &self,
         pkg_spec: &PackageSpec,
-    ) -> Box<dyn Iterator<Item = PackageDbEntry> + 'lock> {
+    ) -> Box<dyn Iterator<Item = PackageDbEntry<'_>> + '_> {
         match pkg_spec {
             PackageSpec::Id(id) => Box::new(self.entry_by_id(id).into_iter()),
             PackageSpec::Name(name) => Box::new(self.entries_by_name(name)),
         }
     }
 
-    pub(crate) fn entry_by_id(&self, pkg_id: &PackageId) -> Option<PackageDbEntry> {
-        self.persist_db
-            .packages
-            .get(pkg_id.name())
-            .and_then(|version_map| version_map.versions.get(pkg_id.version()))
-            .map(Into::into)
+    pub(crate) fn entry_by_id(&self, pkg_id: &PackageId) -> Option<PackageDbEntry<'_>> {
+        self.raw_entry(pkg_id).map(Into::into)
     }
 
     pub(crate) fn entries_by_name(
-        &'lock self,
+        &self,
         pkg_name: &PackageName,
-    ) -> impl Iterator<Item = PackageDbEntry> + 'lock {
-        self.persist_db
-            .packages
-            .get(pkg_name)
+    ) -> impl Iterator<Item = PackageDbEntry<'_>> + '_ {
+        self.raw_version_map(pkg_name)
             .into_iter()
             .flat_map(|version_map| version_map.versions.values().map(Into::into))
     }
 
-    pub(crate) fn check_installability(&self, manifest: &PackageManifest) -> Installability {
-        let pkg_name = manifest.name.clone();
-        let pkg_version = manifest.version.clone();
-        let mut installed_other_versions = vec![];
-        let mut incomplete_installs = vec![];
-        let mut incomplete_uninstalls = vec![];
-        for entry in self.entries_by_name(&pkg_name) {
-            if entry.manifest.version == pkg_version {
-                match entry.installation_state {
-                    InstallationState::Installed => return Installability::AlreadyInstalled,
-                    InstallationState::IncompleteInstall
-                    | InstallationState::IncompleteUninstall => {}
-                }
-            } else {
-                match entry.installation_state {
-                    InstallationState::Installed => {
-                        installed_other_versions.push(entry.manifest.id());
+    pub(crate) fn check_installability(&self, pkg_id: &PackageId) -> Installability {
+        if let Some(entry) = self.raw_entry(pkg_id)
+            && entry.installation_state.is_installed()
+        {
+            return Installability::AlreadyInstalled;
+        }
+        Installability::Installable
+    }
+
+    pub(crate) fn check_activatability(&self, pkg_id: &PackageId) -> Activatability {
+        let pkg_name = pkg_id.name();
+        let pkg_version = pkg_id.version();
+        let mut active_other_versions = vec![];
+        let mut incomplete_activations = vec![];
+        let mut incomplete_deactivations = vec![];
+        if let Some(version_map) = self.raw_version_map(pkg_name) {
+            for entry in version_map.versions.values() {
+                if entry.manifest.version == *pkg_version {
+                    match entry.activation_state {
+                        ActivationState::Active => return Activatability::AlreadyActive,
+                        ActivationState::Inactive
+                        | ActivationState::IncompleteActivation
+                        | ActivationState::IncompleteDeactivation => {}
                     }
-                    InstallationState::IncompleteInstall => {
-                        incomplete_installs.push(entry.manifest.id());
-                    }
-                    InstallationState::IncompleteUninstall => {
-                        incomplete_uninstalls.push(entry.manifest.id());
+                } else {
+                    match entry.activation_state {
+                        ActivationState::Active => {
+                            active_other_versions.push(entry.manifest.id());
+                        }
+                        ActivationState::Inactive => {}
+                        ActivationState::IncompleteActivation => {
+                            incomplete_activations.push(entry.manifest.id());
+                        }
+                        ActivationState::IncompleteDeactivation => {
+                            incomplete_deactivations.push(entry.manifest.id());
+                        }
                     }
                 }
             }
         }
-        Installability::Installable {
-            installed_other_versions,
-            incomplete_installs,
-            incomplete_uninstalls,
+        Activatability::Activatable {
+            active_other_versions,
+            incomplete_activations,
+            incomplete_deactivations,
         }
     }
 
@@ -244,24 +273,24 @@ impl PackageDatabaseTransaction<'_, '_> {
         Ok(())
     }
 
-    fn version_map(&self, pkg_name: &PackageName) -> Option<&PersistedPackageVersionMap> {
+    fn raw_version_map(&self, pkg_name: &PackageName) -> Option<&PersistedPackageVersionMap> {
         self.persist_db.packages.get(pkg_name)
     }
 
-    fn version_map_mut(
+    fn raw_version_map_mut(
         &mut self,
         pkg_name: &PackageName,
     ) -> Option<&mut PersistedPackageVersionMap> {
         self.persist_db.packages.get_mut(pkg_name)
     }
 
-    fn entry(&self, pkg_id: &PackageId) -> Option<&PersistedPackageEntry> {
-        let version_map = self.version_map(pkg_id.name())?;
+    fn raw_entry(&self, pkg_id: &PackageId) -> Option<&PersistedPackageEntry> {
+        let version_map = self.raw_version_map(pkg_id.name())?;
         version_map.versions.get(pkg_id.version())
     }
 
-    fn entry_mut(&mut self, pkg_id: &PackageId) -> Option<&mut PersistedPackageEntry> {
-        let version_map = self.version_map_mut(pkg_id.name())?;
+    fn raw_entry_mut(&mut self, pkg_id: &PackageId) -> Option<&mut PersistedPackageEntry> {
+        let version_map = self.raw_version_map_mut(pkg_id.name())?;
         version_map.versions.get_mut(pkg_id.version())
     }
 
@@ -277,7 +306,7 @@ impl PackageDatabaseTransaction<'_, '_> {
     }
 
     fn remove_entry(&mut self, pkg_id: &PackageId) -> Option<PersistedPackageEntry> {
-        let version_map = self.version_map_mut(pkg_id.name())?;
+        let version_map = self.raw_version_map_mut(pkg_id.name())?;
         let entry = version_map.versions.remove(pkg_id.version())?;
         if version_map.versions.is_empty() {
             self.persist_db.packages.remove(pkg_id.name());
@@ -290,7 +319,9 @@ impl PackageDatabaseTransaction<'_, '_> {
         pkg_id: &PackageId,
         expected: InstallationState,
     ) -> Result<(), PackageDatabaseError> {
-        let entry = self.entry(pkg_id).context(EntryNotFoundSnafu { pkg_id })?;
+        let entry = self
+            .raw_entry(pkg_id)
+            .context(EntryNotFoundSnafu { pkg_id })?;
         let actual = entry.installation_state;
         snafu::ensure!(
             actual == expected,
@@ -308,7 +339,9 @@ impl PackageDatabaseTransaction<'_, '_> {
         pkg_id: &PackageId,
         expected: ActivationState,
     ) -> Result<(), PackageDatabaseError> {
-        let entry = self.entry(pkg_id).context(EntryNotFoundSnafu { pkg_id })?;
+        let entry = self
+            .raw_entry(pkg_id)
+            .context(EntryNotFoundSnafu { pkg_id })?;
         let actual = entry.activation_state;
         snafu::ensure!(
             actual == expected,
@@ -327,7 +360,7 @@ impl PackageDatabaseTransaction<'_, '_> {
         new_state: InstallationState,
     ) -> Result<(), PackageDatabaseError> {
         let entry = self
-            .entry_mut(pkg_id)
+            .raw_entry_mut(pkg_id)
             .context(EntryNotFoundSnafu { pkg_id })?;
         entry.installation_state = new_state;
         Ok(())
@@ -339,7 +372,7 @@ impl PackageDatabaseTransaction<'_, '_> {
         new_state: ActivationState,
     ) -> Result<(), PackageDatabaseError> {
         let entry = self
-            .entry_mut(pkg_id)
+            .raw_entry_mut(pkg_id)
             .context(EntryNotFoundSnafu { pkg_id })?;
         entry.activation_state = new_state;
         Ok(())
@@ -362,7 +395,7 @@ impl PackageDatabaseTransaction<'_, '_> {
     ) -> Result<(), PackageDatabaseError> {
         self.check_installation_state(pkg_id, InstallationState::IncompleteInstall)?;
 
-        let db_entry = self.entry_mut(pkg_id).unwrap();
+        let db_entry = self.raw_entry_mut(pkg_id).unwrap();
         db_entry.installation_state = InstallationState::Installed;
         db_entry.font_entries = font_entries.iter().map(Into::into).collect();
         Ok(())
@@ -405,7 +438,7 @@ impl PackageDatabaseTransaction<'_, '_> {
         pkg_id: &PackageId,
     ) -> Result<(), PackageDatabaseError> {
         self.check_installation_state(pkg_id, InstallationState::Installed)?;
-        self.update_activation_state(pkg_id, ActivationState::IncompleteActivate)?;
+        self.update_activation_state(pkg_id, ActivationState::IncompleteActivation)?;
         Ok(())
     }
 
@@ -413,20 +446,19 @@ impl PackageDatabaseTransaction<'_, '_> {
         &mut self,
         pkg_id: &PackageId,
     ) -> Result<(), PackageDatabaseError> {
-        self.check_activation_state(pkg_id, ActivationState::IncompleteActivate)?;
+        self.check_activation_state(pkg_id, ActivationState::IncompleteActivation)?;
         self.update_activation_state(pkg_id, ActivationState::Active)?;
         Ok(())
     }
 
-    #[cfg(test)]
     pub(crate) fn cancel_activate(
         &mut self,
         pkg_id: &PackageId,
         cleanup_required: bool,
     ) -> Result<(), PackageDatabaseError> {
-        self.check_activation_state(pkg_id, ActivationState::IncompleteActivate)?;
+        self.check_activation_state(pkg_id, ActivationState::IncompleteActivation)?;
         if cleanup_required {
-            self.update_activation_state(pkg_id, ActivationState::IncompleteDeactivate)?;
+            self.update_activation_state(pkg_id, ActivationState::IncompleteDeactivation)?;
         } else {
             self.update_activation_state(pkg_id, ActivationState::Inactive)?;
         }
@@ -437,7 +469,7 @@ impl PackageDatabaseTransaction<'_, '_> {
         &mut self,
         pkg_id: &PackageId,
     ) -> Result<(), PackageDatabaseError> {
-        self.update_activation_state(pkg_id, ActivationState::IncompleteDeactivate)?;
+        self.update_activation_state(pkg_id, ActivationState::IncompleteDeactivation)?;
         Ok(())
     }
 
@@ -445,7 +477,7 @@ impl PackageDatabaseTransaction<'_, '_> {
         &mut self,
         pkg_id: &PackageId,
     ) -> Result<(), PackageDatabaseError> {
-        self.check_activation_state(pkg_id, ActivationState::IncompleteDeactivate)?;
+        self.check_activation_state(pkg_id, ActivationState::IncompleteDeactivation)?;
         self.update_activation_state(pkg_id, ActivationState::Inactive)?;
         Ok(())
     }
@@ -453,12 +485,18 @@ impl PackageDatabaseTransaction<'_, '_> {
 
 #[derive(Debug, Clone, derive_more::IsVariant)]
 pub(crate) enum Installability {
-    Installable {
-        installed_other_versions: Vec<PackageId>,
-        incomplete_installs: Vec<PackageId>,
-        incomplete_uninstalls: Vec<PackageId>,
-    },
+    Installable,
     AlreadyInstalled,
+}
+
+#[derive(Debug, Clone, derive_more::IsVariant)]
+pub(crate) enum Activatability {
+    Activatable {
+        active_other_versions: Vec<PackageId>,
+        incomplete_activations: Vec<PackageId>,
+        incomplete_deactivations: Vec<PackageId>,
+    },
+    AlreadyActive,
 }
 
 #[cfg(test)]
@@ -473,8 +511,8 @@ mod tests {
         id: &PackageId,
     ) -> Option<InstallationState> {
         let entry = db.entry_by_id(id)?;
-        assert_eq!(entry.manifest.id(), *id);
-        Some(entry.installation_state)
+        assert_eq!(entry.manifest().id(), *id);
+        Some(entry.installation_state())
     }
 
     fn get_persisted_state(
@@ -733,7 +771,7 @@ mod tests {
             assert_transaction_stages_without_commit(db, &before, &staged, |tx| {
                 tx.complete_install(&pkg_id, &[]).unwrap();
                 assert_eq!(
-                    tx.entry(&pkg_id).unwrap().activation_state,
+                    tx.raw_entry(&pkg_id).unwrap().activation_state,
                     ActivationState::Inactive,
                 );
             });
@@ -801,19 +839,19 @@ mod tests {
             let mut tx = db.transaction();
             tx.begin_activate(&pkg_id).unwrap();
             assert_eq!(
-                tx.entry(&pkg_id).unwrap().activation_state,
-                ActivationState::IncompleteActivate,
+                tx.raw_entry(&pkg_id).unwrap().activation_state,
+                ActivationState::IncompleteActivation,
             );
 
             tx.complete_activate(&pkg_id).unwrap();
             assert_eq!(
-                tx.entry(&pkg_id).unwrap().activation_state,
+                tx.raw_entry(&pkg_id).unwrap().activation_state,
                 ActivationState::Active
             );
 
             tx.commit().unwrap();
             assert_eq!(
-                db.entry_by_id(&pkg_id).unwrap().activation_state,
+                db.entry_by_id(&pkg_id).unwrap().activation_state(),
                 ActivationState::Active,
             );
         });
@@ -841,12 +879,12 @@ mod tests {
             tx.cancel_activate(&cleanup_pkg_id, true).unwrap();
 
             assert_eq!(
-                tx.entry(&inactive_pkg_id).unwrap().activation_state,
+                tx.raw_entry(&inactive_pkg_id).unwrap().activation_state,
                 ActivationState::Inactive,
             );
             assert_eq!(
-                tx.entry(&cleanup_pkg_id).unwrap().activation_state,
-                ActivationState::IncompleteDeactivate,
+                tx.raw_entry(&cleanup_pkg_id).unwrap().activation_state,
+                ActivationState::IncompleteDeactivation,
             );
         });
     }
@@ -865,19 +903,19 @@ mod tests {
             let mut tx = db.transaction();
             tx.begin_deactivate(&pkg_id).unwrap();
             assert_eq!(
-                tx.entry(&pkg_id).unwrap().activation_state,
-                ActivationState::IncompleteDeactivate,
+                tx.raw_entry(&pkg_id).unwrap().activation_state,
+                ActivationState::IncompleteDeactivation,
             );
 
             tx.complete_deactivate(&pkg_id).unwrap();
             assert_eq!(
-                tx.entry(&pkg_id).unwrap().activation_state,
+                tx.raw_entry(&pkg_id).unwrap().activation_state,
                 ActivationState::Inactive
             );
 
             tx.commit().unwrap();
             assert_eq!(
-                db.entry_by_id(&pkg_id).unwrap().activation_state,
+                db.entry_by_id(&pkg_id).unwrap().activation_state(),
                 ActivationState::Inactive,
             );
         });

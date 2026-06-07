@@ -10,7 +10,7 @@ use crate::{
             ScopeResultNoticeExt as _, SubReportScope,
         },
     },
-    package::Package,
+    package::{FontEntry, PackageDirs, PackageId},
     platform::windows::primitives::{
         registry::{self, RegisteredFont, RegistryError},
         session::{self, SessionError},
@@ -56,11 +56,11 @@ enum RegistrationNoticeReport {
     LoadFont { path: PathBuf, source: SessionError },
     #[snafu(display(
         concat_line!(
-            "failed to broadcast font change after install",
+            "failed to broadcast font change after activation",
             "applications may not see the new font immediately"
         ),
     ))]
-    BroadcastFontAfterInstall { source: SessionError },
+    BroadcastFontAfterActivation { source: SessionError },
 }
 
 impl From<RegistrationNoticeReport> for ReportValue<'static> {
@@ -81,27 +81,29 @@ impl From<RegistrationErrorReport> for ReportValue<'static> {
     }
 }
 
-pub(crate) fn register_package_fonts<S>(
+pub(crate) fn register_package_fonts<S, I>(
     cx: &ReportContext<S>,
-    package: &Package,
+    pkg_id: &PackageId,
+    font_entries: I,
 ) -> Result<(), S::Error>
 where
     S: ReportScope,
+    I: IntoIterator<Item = FontEntry>,
 {
     let cx = RegistrationScope::start_with_report(cx, "Registering fonts...");
     let reporter = cx.reporter();
 
-    let fonts_dir = package.dirs().fonts_dir();
-    let registered_fonts = package
-        .entries()
-        .iter()
+    let pkg_dir = PackageDirs::new(cx.app_dirs(), pkg_id);
+    let fonts_dir = pkg_dir.fonts_dir();
+    let registered_fonts = font_entries
+        .into_iter()
         .map(|entry| RegisteredFont::new(entry.title(), fonts_dir.join(entry.file_name())))
         .collect::<Vec<_>>();
 
     // Report fatal errors at the point of failure so they stay ordered relative to
     // warnings emitted by later best-effort steps in this function. Callers should
     // return the error without reporting it again.
-    registry::register_package_fonts(cx.app_id(), package.id(), &registered_fonts)
+    registry::register_package_fonts(cx.app_id(), pkg_id, &registered_fonts)
         .context(RegisterFontsInRegistrySnafu)
         .report_error(reporter)?;
 
@@ -112,7 +114,7 @@ where
     }
 
     session::broadcast_font_change()
-        .context(BroadcastFontAfterInstallSnafu)
+        .context(BroadcastFontAfterActivationSnafu)
         .report_notice(reporter);
 
     Ok(())

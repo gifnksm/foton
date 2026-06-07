@@ -57,6 +57,10 @@ Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored
 unless an exact version is specified.
 This cannot be used together with `--manifest`.
 
+### `--no-activate`
+
+Do not activate the installed packages.
+
 ## Examples
 
 ```console

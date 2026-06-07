@@ -14,9 +14,10 @@ foton update [OPTIONS] [<PACKAGE>...]
 
 Package names, optionally with an exact version as `<package-name>@<version>`.
 
-If not specified, all installed packages will be updated if possible.
-When an exact version is specified, `update` selects the matching installed
-package first, then looks for a newer version of the same package name.
+If not specified, `update` selects the latest installed version of each
+package name and updates it if possible.
+When an exact version is specified, `update` selects that installed package
+first, then looks for a newer version of the same package name.
 
 ## Options
 
@@ -60,6 +61,8 @@ foton update --registry <registry-id-1>,<registry-id-2> <package-name>
   that they are already up to date.
 - If an update does not complete cleanly, use `repair` to clean up any
   packages it leaves behind.
+- Updating a package installs the newer version without automatically removing
+  older installed versions.
 - Update resolution uses package names and package registry IDs, not manifest files.
 - If multiple selected package registries provide newer versions of the same package,
   `update` does not choose one automatically; it fails and asks you to
