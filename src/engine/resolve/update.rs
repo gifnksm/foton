@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, btree_map},
     marker::PhantomData,
     sync::Arc,
 };
@@ -15,14 +15,13 @@ use crate::{
             ScopeResultErrorExt as _, SubReportScope,
         },
     },
-    db::PackageDatabase,
-    engine::{ResolvedInstallTarget, resolve::registry},
+    db::{PackageDatabase, PackageDbEntry},
     package::{PackageId, PackageManifest, PackageName, PackageSpec},
     registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySpec},
     util::macros::concat_line,
 };
 
-use super::InstallTargetSource;
+use super::{InstallTargetSource, ResolvedInstallTarget, lookup};
 
 #[derive(Debug, Default)]
 struct UpdateResolveScope<S> {
@@ -78,6 +77,33 @@ enum UpdateResolveErrorReport {
     },
 }
 
+#[derive(Debug, Clone)]
+struct UpdateCandidate {
+    pkg_id: PackageId,
+    should_activate: bool,
+}
+
+impl UpdateCandidate {
+    fn new(pkg_id: PackageId, should_activate: bool) -> Self {
+        Self {
+            pkg_id,
+            should_activate,
+        }
+    }
+
+    fn from_db_entry(entry: &PackageDbEntry<'_>) -> Self {
+        Self::new(entry.manifest().id(), entry.activation_state().is_active())
+    }
+
+    fn resolved(self, reg_id: RegistryId, manifest: Arc<PackageManifest>) -> ResolvedInstallTarget {
+        ResolvedInstallTarget {
+            source: InstallTargetSource::Registry(reg_id),
+            manifest,
+            should_activate: self.should_activate,
+        }
+    }
+}
+
 pub(crate) fn resolve_update_targets<S>(
     cx: &ReportContext<S>,
     db: &PackageDatabase<'_>,
@@ -89,77 +115,80 @@ where
     S: ReportScope,
 {
     let cx = UpdateResolveScope::start_with_report(cx, format_args!("Resolving update target..."));
-    let mut pkg_ids = if pkg_specs.is_empty() {
-        all_installed_packages(db)
-    } else {
-        pkg_specs
-            .iter()
-            .map(|pkg_spec| resolve_installed_package(&cx, db, pkg_spec))
-            .collect_to_end()?
-    };
+    let mut candidates = collect_requested_packages(&cx, db, pkg_specs)?;
 
-    if pkg_ids.is_empty() {
+    if candidates.is_empty() {
         return Ok(vec![]);
     }
 
-    dedup(&mut pkg_ids);
+    dedup_candidates(&mut candidates);
 
-    let indexes = registry::fetch_registries(&cx, registries)?;
-    let targets = pkg_ids
+    let indexes = super::fetch_registries(&cx, registries)?;
+    let targets = candidates
         .into_iter()
-        .filter_map(|(pkg_id, should_activate)| {
-            let res =
-                find_update_target(&cx, &indexes, &pkg_id, include_pre_release).transpose()?;
-            Some(res.map(|(reg_id, manifest)| (reg_id, manifest, should_activate)))
-        })
-        .map(|res| {
-            res.map(
-                |(reg_id, manifest, should_activate)| ResolvedInstallTarget {
-                    source: InstallTargetSource::Registry(reg_id),
-                    manifest,
-                    should_activate,
-                },
-            )
+        .filter_map(|candidate| {
+            let res = find_update_target(&cx, &indexes, &candidate.pkg_id, include_pre_release)
+                .transpose()?;
+            Some(res.map(|(reg_id, manifest)| candidate.resolved(reg_id, manifest)))
         })
         .collect::<Result<Vec<_>, _>>()?;
-
     Ok(targets)
 }
 
-fn collect_latest_packages<I>(pkg_ids: I) -> BTreeMap<PackageName, (PackageId, bool)>
+fn collect_requested_packages<S>(
+    cx: &ReportContext<UpdateResolveScope<S>>,
+    db: &PackageDatabase<'_>,
+    pkg_specs: &[PackageSpec],
+) -> Result<Vec<UpdateCandidate>, S::Error>
 where
-    I: IntoIterator<Item = (PackageId, bool)>,
+    S: ReportScope,
 {
-    let mut latest_packages: BTreeMap<PackageName, (PackageId, bool)> = BTreeMap::new();
-    for (pkg_id, should_activate) in pkg_ids {
-        latest_packages
-            .entry(pkg_id.name().clone())
-            .and_modify(|existing| {
-                if existing.0.version() < pkg_id.version() {
-                    *existing = (pkg_id.clone(), should_activate);
+    if pkg_specs.is_empty() {
+        Ok(all_installed_packages(db))
+    } else {
+        pkg_specs
+            .iter()
+            .map(|pkg_spec| resolve_spec_from_installed_packages(cx, db, pkg_spec))
+            .collect_to_end()
+    }
+}
+
+fn collect_latest_packages<I>(candidates: I) -> BTreeMap<PackageName, UpdateCandidate>
+where
+    I: IntoIterator<Item = UpdateCandidate>,
+{
+    let mut latest_packages = BTreeMap::new();
+    for candidate in candidates {
+        match latest_packages.entry(candidate.pkg_id.name().clone()) {
+            btree_map::Entry::Vacant(e) => {
+                e.insert(candidate);
+            }
+            btree_map::Entry::Occupied(mut e) => {
+                if e.get().pkg_id.version() < candidate.pkg_id.version() {
+                    e.insert(candidate);
                 }
-            })
-            .or_insert((pkg_id, should_activate));
+            }
+        }
     }
     latest_packages
 }
 
-fn all_installed_packages(db: &PackageDatabase<'_>) -> Vec<(PackageId, bool)> {
+fn all_installed_packages(db: &PackageDatabase<'_>) -> Vec<UpdateCandidate> {
     collect_latest_packages(db.entries().filter_map(|entry| {
         entry
             .installation_state()
             .is_installed()
-            .then(|| (entry.manifest().id(), entry.activation_state().is_active()))
+            .then(|| UpdateCandidate::from_db_entry(&entry))
     }))
     .into_values()
     .collect()
 }
 
-fn resolve_installed_package<S>(
+fn resolve_spec_from_installed_packages<S>(
     cx: &ReportContext<UpdateResolveScope<S>>,
     db: &PackageDatabase<'_>,
     pkg_spec: &PackageSpec,
-) -> Result<(PackageId, bool), S::Error>
+) -> Result<UpdateCandidate, S::Error>
 where
     S: ReportScope,
 {
@@ -168,36 +197,35 @@ where
             entry
                 .installation_state()
                 .is_installed()
-                .then(|| (entry.manifest().id(), entry.activation_state().is_active()))
+                .then(|| UpdateCandidate::from_db_entry(&entry))
         }));
     if latest_packages.len() > 1 {
         return Err(MultipleMatchingPackagesSnafu {
             pkg_spec,
             pkg_ids: latest_packages
                 .values()
-                .map(|(pkg_id, _activate)| pkg_id)
-                .cloned()
+                .map(|candidate| candidate.pkg_id.clone())
                 .collect::<Vec<_>>(),
         }
         .build()
         .report_error(&cx));
     }
-    let Some((pkg_id, should_activate)) = latest_packages.into_values().next() else {
+    let Some(candidate) = latest_packages.into_values().next() else {
         return Err(NoMatchingPackageSnafu { pkg_spec }
             .build()
             .report_error(&cx));
     };
-    Ok((pkg_id, should_activate))
+    Ok(candidate)
 }
 
-fn dedup(pkg_ids: &mut Vec<(PackageId, bool)>) {
-    let latest_versions = collect_latest_packages(pkg_ids.iter().cloned());
+fn dedup_candidates(candidates: &mut Vec<UpdateCandidate>) {
+    let latest_versions = collect_latest_packages(candidates.iter().cloned());
     let mut seen = BTreeSet::new();
-    pkg_ids.retain(|(pkg_id, _activate)| {
+    candidates.retain(|candidate| {
         latest_versions
-            .get(pkg_id.name())
-            .is_some_and(|(latest_pkg_id, _activate)| latest_pkg_id == pkg_id)
-            && seen.insert(pkg_id.clone())
+            .get(candidate.pkg_id.name())
+            .is_some_and(|latest| latest.pkg_id == candidate.pkg_id)
+            && seen.insert(candidate.pkg_id.clone())
     });
 }
 
@@ -210,33 +238,29 @@ fn find_update_target<S>(
 where
     S: ReportScope,
 {
-    let mut manifests = vec![];
-    for index in indexes {
-        let manifest = index
+    let matches = lookup::collect_registry_matches(indexes, |index| {
+        index
             .find_latest_package_by_name(pkg_id.name(), include_pre_release)
             .context(FindLatestPackageSnafu {
                 reg_id: index.id(),
                 name: pkg_id.name(),
             })
-            .report_error(cx)?
-            .filter(|manifest| &manifest.version > pkg_id.version());
-        if let Some(manifest) = manifest {
-            manifests.push((index.id().clone(), manifest));
-        }
-    }
-    if manifests.len() > 1 {
-        let pkg_ids = manifests
+            .report_error(cx)
+            .map(|manifest| manifest.filter(|manifest| &manifest.version > pkg_id.version()))
+    })?;
+
+    lookup::into_unique_match(matches).map_err(|matches| {
+        let pkg_ids = matches
             .into_iter()
             .map(|(reg_id, manifest)| (reg_id, manifest.id()))
             .collect::<Vec<_>>();
-        return Err(MultipleMatchingPackagesInRegistriesSnafu {
+        MultipleMatchingPackagesInRegistriesSnafu {
             name: pkg_id.name(),
             pkg_ids,
         }
         .build()
-        .report_error(&cx));
-    }
-    Ok(manifests.into_iter().next())
+        .report_error(cx)
+    })
 }
 
 #[cfg(test)]
@@ -244,7 +268,7 @@ mod tests {
     use std::str::FromStr as _;
 
     use super::*;
-    use crate::util::testing;
+    use crate::{engine::resolve, util::testing};
 
     #[test]
     fn resolve_update_targets_updates_installed_packages_with_newer_versions_only() {
@@ -263,12 +287,7 @@ mod tests {
             testing::mark_as_incomplete_install(db, &incomplete_manifest);
 
             let targets = resolve_update_targets(cx, db, &[registry], &[], false).unwrap();
-            let target_ids = targets
-                .iter()
-                .map(|target| target.manifest.id().to_string())
-                .collect::<Vec<_>>();
-
-            assert_eq!(target_ids, vec!["update-font@2.0.0"]);
+            resolve::testing::assert_install_target_ids(&targets, &["update-font@2.0.0"]);
         });
     }
 
@@ -288,8 +307,7 @@ mod tests {
 
             let targets = resolve_update_targets(cx, db, &[registry], &pkg_specs, false).unwrap();
 
-            assert_eq!(targets.len(), 1);
-            assert_eq!(targets[0].manifest.id().to_string(), "example-font@2.0.0");
+            resolve::testing::assert_single_install_target_id(&targets, "example-font@2.0.0");
         });
     }
 
@@ -331,9 +349,7 @@ mod tests {
 
             let targets = resolve_update_targets(cx, db, &[registry], &pkg_specs, false).unwrap();
 
-            assert_eq!(targets.len(), 1);
-            assert_eq!(targets[0].manifest.id().to_string(), "example-font@4.0.0");
-            assert!(!targets[0].should_activate);
+            resolve::testing::assert_single_install_target(&targets, "example-font@4.0.0", false);
         });
     }
 
@@ -371,8 +387,7 @@ mod tests {
 
             let targets = resolve_update_targets(cx, db, &registries, &[], false).unwrap();
 
-            assert_eq!(targets.len(), 1);
-            assert_eq!(targets[0].manifest.id().to_string(), "example-font@1.0.1");
+            resolve::testing::assert_single_install_target_id(&targets, "example-font@1.0.1");
         });
     }
 
@@ -390,11 +405,7 @@ mod tests {
 
             let targets = resolve_update_targets(cx, db, &registries, &[], true).unwrap();
 
-            assert_eq!(targets.len(), 1);
-            assert_eq!(
-                targets[0].manifest.id().to_string(),
-                "example-font@2.0.0-rc-1"
-            );
+            resolve::testing::assert_single_install_target_id(&targets, "example-font@2.0.0-rc-1");
         });
     }
 }

@@ -15,6 +15,8 @@ use crate::{
     util::macros::concat_line,
 };
 
+use super::ResolvedUninstallTarget;
+
 #[derive(Debug, Default)]
 struct UninstallResolveScope<S> {
     _base_scope: PhantomData<S>,
@@ -45,17 +47,6 @@ enum UninstallResolveErrorReport {
     MultipleMatchingPackages {
         pkg_spec: PackageSpec,
         pkg_ids: Vec<PackageId>,
-    },
-}
-
-#[derive(Debug, Clone, derive_more::IsVariant)]
-pub(crate) enum ResolvedUninstallTarget {
-    Uninstall {
-        pkg_id: PackageId,
-        should_deactivate: bool,
-    },
-    AlreadyUninstalled {
-        pkg_spec: PackageSpec,
     },
 }
 
@@ -122,22 +113,30 @@ fn dedup_targets(targets: &mut Vec<ResolvedUninstallTarget>) {
 
 #[cfg(test)]
 mod tests {
-    use std::{assert_matches, str::FromStr as _};
+    use std::{
+        str::FromStr as _,
+        sync::{Arc, LazyLock},
+    };
 
     use super::*;
-    use crate::util::testing;
+    use crate::{engine::resolve, package::PackageManifest, util::testing};
+
+    static MANIFEST: LazyLock<Arc<PackageManifest>> =
+        LazyLock::new(|| testing::make_manifest("example-font@0.1.0"));
+    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| MANIFEST.id());
+    static EXACT_SPEC: LazyLock<PackageSpec> =
+        LazyLock::new(|| PackageSpec::from_str("example-font@0.1.0").unwrap());
+    static NAME_SPEC: LazyLock<PackageSpec> =
+        LazyLock::new(|| PackageSpec::from_str("example-font").unwrap());
 
     #[test]
     fn resolve_spec_returns_already_uninstalled_for_missing_specs() {
         testing::with_db(|cx, db| {
             let scope_cx = UninstallResolveScope::start(cx);
-            let pkg_specs = vec![
-                PackageSpec::from_str("example-font@0.1.0").unwrap(),
-                PackageSpec::from_str("example-font").unwrap(),
-            ];
+            let pkg_specs = vec![EXACT_SPEC.clone(), NAME_SPEC.clone()];
             for spec in &pkg_specs {
                 let target = resolve_spec(&scope_cx, db, spec).unwrap();
-                assert_matches!(target, ResolvedUninstallTarget::AlreadyUninstalled { pkg_spec } if pkg_spec == *spec);
+                resolve::testing::assert_already_uninstalled(&target, spec);
             }
 
             let targets = resolve_uninstall_targets(cx, db, &pkg_specs).unwrap();
@@ -148,20 +147,11 @@ mod tests {
     #[test]
     fn resolve_spec_resolves_installed_entry_from_id_and_name_without_deactivation() {
         testing::with_scoped_db(|cx, db| {
-            let manifest = testing::make_manifest("example-font@0.1.0");
-            let expected = manifest.id();
-            testing::mark_as_installed(db, &manifest);
+            testing::mark_as_installed(db, &MANIFEST);
 
-            for spec in [
-                PackageSpec::from_str("example-font@0.1.0").unwrap(),
-                PackageSpec::from_str("example-font").unwrap(),
-            ] {
+            for spec in [EXACT_SPEC.clone(), NAME_SPEC.clone()] {
                 let target = resolve_spec(cx, db, &spec).unwrap();
-                assert_matches!(
-                    target,
-                    ResolvedUninstallTarget::Uninstall { pkg_id, should_deactivate }
-                        if pkg_id == expected && !should_deactivate
-                );
+                resolve::testing::assert_uninstall_target(&target, &PKG_ID, false);
             }
         });
     }
@@ -169,17 +159,10 @@ mod tests {
     #[test]
     fn resolve_spec_requests_deactivation_for_active_entries() {
         testing::with_scoped_db(|cx, db| {
-            let manifest = testing::make_manifest("example-font@0.1.0");
-            let expected = manifest.id();
-            let spec = PackageSpec::from_str("example-font").unwrap();
-            testing::mark_as_active(db, &manifest);
+            testing::mark_as_active(db, &MANIFEST);
 
-            let target = resolve_spec(cx, db, &spec).unwrap();
-            assert_matches!(
-                target,
-                ResolvedUninstallTarget::Uninstall { pkg_id, should_deactivate }
-                    if pkg_id == expected && should_deactivate
-            );
+            let target = resolve_spec(cx, db, &NAME_SPEC).unwrap();
+            resolve::testing::assert_uninstall_target(&target, &PKG_ID, true);
         });
     }
 
@@ -218,47 +201,29 @@ mod tests {
 
     #[test]
     fn resolve_uninstall_targets_collapses_duplicate_specs() {
-        let manifest = testing::make_manifest("example-font@0.1.0");
-        let expected_pkg_id = manifest.id();
-        let pkg_specs = vec![
-            PackageSpec::from_str("example-font@0.1.0").unwrap(),
-            PackageSpec::from_str("example-font").unwrap(),
-        ];
+        let pkg_specs = vec![EXACT_SPEC.clone(), NAME_SPEC.clone()];
 
         testing::with_db(|cx, db| {
-            testing::mark_as_installed(db, &manifest);
+            testing::mark_as_installed(db, &MANIFEST);
             let targets = resolve_uninstall_targets(cx, db, &pkg_specs).unwrap();
 
             assert_eq!(targets.len(), 1);
-            assert_matches!(&targets[0], ResolvedUninstallTarget::Uninstall { pkg_id, .. } if pkg_id == &expected_pkg_id);
+            resolve::testing::assert_uninstall_target(&targets[0], &PKG_ID, false);
         });
     }
 
     #[test]
     fn resolve_spec_resolves_incomplete_entries_without_deactivation() {
-        let manifest = testing::make_manifest("example-font@0.1.0");
-        let pkg_id = manifest.id();
-
-        let spec = PackageSpec::from_str("example-font").unwrap();
-
         testing::with_scoped_db(|cx, db| {
-            testing::mark_as_incomplete_install(db, &manifest);
+            for mark_as_state in [
+                testing::mark_as_incomplete_install,
+                testing::mark_as_incomplete_uninstall,
+            ] {
+                mark_as_state(db, &MANIFEST);
 
-            let target = resolve_spec(cx, db, &spec).unwrap();
-            assert_matches!(
-                target,
-                ResolvedUninstallTarget::Uninstall { pkg_id: target_id, should_deactivate }
-                    if target_id == pkg_id && !should_deactivate
-            );
-
-            testing::mark_as_incomplete_uninstall(db, &manifest);
-
-            let target = resolve_spec(cx, db, &spec).unwrap();
-            assert_matches!(
-                target,
-                ResolvedUninstallTarget::Uninstall { pkg_id: target_id, should_deactivate }
-                    if target_id == pkg_id && !should_deactivate
-            );
+                let target = resolve_spec(cx, db, &NAME_SPEC).unwrap();
+                resolve::testing::assert_uninstall_target(&target, &PKG_ID, false);
+            }
         });
     }
 

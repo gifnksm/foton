@@ -22,7 +22,7 @@ use crate::{
     util::macros::concat_line,
 };
 
-use super::registry;
+use super::{InstallTargetSource, ResolvedInstallTarget, lookup};
 
 #[derive(Debug, Default)]
 struct InstallResolveScope<S> {
@@ -77,32 +77,10 @@ enum InstallResolveErrorReport {
     },
 }
 
-#[derive(Debug, Clone, derive_more::Display)]
-pub(crate) enum InstallTargetSource {
-    #[display("package registry {_0}")]
-    Registry(RegistryId),
-    #[display("installed package")]
-    Installed,
-    #[display("manifest file: {}", _0.display())]
-    File(PathBuf),
-}
-
 #[derive(Debug, Clone)]
-pub(crate) struct ResolvedInstallTarget {
-    pub(crate) source: InstallTargetSource,
-    pub(crate) manifest: Arc<PackageManifest>,
-    pub(crate) should_activate: bool,
-}
-
-#[derive(Debug, Clone, derive_more::IsVariant)]
 enum ResolveState {
-    Resolved {
-        source: InstallTargetSource,
-        manifest: Arc<PackageManifest>,
-    },
-    Unresolved {
-        pkg_spec: PackageSpec,
-    },
+    Resolved(ResolvedInstallTarget),
+    Unresolved { pkg_spec: PackageSpec },
 }
 
 pub(crate) fn resolve_install_targets_by_spec<S>(
@@ -119,32 +97,21 @@ where
     let cx =
         InstallResolveScope::start_with_report(cx, format_args!("Resolving install target..."));
 
-    let targets: Vec<_> = pkg_specs
+    let mut indexes = LazyRegistryIndexes::new(&cx, registries);
+    let mut targets = pkg_specs
         .iter()
-        .map(|pkg_spec| resolve_installed_package(db, pkg_spec))
-        .collect();
-
-    let mut targets = if targets.iter().all(ResolveState::is_resolved) {
-        targets
-            .into_iter()
-            .map(|target| match target {
-                ResolveState::Resolved { source, manifest } => ResolvedInstallTarget {
-                    source,
-                    manifest,
-                    should_activate,
-                },
-                ResolveState::Unresolved { .. } => unreachable!(),
-            })
-            .collect()
-    } else {
-        let indexes = registry::fetch_registries(&cx, registries)?;
-        targets
-            .into_iter()
-            .map(|target| {
-                resolve_from_registry(&cx, &indexes, target, include_pre_release, should_activate)
-            })
-            .collect_to_end()?
-    };
+        .map(|pkg_spec| resolve_spec_from_installed_packages(db, pkg_spec, should_activate))
+        .map(|state| match state {
+            ResolveState::Resolved(target) => Ok(target),
+            ResolveState::Unresolved { pkg_spec } => resolve_spec_from_registry(
+                &cx,
+                &mut indexes,
+                &pkg_spec,
+                include_pre_release,
+                should_activate,
+            ),
+        })
+        .collect_to_end::<Vec<_>>()?;
 
     dedup_by_id(&mut targets);
     check_conflicts(&cx, &targets)?;
@@ -177,7 +144,11 @@ where
     Ok(targets)
 }
 
-fn resolve_installed_package(db: &PackageDatabase<'_>, pkg_spec: &PackageSpec) -> ResolveState {
+fn resolve_spec_from_installed_packages(
+    db: &PackageDatabase<'_>,
+    pkg_spec: &PackageSpec,
+    should_activate: bool,
+) -> ResolveState {
     let installed_pkg = db
         .entries_by_spec(pkg_spec)
         .filter_map(|entry| {
@@ -185,10 +156,11 @@ fn resolve_installed_package(db: &PackageDatabase<'_>, pkg_spec: &PackageSpec) -
         })
         .max_by(|a, b| a.version.cmp(&b.version));
     if let Some(manifest) = installed_pkg {
-        ResolveState::Resolved {
+        ResolveState::Resolved(ResolvedInstallTarget {
             source: InstallTargetSource::Installed,
             manifest,
-        }
+            should_activate,
+        })
     } else {
         ResolveState::Unresolved {
             pkg_spec: pkg_spec.clone(),
@@ -196,31 +168,52 @@ fn resolve_installed_package(db: &PackageDatabase<'_>, pkg_spec: &PackageSpec) -
     }
 }
 
-fn resolve_from_registry<S>(
-    cx: &ReportContext<InstallResolveScope<S>>,
-    indexes: &[RegistryIndex],
-    target: ResolveState,
-    include_pre_release: bool,
-    should_activate: bool,
-) -> Result<ResolvedInstallTarget, S::Error>
+#[derive(Debug)]
+struct LazyRegistryIndexes<'cx, 'reg, S> {
+    cx: &'cx ReportContext<InstallResolveScope<S>>,
+    registries: &'reg [RegistrySpec],
+    indexes: Option<Vec<RegistryIndex>>,
+}
+
+impl<'cx, 'reg, S> LazyRegistryIndexes<'cx, 'reg, S>
 where
     S: ReportScope,
 {
-    match target {
-        ResolveState::Resolved { source, manifest } => Ok(ResolvedInstallTarget {
-            source,
-            manifest,
-            should_activate,
-        }),
-        ResolveState::Unresolved { pkg_spec } => {
-            resolve_spec_from_registry(cx, indexes, &pkg_spec, include_pre_release, should_activate)
+    fn new(
+        cx: &'cx ReportContext<InstallResolveScope<S>>,
+        registries: &'reg [RegistrySpec],
+    ) -> Self {
+        Self {
+            cx,
+            registries,
+            indexes: None,
         }
+    }
+
+    #[cfg(test)]
+    fn new_for_test(
+        cx: &'cx ReportContext<InstallResolveScope<S>>,
+        indexes: Vec<RegistryIndex>,
+    ) -> Self {
+        Self {
+            cx,
+            registries: &[],
+            indexes: Some(indexes),
+        }
+    }
+
+    fn get_or_fetch(&mut self) -> Result<&[RegistryIndex], S::Error> {
+        if self.indexes.is_none() {
+            let indexes = super::fetch_registries(self.cx, self.registries)?;
+            self.indexes = Some(indexes);
+        }
+        Ok(self.indexes.as_ref().unwrap())
     }
 }
 
 fn resolve_spec_from_registry<S>(
     cx: &ReportContext<InstallResolveScope<S>>,
-    indexes: &[RegistryIndex],
+    indexes: &mut LazyRegistryIndexes<'_, '_, S>,
     pkg_spec: &PackageSpec,
     include_pre_release: bool,
     should_activate: bool,
@@ -228,37 +221,31 @@ fn resolve_spec_from_registry<S>(
 where
     S: ReportScope,
 {
-    let mut manifests = vec![];
-    for index in indexes {
-        let manifest = index
+    let indexes = indexes.get_or_fetch()?;
+    let matches = lookup::collect_registry_matches(indexes, |index| {
+        index
             .find_latest_package_by_spec(pkg_spec, include_pre_release)
             .context(FindLatestPackageBySpecSnafu { pkg_spec })
-            .report_error(cx)?;
-        if let Some(manifest) = manifest {
-            manifests.push((index.id(), manifest));
-        }
-    }
+            .report_error(cx)
+    })?;
 
-    if manifests.len() > 1 {
-        let pkg_ids = manifests
+    let Some((reg_id, manifest)) = lookup::into_unique_match(matches).map_err(|matches| {
+        let pkg_ids = matches
             .into_iter()
-            .map(|(registry, pkg)| (registry.clone(), pkg.id()))
+            .map(|(registry, manifest)| (registry, manifest.id()))
             .collect::<Vec<_>>();
-        return Err(
-            MultipleMatchingPackagesInRegistriesSnafu { pkg_spec, pkg_ids }
-                .build()
-                .report_error(&cx),
-        );
-    }
-
-    let Some((reg_id, manifest)) = manifests.into_iter().next() else {
+        MultipleMatchingPackagesInRegistriesSnafu { pkg_spec, pkg_ids }
+            .build()
+            .report_error(cx)
+    })?
+    else {
         return Err(PackageNotFoundForSpecSnafu { pkg_spec }
             .build()
-            .report_error(&cx));
+            .report_error(cx));
     };
 
     Ok(ResolvedInstallTarget {
-        source: InstallTargetSource::Registry(reg_id.clone()),
+        source: InstallTargetSource::Registry(reg_id),
         manifest,
         should_activate,
     })
@@ -306,30 +293,38 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::util::testing;
+    use crate::{engine::resolve, util::testing};
 
     #[test]
-    fn resolve_installed_package_returns_resolved_when_matching_package_is_installed() {
+    fn resolve_spec_from_installed_packages_returns_resolved_when_matching_package_is_installed() {
         let manifest = testing::make_manifest("example-font@1.0.0");
         let spec = PackageSpec::from_str("example-font").unwrap();
 
         testing::with_db(|_cx, db| {
             testing::mark_as_installed(db, &manifest);
 
-            let target = resolve_installed_package(db, &spec);
-            assert_matches!(target, ResolveState::Resolved { manifest: resolved_manifest, .. } if Arc::ptr_eq(&resolved_manifest, &manifest));
+            let target = resolve_spec_from_installed_packages(db, &spec, true);
+            assert_matches!(
+                target,
+                ResolveState::Resolved(ResolvedInstallTarget {
+                    source: InstallTargetSource::Installed,
+                    manifest: resolved_manifest,
+                    should_activate: true,
+                }) if Arc::ptr_eq(&resolved_manifest, &manifest)
+            );
         });
     }
 
     #[test]
-    fn resolve_installed_package_returns_unresolved_when_matching_package_is_incomplete_install() {
+    fn resolve_spec_from_installed_packages_returns_unresolved_when_matching_package_is_incomplete_install()
+     {
         let manifest = testing::make_manifest("example-font@1.0.0");
         let spec = PackageSpec::from_str("example-font").unwrap();
 
         testing::with_db(|_cx, db| {
             testing::mark_as_incomplete_install(db, &manifest);
 
-            let target = resolve_installed_package(db, &spec);
+            let target = resolve_spec_from_installed_packages(db, &spec, true);
             assert_matches!(
                 target,
                 ResolveState::Unresolved { pkg_spec } if pkg_spec == spec
@@ -338,14 +333,14 @@ mod tests {
     }
 
     #[test]
-    fn resolve_installed_package_returns_unresolved_when_no_packages_match() {
+    fn resolve_spec_from_installed_packages_returns_unresolved_when_no_packages_match() {
         let installed_manifest = testing::make_manifest("installed-font@1.0.0");
         let missing_spec = PackageSpec::from_str("missing-font").unwrap();
 
         testing::with_db(|_cx, db| {
             testing::mark_as_installed(db, &installed_manifest);
 
-            let target = resolve_installed_package(db, &missing_spec);
+            let target = resolve_spec_from_installed_packages(db, &missing_spec, true);
             assert_matches!(
                 target,
                 ResolveState::Unresolved { pkg_spec } if pkg_spec == missing_spec
@@ -373,9 +368,10 @@ mod tests {
             let targets =
                 resolve_install_targets_by_spec(cx, db, &[registry], &pkg_specs, false, true)
                     .unwrap();
-            assert_eq!(targets.len(), 2);
-            assert_eq!(targets[0].manifest.id(), installed_manifest.id());
-            assert_eq!(targets[1].manifest.id().to_string(), "example-font@1.0.0");
+            resolve::testing::assert_install_target_ids(
+                &targets,
+                &[&installed_manifest.id().to_string(), "example-font@1.0.0"],
+            );
         });
     }
 
@@ -447,8 +443,9 @@ mod tests {
 
         testing::with_scoped_context(|cx| {
             let spec = PackageSpec::from_str("example-font").unwrap();
-            let target = resolve_spec_from_registry(cx, &[index], &spec, false, true).unwrap();
-            assert_eq!(target.manifest.id().to_string(), "example-font@0.2.0");
+            let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index]);
+            let target = resolve_spec_from_registry(cx, &mut indexes, &spec, false, true).unwrap();
+            resolve::testing::assert_install_target_id(&target, "example-font@0.2.0");
         });
     }
 
@@ -460,12 +457,10 @@ mod tests {
 
         testing::with_scoped_context(|cx| {
             let spec = PackageSpec::from_str("example-font").unwrap();
+            let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index]);
             let stable_target =
-                resolve_spec_from_registry(cx, &[index], &spec, false, true).unwrap();
-            assert_eq!(
-                stable_target.manifest.id().to_string(),
-                "example-font@1.0.0"
-            );
+                resolve_spec_from_registry(cx, &mut indexes, &spec, false, true).unwrap();
+            resolve::testing::assert_install_target_id(&stable_target, "example-font@1.0.0");
         });
     }
 
@@ -477,8 +472,9 @@ mod tests {
 
         testing::with_scoped_context(|cx| {
             let spec = PackageSpec::from_str("example-font").unwrap();
-            let target = resolve_spec_from_registry(cx, &[index], &spec, true, true).unwrap();
-            assert_eq!(target.manifest.id().to_string(), "example-font@2.0.0-rc-1");
+            let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index]);
+            let target = resolve_spec_from_registry(cx, &mut indexes, &spec, true, true).unwrap();
+            resolve::testing::assert_install_target_id(&target, "example-font@2.0.0-rc-1");
         });
     }
 
@@ -489,8 +485,9 @@ mod tests {
 
         testing::with_scoped_context(|cx| {
             let spec = PackageSpec::from_str("example-font@2.0.0-rc-1").unwrap();
-            let target = resolve_spec_from_registry(cx, &[index], &spec, false, true).unwrap();
-            assert_eq!(target.manifest.id().to_string(), "example-font@2.0.0-rc-1");
+            let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index]);
+            let target = resolve_spec_from_registry(cx, &mut indexes, &spec, false, true).unwrap();
+            resolve::testing::assert_install_target_id(&target, "example-font@2.0.0-rc-1");
         });
     }
 
@@ -501,11 +498,10 @@ mod tests {
         testing::write_manifest(registry_dir1.path(), "example-font@0.2.0");
         testing::write_manifest(registry_dir2.path(), "example-font@1.0.0");
 
-        let indexes = [index1, index2];
-
         testing::with_scoped_context(|cx| {
             let spec: PackageSpec = "example-font".parse().unwrap();
-            let err = resolve_spec_from_registry(cx, &indexes, &spec, false, true).unwrap_err();
+            let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index1, index2]);
+            let err = resolve_spec_from_registry(cx, &mut indexes, &spec, false, true).unwrap_err();
             assert!(err.is_failed());
         });
     }
@@ -513,16 +509,8 @@ mod tests {
     #[test]
     fn check_conflicts_reports_multiple_versions_of_same_package() {
         let targets = vec![
-            ResolvedInstallTarget {
-                source: InstallTargetSource::Installed,
-                manifest: testing::make_manifest("example-font@0.1.0"),
-                should_activate: true,
-            },
-            ResolvedInstallTarget {
-                source: InstallTargetSource::Installed,
-                manifest: testing::make_manifest("example-font@0.2.0"),
-                should_activate: true,
-            },
+            ResolvedInstallTarget::installed(&testing::make_manifest("example-font@0.1.0"), true),
+            ResolvedInstallTarget::installed(&testing::make_manifest("example-font@0.2.0"), true),
         ];
 
         testing::with_scoped_context(|cx| {
@@ -536,16 +524,8 @@ mod tests {
         let manifest = testing::make_manifest("example-font@0.1.0");
         let expected_pkg_id = manifest.id();
         let mut targets = vec![
-            ResolvedInstallTarget {
-                source: InstallTargetSource::Installed,
-                manifest: Arc::clone(&manifest),
-                should_activate: true,
-            },
-            ResolvedInstallTarget {
-                source: InstallTargetSource::Installed,
-                manifest,
-                should_activate: true,
-            },
+            ResolvedInstallTarget::installed(&manifest, true),
+            ResolvedInstallTarget::installed(&manifest, true),
         ];
 
         dedup_by_id(&mut targets);
