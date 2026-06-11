@@ -6,8 +6,8 @@ use crate::{
     cli::{
         context::ReportContext,
         reporter::{
-            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _,
-            ScopeResultWarnExt as _, SubReportScope,
+            NeverReport, ReportScope, ScopeResultErrorExt as _, ScopeResultWarnExt as _,
+            SubReportScope,
         },
     },
     package::FontEntry,
@@ -19,7 +19,7 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct ValidationScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -34,16 +34,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for ValidationScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for ValidationScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum ValidationWarnReport {
@@ -62,12 +53,6 @@ enum ValidationWarnReport {
     },
 }
 
-impl From<ValidationWarnReport> for ReportValue<'static> {
-    fn from(report: ValidationWarnReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
-}
-
 #[derive(Debug, Snafu)]
 enum ValidationErrorReport {
     #[snafu(display("failed to create font validator"))]
@@ -79,12 +64,6 @@ enum ValidationErrorReport {
     },
     #[snafu(display("duplicate font name found in package: {title}"))]
     DuplicateFontName { title: String },
-}
-
-impl From<ValidationErrorReport> for ReportValue<'static> {
-    fn from(report: ValidationErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 pub(super) fn validate_and_prune_fonts<S>(

@@ -11,15 +11,13 @@ use crate::{
     cli::{
         config::FotonConfig,
         context::ReportContext,
-        reporter::{
-            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
-        },
+        reporter::{NeverReport, ReportScope, ScopeResultErrorExt as _, SubReportScope},
     },
     package::{PackageId, PackageSource},
     util::hash::{GenericDigest, GenericHasher},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct DownloadScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -34,16 +32,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for DownloadScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for DownloadScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum DownloadErrorReport {
@@ -73,12 +62,6 @@ enum DownloadErrorReport {
     ReadResponseBody { source: reqwest::Error },
     #[snafu(display("failed to rewind temporary file for downloaded archive"))]
     Rewind { source: io::Error },
-}
-
-impl From<DownloadErrorReport> for ReportValue<'static> {
-    fn from(report: DownloadErrorReport) -> Self {
-        Self::BoxedError(report.into())
-    }
 }
 
 pub(super) async fn download_archive<S>(

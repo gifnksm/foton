@@ -1,9 +1,11 @@
 use std::{
+    error::Error,
     fmt::{self, Debug, Display},
     sync::{Arc, LazyLock, Mutex},
 };
 
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
+use snafu::Snafu;
 
 use crate::{
     cli::{
@@ -27,7 +29,7 @@ pub(crate) enum ReportSeverity {
 #[derive(Debug, derive_more::From)]
 pub(crate) enum ReportValue<'a> {
     FmtArgs(#[from] fmt::Arguments<'a>),
-    BoxedError(#[from] Box<dyn std::error::Error + Send + Sync + 'a>),
+    BoxedError(#[from] Box<dyn Error + Send + Sync + 'a>),
 }
 
 impl Display for ReportValue<'_> {
@@ -159,35 +161,27 @@ impl RootReporter {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Snafu)]
 pub(crate) enum NeverReport {}
 
-impl From<NeverReport> for ReportValue<'_> {
-    fn from(report: NeverReport) -> Self {
-        match report {}
-    }
-}
-
-pub(crate) trait OperationError: Debug {
+pub(crate) trait OperationError: Debug + Error + Send + Sync + 'static {
     fn failed() -> Self;
     fn cancelled() -> Self;
 }
 
-pub(crate) trait ReportScope: Debug + Send + Sync + 'static {
-    type NoticeReportValue: Into<ReportValue<'static>>;
-    type WarnReportValue: Into<ReportValue<'static>>;
-    type ErrorReportValue: Into<ReportValue<'static>>;
+pub(crate) trait ReportScope: Debug + Default + Send + Sync + 'static {
+    type NoticeReportValue: Error + Send + Sync + 'static;
+    type WarnReportValue: Error + Send + Sync + 'static;
+    type ErrorReportValue: Error + Send + Sync + 'static;
     type Error: OperationError;
 }
 
 pub(crate) trait RootReportScope: ReportScope {
-    fn new() -> Self;
-
     fn start(base_cx: &RootContext) -> ReportContext<Self>
     where
         Self: Sized,
     {
-        base_cx.with_scope(Self::new())
+        base_cx.with_scope(Self::default())
     }
 
     fn start_with_report<M>(base_cx: &RootContext, message: M) -> ReportContext<Self>
@@ -202,14 +196,12 @@ pub(crate) trait RootReportScope: ReportScope {
 }
 
 pub(crate) trait SubReportScope<S>: ReportScope {
-    fn new() -> Self;
-
     fn start(base_cx: &ReportContext<S>) -> ReportContext<Self>
     where
         Self: Sized,
         S: ReportScope<Error = Self::Error>,
     {
-        base_cx.with_scope(Self::new())
+        base_cx.with_scope(Self::default())
     }
 
     fn start_with_report<M>(base_cx: &ReportContext<S>, message: M) -> ReportContext<Self>
@@ -268,10 +260,12 @@ where
     }
 
     pub(crate) fn report_notice(&self, report: S::NoticeReportValue) {
+        let report = ReportValue::BoxedError(report.into());
         self.root_reporter.report(Report::notice(report));
     }
 
     pub(crate) fn report_warn(&self, report: S::WarnReportValue) -> Result<(), S::Error> {
+        let report = ReportValue::BoxedError(report.into());
         if self.root_reporter.warnings_as_errors {
             self.root_reporter.report(Report::error(report));
             Err(S::Error::failed())
@@ -282,6 +276,7 @@ where
     }
 
     pub(crate) fn report_error(&self, report: S::ErrorReportValue) -> S::Error {
+        let report = ReportValue::BoxedError(report.into());
         self.root_reporter.report(Report::error(report));
         S::Error::failed()
     }

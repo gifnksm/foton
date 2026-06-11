@@ -10,6 +10,7 @@ use std::{
     },
 };
 
+use snafu::Snafu;
 use tempfile::TempDir;
 
 use crate::{
@@ -28,7 +29,7 @@ use crate::{
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct TestScope {}
 
 impl ReportScope for TestScope {
@@ -38,15 +39,13 @@ impl ReportScope for TestScope {
     type Error = TestError;
 }
 
-impl RootReportScope for TestScope {
-    fn new() -> Self {
-        Self {}
-    }
-}
+impl RootReportScope for TestScope {}
 
-#[derive(Debug, derive_more::IsVariant)]
+#[derive(Debug, derive_more::IsVariant, Snafu)]
 pub(crate) enum TestError {
+    #[snafu(display("test operation failed"))]
     Failed,
+    #[snafu(display("test operation cancelled"))]
     Cancelled,
 }
 

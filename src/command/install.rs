@@ -14,7 +14,7 @@ use crate::{
     registry::RegistrySpec,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct InstallScope {}
 
 impl ReportScope for InstallScope {
@@ -24,11 +24,7 @@ impl ReportScope for InstallScope {
     type Error = InstallError;
 }
 
-impl RootReportScope for InstallScope {
-    fn new() -> Self {
-        Self {}
-    }
-}
+impl RootReportScope for InstallScope {}
 
 #[derive(Debug, Snafu)]
 pub(crate) enum InstallError {

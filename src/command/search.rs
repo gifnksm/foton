@@ -7,8 +7,7 @@ use crate::{
         args::SearchArgs,
         context::RootContext,
         reporter::{
-            NeverReport, OperationError, ReportScope, ReportValue, RootReportScope,
-            ScopeResultErrorExt as _,
+            NeverReport, OperationError, ReportScope, RootReportScope, ScopeResultErrorExt as _,
         },
     },
     engine,
@@ -17,7 +16,7 @@ use crate::{
     util::text::TextMatcher,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct SearchScope {}
 
 impl ReportScope for SearchScope {
@@ -27,11 +26,7 @@ impl ReportScope for SearchScope {
     type Error = SearchError;
 }
 
-impl RootReportScope for SearchScope {
-    fn new() -> Self {
-        Self {}
-    }
-}
+impl RootReportScope for SearchScope {}
 
 #[derive(Debug, Snafu)]
 enum SearchErrorReport {
@@ -50,12 +45,6 @@ enum SearchErrorReport {
     WriteResult { source: io::Error },
     #[snafu(display("no matching packages found"))]
     NoMatchingPackagesFound,
-}
-
-impl From<SearchErrorReport> for ReportValue<'static> {
-    fn from(report: SearchErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 #[derive(Debug, Snafu)]

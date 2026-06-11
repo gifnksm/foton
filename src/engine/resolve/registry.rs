@@ -7,15 +7,15 @@ use crate::{
         context::ReportContext,
         message::BulletList,
         reporter::{
-            NeverReport, ReportScope, ReportValue, ResultIteratorExt as _,
-            ScopeResultErrorExt as _, SubReportScope,
+            NeverReport, ReportScope, ResultIteratorExt as _, ScopeResultErrorExt as _,
+            SubReportScope,
         },
     },
     registry::{self, FetchRegistryError, RegistryId, RegistryIndex, RegistrySpec},
     util::macros::concat_line,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct RegistryScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -30,16 +30,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for RegistryScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for RegistryScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum RegistryErrorReport {
@@ -64,12 +55,6 @@ enum RegistryErrorReport {
         #[snafu(source(from(FetchRegistryError, Box::new)))]
         source: Box<FetchRegistryError>,
     },
-}
-
-impl From<RegistryErrorReport> for ReportValue<'static> {
-    fn from(report: RegistryErrorReport) -> ReportValue<'static> {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 pub(crate) fn resolve_registries_by_id<S>(

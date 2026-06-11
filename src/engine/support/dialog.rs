@@ -7,12 +7,11 @@ use tokio::sync::oneshot;
 use crate::cli::{
     context::ReportContext,
     reporter::{
-        NeverReport, OperationError as _, ReportScope, ReportValue, ScopeResultErrorExt as _,
-        SubReportScope,
+        NeverReport, OperationError as _, ReportScope, ScopeResultErrorExt as _, SubReportScope,
     },
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct DialogScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -27,27 +26,12 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for DialogScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for DialogScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum DialogErrorReport {
     #[snafu(display("failed to receive user confirmation"))]
     UserConfirmation { source: dialoguer::Error },
-}
-
-impl From<DialogErrorReport> for ReportValue<'static> {
-    fn from(report: DialogErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 pub(crate) async fn confirm<S>(cx: &ReportContext<S>, message: &'static str) -> Result<(), S::Error>

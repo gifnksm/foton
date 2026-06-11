@@ -17,7 +17,7 @@ use crate::{
     platform::windows::steps::unregistration::{self, UnregistrationIntent},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct DeactivateExecutionScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -32,16 +32,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for DeactivateExecutionScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for DeactivateExecutionScope<S> where S: ReportScope {}
 
 #[derive(Debug)]
 pub(in crate::engine) struct PreparedDeactivateStep {

@@ -6,8 +6,8 @@ use crate::{
     cli::{
         context::ReportContext,
         reporter::{
-            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _,
-            ScopeResultNoticeExt as _, SubReportScope,
+            NeverReport, ReportScope, ScopeResultErrorExt as _, ScopeResultNoticeExt as _,
+            SubReportScope,
         },
     },
     package::{FontEntry, PackageDirs, PackageId},
@@ -18,7 +18,7 @@ use crate::{
     util::macros::concat_line,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct RegistrationScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -33,16 +33,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for RegistrationScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for RegistrationScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum RegistrationNoticeReport {
@@ -63,22 +54,10 @@ enum RegistrationNoticeReport {
     BroadcastFontAfterActivation { source: SessionError },
 }
 
-impl From<RegistrationNoticeReport> for ReportValue<'static> {
-    fn from(report: RegistrationNoticeReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
-}
-
 #[derive(Debug, Snafu)]
 enum RegistrationErrorReport {
     #[snafu(display("failed to register package fonts in the registry"))]
     RegisterFontsInRegistry { source: RegistryError },
-}
-
-impl From<RegistrationErrorReport> for ReportValue<'static> {
-    fn from(report: RegistrationErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 pub(crate) fn register_package_fonts<S, I>(

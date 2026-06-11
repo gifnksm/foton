@@ -11,8 +11,8 @@ use crate::{
         context::ReportContext,
         message::BulletList,
         reporter::{
-            NeverReport, ReportScope, ReportValue, ResultIteratorExt as _,
-            ScopeResultErrorExt as _, SubReportScope,
+            NeverReport, ReportScope, ResultIteratorExt as _, ScopeResultErrorExt as _,
+            SubReportScope,
         },
     },
     db::PackageDatabase,
@@ -24,7 +24,7 @@ use crate::{
 
 use super::InstallTargetSource;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct UpdateResolveScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -39,16 +39,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for UpdateResolveScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for UpdateResolveScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum UpdateResolveErrorReport {
@@ -85,12 +76,6 @@ enum UpdateResolveErrorReport {
         name: PackageName,
         pkg_ids: Vec<(RegistryId, PackageId)>,
     },
-}
-
-impl From<UpdateResolveErrorReport> for ReportValue<'static> {
-    fn from(report: UpdateResolveErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 pub(crate) fn resolve_update_targets<S>(

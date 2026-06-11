@@ -13,8 +13,7 @@ use crate::{
         context::{ReportContext, RootContext},
         message::BulletList,
         reporter::{
-            NeverReport, OperationError, ReportScope, ReportValue, RootReportScope,
-            ScopeResultErrorExt as _,
+            NeverReport, OperationError, ReportScope, RootReportScope, ScopeResultErrorExt as _,
         },
     },
     engine::{self, ExtractDetail},
@@ -25,7 +24,7 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct CheckManifestScope {}
 
 impl ReportScope for CheckManifestScope {
@@ -35,11 +34,7 @@ impl ReportScope for CheckManifestScope {
     type Error = CheckManifestError;
 }
 
-impl RootReportScope for CheckManifestScope {
-    fn new() -> Self {
-        Self {}
-    }
-}
+impl RootReportScope for CheckManifestScope {}
 
 #[derive(Debug, Snafu)]
 enum CheckManifestWarnReport {
@@ -162,12 +157,6 @@ struct ValueWithSource {
     source_field: &'static str,
 }
 
-impl From<CheckManifestWarnReport> for ReportValue<'static> {
-    fn from(report: CheckManifestWarnReport) -> Self {
-        Self::BoxedError(report.into())
-    }
-}
-
 #[derive(Debug, Snafu)]
 enum CheckManifestErrorReport {
     #[snafu(transparent)]
@@ -178,12 +167,6 @@ enum CheckManifestErrorReport {
     NonAbsoluteTempDir { path: PathBuf },
     #[snafu(display("failed to create package directories for package {pkg_id}"))]
     CreatePackageDirs { pkg_id: PackageId, source: FsError },
-}
-
-impl From<CheckManifestErrorReport> for ReportValue<'static> {
-    fn from(report: CheckManifestErrorReport) -> Self {
-        Self::BoxedError(report.into())
-    }
 }
 
 #[derive(Debug, Snafu)]

@@ -7,15 +7,14 @@ use crate::{
         args::ListArgs,
         context::RootContext,
         reporter::{
-            NeverReport, OperationError, ReportScope, ReportValue, RootReportScope,
-            ScopeResultErrorExt as _,
+            NeverReport, OperationError, ReportScope, RootReportScope, ScopeResultErrorExt as _,
         },
     },
     db::PackageDbEntry,
     engine,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct ListScope {}
 
 impl ReportScope for ListScope {
@@ -25,22 +24,12 @@ impl ReportScope for ListScope {
     type Error = ListError;
 }
 
-impl RootReportScope for ListScope {
-    fn new() -> Self {
-        Self {}
-    }
-}
+impl RootReportScope for ListScope {}
 
 #[derive(Debug, Snafu)]
 enum ListErrorReport {
     #[snafu(display("failed to write entry to stdout"))]
     WriteEntry { source: io::Error },
-}
-
-impl From<ListErrorReport> for ReportValue<'static> {
-    fn from(report: ListErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 #[derive(Debug, Snafu)]

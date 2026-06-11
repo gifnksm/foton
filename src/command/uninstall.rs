@@ -9,7 +9,7 @@ use crate::{
     engine,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct UninstallScope {}
 
 impl ReportScope for UninstallScope {
@@ -19,11 +19,7 @@ impl ReportScope for UninstallScope {
     type Error = UninstallError;
 }
 
-impl RootReportScope for UninstallScope {
-    fn new() -> Self {
-        Self {}
-    }
-}
+impl RootReportScope for UninstallScope {}
 
 #[derive(Debug, Snafu)]
 pub(crate) enum UninstallError {

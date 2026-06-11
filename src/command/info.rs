@@ -7,8 +7,7 @@ use crate::{
         args::InfoArgs,
         context::RootContext,
         reporter::{
-            NeverReport, OperationError, ReportScope, ReportValue, RootReportScope,
-            ScopeResultErrorExt as _,
+            NeverReport, OperationError, ReportScope, RootReportScope, ScopeResultErrorExt as _,
         },
     },
     db::PackageDbEntry,
@@ -16,7 +15,7 @@ use crate::{
     package::{PackageManifest, PackageSource, PackageSpec},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct InfoScope {}
 
 impl ReportScope for InfoScope {
@@ -26,11 +25,7 @@ impl ReportScope for InfoScope {
     type Error = InfoError;
 }
 
-impl RootReportScope for InfoScope {
-    fn new() -> Self {
-        Self {}
-    }
-}
+impl RootReportScope for InfoScope {}
 
 #[derive(Debug, Snafu)]
 enum InfoErrorReport {
@@ -38,12 +33,6 @@ enum InfoErrorReport {
     NoMatchingPackage { pkg_spec: PackageSpec },
     #[snafu(display("failed to write package info to stdout"))]
     WriteInfo { source: io::Error },
-}
-
-impl From<InfoErrorReport> for ReportValue<'static> {
-    fn from(report: InfoErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 #[derive(Debug, Snafu)]
