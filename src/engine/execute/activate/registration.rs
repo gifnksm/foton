@@ -1,9 +1,11 @@
+use std::marker::PhantomData;
+
 use snafu::Snafu;
 
 use crate::{
     cli::{
         context::ReportContext,
-        reporter::{ReportScope, ReportValue, SubReportScope},
+        reporter::{ReportScope, SubReportScope},
     },
     engine::execute::support::CleanupTracker,
     package::{FontEntry, PackageId},
@@ -14,9 +16,9 @@ use crate::{
     util::macros::concat_line,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct RegistrationScope<S> {
-    _base_scope: std::marker::PhantomData<S>,
+    _base_scope: PhantomData<S>,
 }
 
 impl<S> ReportScope for RegistrationScope<S>
@@ -29,16 +31,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for RegistrationScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: std::marker::PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for RegistrationScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum RegistrationNoticeReport {
@@ -51,12 +44,6 @@ enum RegistrationNoticeReport {
         pkg_id = pkg_id,
     ))]
     RollbackRegistrationAfterActivationFailure { pkg_id: PackageId },
-}
-
-impl From<RegistrationNoticeReport> for ReportValue<'static> {
-    fn from(report: RegistrationNoticeReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 pub(super) fn register_package_fonts<S, I>(

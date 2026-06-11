@@ -5,14 +5,12 @@ use snafu::{ResultExt as _, Snafu};
 use crate::{
     cli::{
         context::ReportContext,
-        reporter::{
-            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
-        },
+        reporter::{NeverReport, ReportScope, ScopeResultErrorExt as _, SubReportScope},
     },
     db::{DbLockFile, DbLockFileError, PackageDatabase, PackageDatabaseError},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct DatabaseLoadScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -27,16 +25,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for DatabaseLoadScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for DatabaseLoadScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum DatabaseLoadErrorReport {
@@ -44,12 +33,6 @@ enum DatabaseLoadErrorReport {
     DbLockFile { source: DbLockFileError },
     #[snafu(display("failed to load package database"))]
     LoadDatabase { source: PackageDatabaseError },
-}
-
-impl From<DatabaseLoadErrorReport> for ReportValue<'static> {
-    fn from(report: DatabaseLoadErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 pub(crate) fn open_db_lock_file<S>(cx: &ReportContext<S>) -> Result<DbLockFile, S::Error>

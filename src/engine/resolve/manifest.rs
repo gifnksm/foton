@@ -6,14 +6,14 @@ use crate::{
     cli::{
         context::ReportContext,
         reporter::{
-            NeverReport, ReportScope, ReportValue, ResultIteratorExt as _,
-            ScopeResultErrorExt as _, SubReportScope,
+            NeverReport, ReportScope, ResultIteratorExt as _, ScopeResultErrorExt as _,
+            SubReportScope,
         },
     },
     package::{PackageManifest, PackageManifestError},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct ManifestScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -28,27 +28,12 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for ManifestScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for ManifestScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum ManifestErrorReport {
     #[snafu(transparent)]
     ReadManifest { source: PackageManifestError },
-}
-
-impl From<ManifestErrorReport> for ReportValue<'static> {
-    fn from(report: ManifestErrorReport) -> ReportValue<'static> {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 pub(crate) fn resolve_manifests<S>(

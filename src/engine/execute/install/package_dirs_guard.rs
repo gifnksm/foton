@@ -6,8 +6,8 @@ use crate::{
     cli::{
         context::ReportContext,
         reporter::{
-            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _,
-            ScopeResultNoticeExt as _, SubReportScope,
+            NeverReport, ReportScope, ScopeResultErrorExt as _, ScopeResultNoticeExt as _,
+            SubReportScope,
         },
     },
     engine::execute::support::CleanupTracker,
@@ -15,7 +15,7 @@ use crate::{
     util::{fs::FsError, macros::concat_line},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct PackageDirsScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -30,16 +30,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for PackageDirsScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for PackageDirsScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum PackageDirNoticeReport {
@@ -54,22 +45,10 @@ enum PackageDirNoticeReport {
     RemovePackageDirectoryAfterInstallFailure { pkg_id: PackageId, source: FsError },
 }
 
-impl From<PackageDirNoticeReport> for ReportValue<'static> {
-    fn from(report: PackageDirNoticeReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
-}
-
 #[derive(Debug, Snafu)]
 enum PackageDirErrorReport {
     #[snafu(display("failed to create package directories for package {pkg_id}"))]
     CreatePackageDirs { pkg_id: PackageId, source: FsError },
-}
-
-impl From<PackageDirErrorReport> for ReportValue<'static> {
-    fn from(report: PackageDirErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 pub(super) fn create_new_package_dirs<S>(

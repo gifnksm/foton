@@ -12,8 +12,8 @@ use crate::{
         context::ReportContext,
         message::BulletList,
         reporter::{
-            NeverReport, ReportScope, ReportValue, ResultIteratorExt as _,
-            ScopeResultErrorExt as _, SubReportScope,
+            NeverReport, ReportScope, ResultIteratorExt as _, ScopeResultErrorExt as _,
+            SubReportScope,
         },
     },
     db::PackageDatabase,
@@ -24,7 +24,7 @@ use crate::{
 
 use super::registry;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct InstallResolveScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -39,16 +39,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for InstallResolveScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for InstallResolveScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum InstallResolveErrorReport {
@@ -84,12 +75,6 @@ enum InstallResolveErrorReport {
     ConflictingRequirements {
         pkg_ids: Vec<(InstallTargetSource, PackageId)>,
     },
-}
-
-impl From<InstallResolveErrorReport> for ReportValue<'static> {
-    fn from(report: InstallResolveErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 #[derive(Debug, Clone, derive_more::Display)]

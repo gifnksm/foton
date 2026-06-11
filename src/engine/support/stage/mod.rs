@@ -6,7 +6,7 @@ pub(crate) use self::extract::*;
 use crate::{
     cli::{
         context::ReportContext,
-        reporter::{NeverReport, OperationError as _, ReportScope, ReportValue, SubReportScope},
+        reporter::{NeverReport, OperationError as _, ReportScope, SubReportScope},
     },
     package::{FontEntry, PackageDirs, PackageId, PackageManifest},
 };
@@ -15,7 +15,7 @@ mod download;
 mod extract;
 mod validate;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct StageScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -30,27 +30,12 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for StageScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for StageScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum StageErrorReport {
     #[snafu(display("no valid font files found in package {pkg_id}"))]
     NoValidFonts { pkg_id: PackageId },
-}
-
-impl From<StageErrorReport> for ReportValue<'static> {
-    fn from(report: StageErrorReport) -> Self {
-        Self::BoxedError(report.into())
-    }
 }
 
 pub(crate) async fn stage_package<S>(

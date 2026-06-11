@@ -9,7 +9,7 @@ use crate::{
     engine,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct RepairScope {}
 
 impl ReportScope for RepairScope {
@@ -19,11 +19,7 @@ impl ReportScope for RepairScope {
     type Error = RepairError;
 }
 
-impl RootReportScope for RepairScope {
-    fn new() -> Self {
-        Self {}
-    }
-}
+impl RootReportScope for RepairScope {}
 
 #[derive(Debug, Snafu)]
 pub(crate) enum RepairError {

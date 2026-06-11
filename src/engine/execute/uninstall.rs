@@ -6,9 +6,7 @@ use snafu::{IntoError as _, ResultExt as _, Snafu};
 use crate::{
     cli::{
         context::ReportContext,
-        reporter::{
-            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
-        },
+        reporter::{NeverReport, ReportScope, ScopeResultErrorExt as _, SubReportScope},
     },
     db::{PackageDatabase, PackageDatabaseError, PackageDatabaseTransaction},
     engine::{
@@ -19,7 +17,7 @@ use crate::{
     util::{fs::FsError, macros::concat_line},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct UninstallExecutionScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -34,16 +32,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for UninstallExecutionScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for UninstallExecutionScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum UninstallExecutionErrorReport {
@@ -56,12 +45,6 @@ enum UninstallExecutionErrorReport {
         pkg_id = pkg_id,
     ))]
     RemovePackageFiles { pkg_id: PackageId, source: FsError },
-}
-
-impl From<UninstallExecutionErrorReport> for ReportValue<'static> {
-    fn from(report: UninstallExecutionErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 #[derive(Debug)]

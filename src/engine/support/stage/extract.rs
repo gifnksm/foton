@@ -13,9 +13,7 @@ use crate::{
     cli::{
         config::FotonConfig,
         context::ReportContext,
-        reporter::{
-            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
-        },
+        reporter::{NeverReport, ReportScope, ScopeResultErrorExt as _, SubReportScope},
     },
     util::{
         glob::PathPattern,
@@ -23,7 +21,7 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct ExtractScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -38,16 +36,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for ExtractScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for ExtractScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum ExtractErrorReport {
@@ -81,12 +70,6 @@ enum ExtractErrorReport {
     CopyExtractedFile { path: PathBuf, source: io::Error },
     #[snafu(display("failed to flush font file: {path}", path = path.display()))]
     FlushExtractedFile { path: PathBuf, source: io::Error },
-}
-
-impl From<ExtractErrorReport> for ReportValue<'static> {
-    fn from(report: ExtractErrorReport) -> Self {
-        Self::BoxedError(report.into())
-    }
 }
 
 #[derive(Debug, Clone)]

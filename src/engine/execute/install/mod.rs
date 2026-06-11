@@ -6,9 +6,7 @@ use snafu::{IntoError as _, ResultExt as _, Snafu};
 use crate::{
     cli::{
         context::ReportContext,
-        reporter::{
-            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _, SubReportScope,
-        },
+        reporter::{NeverReport, ReportScope, ScopeResultErrorExt as _, SubReportScope},
     },
     db::{PackageDatabase, PackageDatabaseError, PackageDatabaseTransaction},
     engine::{
@@ -26,7 +24,7 @@ use crate::{
 
 mod package_dirs_guard;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct InstallExecutionScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -41,22 +39,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for InstallExecutionScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
-
-impl From<InstallExecutionErrorReport> for ReportValue<'static> {
-    fn from(report: InstallExecutionErrorReport) -> Self {
-        Self::BoxedError(report.into())
-    }
-}
+impl<S> SubReportScope<S> for InstallExecutionScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum InstallExecutionErrorReport {

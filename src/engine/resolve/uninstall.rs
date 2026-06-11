@@ -6,14 +6,14 @@ use crate::{
     cli::{
         context::ReportContext,
         message::BulletList,
-        reporter::{NeverReport, ReportScope, ReportValue, ResultIteratorExt as _, SubReportScope},
+        reporter::{NeverReport, ReportScope, ResultIteratorExt as _, SubReportScope},
     },
     db::PackageDatabase,
     package::{PackageId, PackageSpec},
     util::macros::concat_line,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct UninstallResolveScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -28,16 +28,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for UninstallResolveScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for UninstallResolveScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum UninstallResolveErrorReport {
@@ -53,12 +44,6 @@ enum UninstallResolveErrorReport {
         pkg_spec: PackageSpec,
         pkg_ids: Vec<PackageId>,
     },
-}
-
-impl From<UninstallResolveErrorReport> for ReportValue<'static> {
-    fn from(report: UninstallResolveErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 #[derive(Debug, Clone, derive_more::IsVariant)]

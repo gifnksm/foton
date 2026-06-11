@@ -6,8 +6,8 @@ use crate::{
     cli::{
         context::ReportContext,
         reporter::{
-            NeverReport, ReportScope, ReportValue, ScopeResultErrorExt as _,
-            ScopeResultNoticeExt as _, SubReportScope,
+            NeverReport, ReportScope, ScopeResultErrorExt as _, ScopeResultNoticeExt as _,
+            SubReportScope,
         },
     },
     package::PackageId,
@@ -18,7 +18,7 @@ use crate::{
     util::macros::concat_line,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct UnregistrationScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -33,16 +33,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for UnregistrationScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for UnregistrationScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum UnregistrationNoticeReport {
@@ -57,22 +48,10 @@ enum UnregistrationNoticeReport {
     BroadcastFontAfterUninstall { source: SessionError },
 }
 
-impl From<UnregistrationNoticeReport> for ReportValue<'static> {
-    fn from(report: UnregistrationNoticeReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
-}
-
 #[derive(Debug, Snafu)]
 enum UnregistrationErrorReport {
     #[snafu(display("failed to unregister package fonts from the registry"))]
     UnregisterFontsFromRegistry { source: RegistryError },
-}
-
-impl From<UnregistrationErrorReport> for ReportValue<'static> {
-    fn from(report: UnregistrationErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 #[derive(Debug, Clone, Copy)]

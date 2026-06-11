@@ -7,8 +7,7 @@ use crate::{
     cli::{
         context::ReportContext,
         reporter::{
-            NeverReport, OperationError as _, ReportScope, ReportValue, ScopeResultErrorExt as _,
-            SubReportScope,
+            NeverReport, OperationError as _, ReportScope, ScopeResultErrorExt as _, SubReportScope,
         },
     },
     db::{PackageDatabase, PackageDatabaseError, PackageDatabaseTransaction},
@@ -28,7 +27,7 @@ mod install;
 mod support;
 mod uninstall;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct ExecuteScope<S> {
     _base_scope: PhantomData<S>,
 }
@@ -43,16 +42,7 @@ where
     type Error = S::Error;
 }
 
-impl<S> SubReportScope<S> for ExecuteScope<S>
-where
-    S: ReportScope,
-{
-    fn new() -> Self {
-        Self {
-            _base_scope: PhantomData,
-        }
-    }
-}
+impl<S> SubReportScope<S> for ExecuteScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 #[expect(clippy::enum_variant_names)]
@@ -111,12 +101,6 @@ enum ExecuteErrorReport {
         pkg_id: PackageId,
         source: PackageDatabaseError,
     },
-}
-
-impl From<ExecuteErrorReport> for ReportValue<'static> {
-    fn from(report: ExecuteErrorReport) -> Self {
-        ReportValue::BoxedError(report.into())
-    }
 }
 
 #[derive(Debug)]
