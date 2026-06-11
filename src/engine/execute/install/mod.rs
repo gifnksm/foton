@@ -109,7 +109,7 @@ where
             )?;
             package::remove_package_dirs(&pkg_dirs)
                 .context(RemovePackageFilesSnafu { pkg_id: &pkg_id })
-                .report_error(cx.reporter())?;
+                .report_error(&cx)?;
             Ok(())
         })?;
 

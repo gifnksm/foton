@@ -5,7 +5,7 @@ use snafu::Snafu;
 use crate::{
     cli::{
         context::ReportContext,
-        reporter::{ReportScope, SubReportScope},
+        reporter::{ErrorReportExt as _, ReportScope, SubReportScope},
     },
     engine::execute::support::CleanupTracker,
     package::{FontEntry, PackageId},
@@ -111,12 +111,11 @@ where
             })
             .is_err()
         {
-            self.cx.reporter().report_notice(
-                RollbackRegistrationAfterActivationFailureSnafu {
-                    pkg_id: self.pkg_id.clone(),
-                }
-                .build(),
-            );
+            RollbackRegistrationAfterActivationFailureSnafu {
+                pkg_id: self.pkg_id.clone(),
+            }
+            .build()
+            .report_notice(&self.cx);
         }
     }
 }

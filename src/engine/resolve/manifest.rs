@@ -49,7 +49,7 @@ where
         .map(|path| {
             let manifest = PackageManifest::read(path)
                 .map_err(ManifestErrorReport::from)
-                .report_error(cx.reporter())?;
+                .report_error(&cx)?;
             Ok((path.clone(), manifest))
         })
         .collect_to_end()

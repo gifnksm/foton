@@ -13,7 +13,8 @@ use crate::{
         context::{ReportContext, RootContext},
         message::BulletList,
         reporter::{
-            NeverReport, OperationError, ReportScope, RootReportScope, ScopeResultErrorExt as _,
+            ErrorReportExt as _, NeverReport, OperationError, ReportScope, RootReportScope,
+            ScopeResultErrorExt as _,
         },
     },
     engine::{self, ExtractDetail},
@@ -196,24 +197,24 @@ pub(crate) async fn check_manifest(
 
     let manifest = PackageManifest::read(manifest_path)
         .map_err(CheckManifestErrorReport::from)
-        .report_error(cx.reporter())?;
+        .report_error(&cx)?;
     let pkg_id = manifest.id();
 
     let tempdir = tempfile::tempdir()
         .context(CreateTempDirSnafu)
-        .report_error(cx.reporter())?;
+        .report_error(&cx)?;
 
     let tempdir_path = AbsolutePath::new(tempdir.path())
         .with_context(|| NonAbsoluteTempDirSnafu {
             path: tempdir.path(),
         })
-        .report_error(cx.reporter())?;
+        .report_error(&cx)?;
 
     let pkg_dirs = PackageDirs::new_in(&tempdir_path, &pkg_id);
 
     package::create_new_package_dirs(&pkg_dirs)
         .context(CreatePackageDirsSnafu { pkg_id })
-        .report_error(cx.reporter())?;
+        .report_error(&cx)?;
 
     let (font_entries, extract_details) = engine::stage_package(&cx, &pkg_dirs, &manifest).await?;
     check_manifest_fields(&cx, &manifest, &font_entries, &extract_details)?;
@@ -240,7 +241,7 @@ fn check_manifest_fields(
 
     let mut err = None;
     for report in reports {
-        if let Err(e) = cx.reporter().report_warn(report) {
+        if let Err(e) = report.report_warn(&cx) {
             err = Some(e);
         }
     }

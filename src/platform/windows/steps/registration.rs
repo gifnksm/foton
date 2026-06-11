@@ -70,7 +70,6 @@ where
     I: IntoIterator<Item = FontEntry>,
 {
     let cx = RegistrationScope::start_with_report(cx, "Registering fonts...");
-    let reporter = cx.reporter();
 
     let pkg_dir = PackageDirs::new(cx.app_dirs(), pkg_id);
     let fonts_dir = pkg_dir.fonts_dir();
@@ -84,17 +83,17 @@ where
     // return the error without reporting it again.
     registry::register_package_fonts(cx.app_id(), pkg_id, &registered_fonts)
         .context(RegisterFontsInRegistrySnafu)
-        .report_error(reporter)?;
+        .report_error(&cx)?;
 
     for entry in &registered_fonts {
         session::load_font(entry.path())
             .context(LoadFontSnafu { path: entry.path() })
-            .report_notice(reporter);
+            .report_notice(&cx);
     }
 
     session::broadcast_font_change()
         .context(BroadcastFontAfterActivationSnafu)
-        .report_notice(reporter);
+        .report_notice(&cx);
 
     Ok(())
 }

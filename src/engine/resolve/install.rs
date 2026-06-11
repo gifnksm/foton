@@ -12,8 +12,8 @@ use crate::{
         context::ReportContext,
         message::BulletList,
         reporter::{
-            NeverReport, ReportScope, ResultIteratorExt as _, ScopeResultErrorExt as _,
-            SubReportScope,
+            ErrorReportExt as _, NeverReport, ReportScope, ResultIteratorExt as _,
+            ScopeResultErrorExt as _, SubReportScope,
         },
     },
     db::PackageDatabase,
@@ -233,7 +233,7 @@ where
         let manifest = index
             .find_latest_package_by_spec(pkg_spec, include_pre_release)
             .context(FindLatestPackageBySpecSnafu { pkg_spec })
-            .report_error(cx.reporter())?;
+            .report_error(cx)?;
         if let Some(manifest) = manifest {
             manifests.push((index.id(), manifest));
         }
@@ -244,15 +244,17 @@ where
             .into_iter()
             .map(|(registry, pkg)| (registry.clone(), pkg.id()))
             .collect::<Vec<_>>();
-        return Err(cx.reporter().report_error(
-            MultipleMatchingPackagesInRegistriesSnafu { pkg_spec, pkg_ids }.build(),
-        ));
+        return Err(
+            MultipleMatchingPackagesInRegistriesSnafu { pkg_spec, pkg_ids }
+                .build()
+                .report_error(&cx),
+        );
     }
 
     let Some((reg_id, manifest)) = manifests.into_iter().next() else {
-        return Err(cx
-            .reporter()
-            .report_error(PackageNotFoundForSpecSnafu { pkg_spec }.build()));
+        return Err(PackageNotFoundForSpecSnafu { pkg_spec }
+            .build()
+            .report_error(&cx));
     };
 
     Ok(ResolvedInstallTarget {
@@ -286,9 +288,9 @@ where
         .into_values()
         .map(|pkg_ids| {
             if pkg_ids.len() > 1 {
-                Err(cx
-                    .reporter()
-                    .report_error(ConflictingRequirementsSnafu { pkg_ids }.build()))
+                Err(ConflictingRequirementsSnafu { pkg_ids }
+                    .build()
+                    .report_error(&cx))
             } else {
                 Ok(())
             }

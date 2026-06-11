@@ -61,7 +61,7 @@ where
     let confirmed = res
         .unwrap()
         .context(UserConfirmationSnafu)
-        .report_error(cx.reporter())?;
+        .report_error(&cx)?;
 
     if !confirmed {
         return Err(S::Error::cancelled());

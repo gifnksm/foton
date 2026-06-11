@@ -11,7 +11,9 @@ use crate::{
     cli::{
         config::FotonConfig,
         context::ReportContext,
-        reporter::{NeverReport, ReportScope, ScopeResultErrorExt as _, SubReportScope},
+        reporter::{
+            ErrorReportExt as _, NeverReport, ReportScope, ScopeResultErrorExt as _, SubReportScope,
+        },
     },
     package::{PackageId, PackageSource},
     util::hash::{GenericDigest, GenericHasher},
@@ -73,7 +75,6 @@ where
     S: ReportScope,
 {
     let cx = DownloadScope::start_with_report(cx, format_args!("Downloading {}...", source.url));
-    let reporter = cx.reporter();
 
     let response = reqwest::get(source.url.clone())
         .await
@@ -81,37 +82,35 @@ where
         .with_context(|_| GetSnafu {
             url: source.url.clone(),
         })
-        .report_error(reporter)?;
+        .report_error(&cx)?;
 
     let len = response.content_length();
     if let Some(len) = len
         && len > cx.config().install.max_archive_size_bytes
     {
-        return Err(reporter.report_error(
-            ReportedSizeExceedsMaxSnafu {
-                reported_size: len,
-                max_size: cx.config().install.max_archive_size_bytes,
-            }
-            .build(),
-        ));
+        return Err(ReportedSizeExceedsMaxSnafu {
+            reported_size: len,
+            max_size: cx.config().install.max_archive_size_bytes,
+        }
+        .build()
+        .report_error(&cx));
     }
     let hasher = source.hash.hasher();
-    let (output, digest) = reporter
+    let (output, digest) = cx
+        .reporter()
         .with_download_progress_bar(len, async |pb| {
             stream_archive_to_tempfile(response.bytes_stream(), hasher, cx.config(), pb).await
         })
         .await
-        .report_error(reporter)?;
+        .report_error(&cx)?;
     if digest != source.hash {
-        let err = reporter.report_error(
-            HashMismatchSnafu {
-                pkg_id,
-                expected: Box::new(source.hash.clone()),
-                got: Box::new(digest),
-            }
-            .build(),
-        );
-        return Err(err);
+        return Err(HashMismatchSnafu {
+            pkg_id,
+            expected: Box::new(source.hash.clone()),
+            got: Box::new(digest),
+        }
+        .build()
+        .report_error(&cx));
     }
     Ok(output)
 }

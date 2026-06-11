@@ -98,7 +98,7 @@ where
         cx,
         format_args!("Extracting archive to {}...", fonts_dir.display()),
     );
-    extract_archive_impl(file, include, exclude, fonts_dir, cx.config()).report_error(cx.reporter())
+    extract_archive_impl(file, include, exclude, fonts_dir, cx.config()).report_error(&cx)
 }
 
 fn extract_archive_impl(

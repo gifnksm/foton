@@ -60,7 +60,6 @@ where
     S: ReportScope,
 {
     let cx = PackageDirsScope::start(cx);
-    let reporter = cx.reporter();
     let pkg_dirs = PackageDirs::new(cx.app_dirs(), pkg_id);
     let mut guard = PackageDirsGuard {
         armed: true,
@@ -71,7 +70,7 @@ where
     };
     package::create_new_package_dirs(&guard.pkg_dirs)
         .context(CreatePackageDirsSnafu { pkg_id })
-        .report_error(reporter)?;
+        .report_error(&cx)?;
     guard.dir_created = true;
     Ok(guard)
 }
@@ -126,7 +125,7 @@ where
             .context(RemovePackageDirectoryAfterInstallFailureSnafu {
                 pkg_id: self.pkg_dirs.pkg_id().clone(),
             })
-            .report_notice(self.cx.reporter());
+            .report_notice(&self.cx);
     }
 }
 

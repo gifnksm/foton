@@ -6,8 +6,8 @@ use crate::{
     cli::{
         context::ReportContext,
         reporter::{
-            NeverReport, ReportScope, ScopeResultErrorExt as _, ScopeResultWarnExt as _,
-            SubReportScope,
+            ErrorReportExt as _, NeverReport, ReportScope, ScopeResultErrorExt as _,
+            ScopeResultWarnExt as _, SubReportScope,
         },
     },
     package::FontEntry,
@@ -75,35 +75,35 @@ where
     S: ReportScope,
 {
     let cx = ValidationScope::start_with_report(cx, "Validating fonts...");
-    let reporter = cx.reporter();
 
     let mut valid_entries = vec![];
     let mut valid_entry_titles = HashSet::new();
     let validator = FontValidator::new()
         .context(CreateValidatorSnafu)
-        .report_error(reporter)?;
+        .report_error(&cx)?;
 
     for file_name in file_names {
         let Some(entry) = validator
             .validate_font(fonts_dir, file_name)
             .context(ValidateFontSnafu { file_name })
-            .report_error(reporter)?
+            .report_error(&cx)?
         else {
             let path = fonts_dir.join(file_name);
-            reporter.report_warn(UnsupportedFontFileSnafu { path: &path }.build())?;
+            UnsupportedFontFileSnafu { path: &path }
+                .build()
+                .report_warn(&cx)?;
             fs_util::remove_file(&path)
                 .context(RemoveUnsupportedFontFileSnafu { path: &path })
-                .report_warn(reporter)?;
+                .report_warn(&cx)?;
             continue;
         };
 
         if !valid_entry_titles.insert(entry.title().to_lowercase()) {
-            return Err(reporter.report_error(
-                DuplicateFontNameSnafu {
-                    title: entry.title(),
-                }
-                .build(),
-            ));
+            return Err(DuplicateFontNameSnafu {
+                title: entry.title(),
+            }
+            .build()
+            .report_error(&cx));
         }
 
         valid_entries.push(entry);
