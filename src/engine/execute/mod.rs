@@ -7,7 +7,8 @@ use crate::{
     cli::{
         context::ReportContext,
         reporter::{
-            NeverReport, OperationError as _, ReportScope, ScopeResultErrorExt as _, SubReportScope,
+            ErrorReportExt as _, NeverReport, OperationError as _, ReportScope,
+            ScopeResultErrorExt as _, SubReportScope,
         },
     },
     db::{PackageDatabase, PackageDatabaseError, PackageDatabaseTransaction},
@@ -263,7 +264,7 @@ where
         if prepared_count > 0 {
             tx.commit()
                 .context(CommitTransactionSnafu)
-                .report_error(cx.reporter())?;
+                .report_error(&cx)?;
         }
     }
 
@@ -295,7 +296,7 @@ where
         state.prepare_ready_steps(&mut tx);
         let commit_result = tx.commit();
         if let Err(source) = commit_result {
-            return Err(cx.reporter().report_error(step.commit_error_report(source)));
+            return Err(step.commit_error_report(source).report_error(&cx));
         }
         if res.is_success() {
             step.after_commit();

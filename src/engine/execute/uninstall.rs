@@ -105,12 +105,11 @@ where
 {
     let cx =
         UninstallExecutionScope::start_with_report(cx, format_args!("Uninstalling {pkg_id}..."));
-    let reporter = cx.reporter();
 
     let pkg_dirs = PackageDirs::new(cx.app_dirs(), pkg_id);
     package::remove_package_dirs(&pkg_dirs)
         .context(RemovePackageFilesSnafu { pkg_id })
-        .report_error(reporter)?;
+        .report_error(&cx)?;
 
     Ok(())
 }

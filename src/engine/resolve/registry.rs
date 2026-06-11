@@ -7,8 +7,8 @@ use crate::{
         context::ReportContext,
         message::BulletList,
         reporter::{
-            NeverReport, ReportScope, ResultIteratorExt as _, ScopeResultErrorExt as _,
-            SubReportScope,
+            ErrorReportExt as _, NeverReport, ReportScope, ResultIteratorExt as _,
+            ScopeResultErrorExt as _, SubReportScope,
         },
     },
     registry::{self, FetchRegistryError, RegistryId, RegistryIndex, RegistrySpec},
@@ -84,7 +84,7 @@ where
                                 available_registry_ids,
                             }
                         })
-                        .report_error(cx.reporter())
+                        .report_error(&cx)
                 })
                 .collect_to_end()?
         }
@@ -95,7 +95,7 @@ where
             .collect(),
     };
     if registries.is_empty() {
-        return Err(cx.reporter().report_error(NoEnabledRegistriesSnafu.build()));
+        return Err(NoEnabledRegistriesSnafu.build().report_error(&cx));
     }
     Ok(registries)
 }
@@ -114,7 +114,7 @@ where
         .map(|registry| {
             registry::fetch_registry(cx.app_dirs(), registry)
                 .context(FetchRegistrySnafu { id: registry.id() })
-                .report_error(cx.reporter())
+                .report_error(&cx)
         })
         .collect::<Result<Vec<_>, _>>()
 }

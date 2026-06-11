@@ -6,7 +6,9 @@ use crate::{
     cli::{
         context::ReportContext,
         message::BulletList,
-        reporter::{NeverReport, ReportScope, ResultIteratorExt as _, SubReportScope},
+        reporter::{
+            ErrorReportExt as _, NeverReport, ReportScope, ResultIteratorExt as _, SubReportScope,
+        },
     },
     db::PackageDatabase,
     package::{PackageId, PackageSpec},
@@ -92,16 +94,15 @@ where
             pkg_id: entry.manifest().id(),
             should_deactivate: !entry.activation_state().is_inactive(),
         }),
-        _ => Err(cx.reporter().report_error(
-            MultipleMatchingPackagesSnafu {
-                pkg_spec: pkg_spec.clone(),
-                pkg_ids: candidates
-                    .into_iter()
-                    .map(|entry| entry.manifest().id())
-                    .collect::<Vec<_>>(),
-            }
-            .build(),
-        )),
+        _ => Err(MultipleMatchingPackagesSnafu {
+            pkg_spec: pkg_spec.clone(),
+            pkg_ids: candidates
+                .into_iter()
+                .map(|entry| entry.manifest().id())
+                .collect::<Vec<_>>(),
+        }
+        .build()
+        .report_error(&cx)),
     }
 }
 

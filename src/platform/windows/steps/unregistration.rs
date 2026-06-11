@@ -78,11 +78,10 @@ where
             UnregistrationScope::start_with_report(cx, "Unregistering fonts...")
         }
     };
-    let reporter = cx.reporter();
 
     let entries = registry::list_registered_package_fonts(cx.app_id(), pkg_id)
         .context(ListInstalledFontsSnafu)
-        .report_notice(reporter);
+        .report_notice(&cx);
 
     if let Some(entries) = entries {
         for entry in entries {
@@ -95,11 +94,11 @@ where
     // return the error without reporting it again.
     let res = registry::unregister_package_fonts(cx.app_id(), pkg_id)
         .context(UnregisterFontsFromRegistrySnafu)
-        .report_error(reporter);
+        .report_error(&cx);
 
     session::broadcast_font_change()
         .context(BroadcastFontAfterUninstallSnafu)
-        .report_notice(reporter);
+        .report_notice(&cx);
 
     res
 }

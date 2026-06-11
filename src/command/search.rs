@@ -79,11 +79,11 @@ pub(crate) fn search_packages(cx: &RootContext, args: &SearchArgs) -> Result<(),
     let indexes = engine::fetch_registries(&cx, &registries)?;
 
     let matcher = TextMatcher::new(queries.clone());
-    let manifests = collect_search_results(&indexes, &matcher, *limit, *pre_release)
-        .report_error(cx.reporter())?;
+    let manifests =
+        collect_search_results(&indexes, &matcher, *limit, *pre_release).report_error(&cx)?;
     render_search_results(&mut io::stdout().lock(), manifests)
         .context(WriteResultSnafu)
-        .report_error(cx.reporter())?;
+        .report_error(&cx)?;
 
     Ok(())
 }

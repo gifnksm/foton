@@ -7,7 +7,8 @@ use crate::{
         args::InfoArgs,
         context::RootContext,
         reporter::{
-            NeverReport, OperationError, ReportScope, RootReportScope, ScopeResultErrorExt as _,
+            ErrorReportExt as _, NeverReport, OperationError, ReportScope, RootReportScope,
+            ScopeResultErrorExt as _,
         },
     },
     db::PackageDbEntry,
@@ -57,7 +58,6 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
     let InfoArgs { pkg_specs } = args;
 
     let cx = InfoScope::start(cx);
-    let reporter = cx.reporter();
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
     let db = engine::load_database(&cx, &mut db_lock_file)?;
@@ -66,14 +66,16 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
     for pkg_spec in pkg_specs {
         let mut entries = db.entries_by_spec(pkg_spec).peekable();
         if entries.peek().is_none() {
-            res = Err(reporter.report_error(NoMatchingPackageSnafu { pkg_spec }.build()));
+            res = Err(NoMatchingPackageSnafu { pkg_spec }
+                .build()
+                .report_error(&cx));
             continue;
         }
 
         for entry in entries {
             render_package_info(io::stdout().lock(), &entry)
                 .context(WriteInfoSnafu)
-                .report_error(reporter)?;
+                .report_error(&cx)?;
         }
     }
 

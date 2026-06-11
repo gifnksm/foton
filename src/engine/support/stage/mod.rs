@@ -6,7 +6,9 @@ pub(crate) use self::extract::*;
 use crate::{
     cli::{
         context::ReportContext,
-        reporter::{NeverReport, OperationError as _, ReportScope, SubReportScope},
+        reporter::{
+            ErrorReportExt as _, NeverReport, OperationError as _, ReportScope, SubReportScope,
+        },
     },
     package::{FontEntry, PackageDirs, PackageId, PackageManifest},
 };
@@ -78,7 +80,7 @@ where
     }
 
     if valid_entries.is_empty() {
-        return Err(reporter.report_error(NoValidFontsSnafu { pkg_id }.build()));
+        return Err(NoValidFontsSnafu { pkg_id }.build().report_error(&cx));
     }
 
     reporter.report_info(format_args!(

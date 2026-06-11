@@ -11,8 +11,8 @@ use crate::{
         context::ReportContext,
         message::BulletList,
         reporter::{
-            NeverReport, ReportScope, ResultIteratorExt as _, ScopeResultErrorExt as _,
-            SubReportScope,
+            ErrorReportExt as _, NeverReport, ReportScope, ResultIteratorExt as _,
+            ScopeResultErrorExt as _, SubReportScope,
         },
     },
     db::PackageDatabase,
@@ -171,22 +171,21 @@ where
                 .then(|| (entry.manifest().id(), entry.activation_state().is_active()))
         }));
     if latest_packages.len() > 1 {
-        return Err(cx.reporter().report_error(
-            MultipleMatchingPackagesSnafu {
-                pkg_spec,
-                pkg_ids: latest_packages
-                    .values()
-                    .map(|(pkg_id, _activate)| pkg_id)
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            }
-            .build(),
-        ));
+        return Err(MultipleMatchingPackagesSnafu {
+            pkg_spec,
+            pkg_ids: latest_packages
+                .values()
+                .map(|(pkg_id, _activate)| pkg_id)
+                .cloned()
+                .collect::<Vec<_>>(),
+        }
+        .build()
+        .report_error(&cx));
     }
     let Some((pkg_id, should_activate)) = latest_packages.into_values().next() else {
-        return Err(cx
-            .reporter()
-            .report_error(NoMatchingPackageSnafu { pkg_spec }.build()));
+        return Err(NoMatchingPackageSnafu { pkg_spec }
+            .build()
+            .report_error(&cx));
     };
     Ok((pkg_id, should_activate))
 }
@@ -219,7 +218,7 @@ where
                 reg_id: index.id(),
                 name: pkg_id.name(),
             })
-            .report_error(cx.reporter())?
+            .report_error(cx)?
             .filter(|manifest| &manifest.version > pkg_id.version());
         if let Some(manifest) = manifest {
             manifests.push((index.id().clone(), manifest));
@@ -230,13 +229,12 @@ where
             .into_iter()
             .map(|(reg_id, manifest)| (reg_id, manifest.id()))
             .collect::<Vec<_>>();
-        return Err(cx.reporter().report_error(
-            MultipleMatchingPackagesInRegistriesSnafu {
-                name: pkg_id.name(),
-                pkg_ids,
-            }
-            .build(),
-        ));
+        return Err(MultipleMatchingPackagesInRegistriesSnafu {
+            name: pkg_id.name(),
+            pkg_ids,
+        }
+        .build()
+        .report_error(&cx));
     }
     Ok(manifests.into_iter().next())
 }

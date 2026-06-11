@@ -327,13 +327,21 @@ where
     }
 }
 
+impl<S> AsRef<ScopedReporter<S>> for ScopedReporter<S> {
+    fn as_ref(&self) -> &ScopedReporter<S> {
+        self
+    }
+}
+
 pub(crate) trait ScopeResultNoticeExt<S>
 where
     S: ReportScope,
 {
     type Item;
 
-    fn report_notice(self, reporter: &ScopedReporter<S>) -> Option<Self::Item>;
+    fn report_notice<R>(self, reporter: R) -> Option<Self::Item>
+    where
+        R: AsRef<ScopedReporter<S>>;
 }
 
 impl<S, T, E> ScopeResultNoticeExt<S> for Result<T, E>
@@ -342,8 +350,12 @@ where
 {
     type Item = T;
 
-    fn report_notice(self, reporter: &ScopedReporter<S>) -> Option<Self::Item> {
-        self.map_err(|err| reporter.report_notice(err)).ok()
+    fn report_notice<R>(self, reporter: R) -> Option<Self::Item>
+    where
+        R: AsRef<ScopedReporter<S>>,
+    {
+        self.map_err(|err| reporter.as_ref().report_notice(err))
+            .ok()
     }
 }
 
@@ -353,7 +365,9 @@ where
 {
     type Item;
 
-    fn report_warn(self, reporter: &ScopedReporter<S>) -> Result<Option<Self::Item>, S::Error>;
+    fn report_warn<R>(self, reporter: R) -> Result<Option<Self::Item>, S::Error>
+    where
+        R: AsRef<ScopedReporter<S>>;
 }
 
 impl<S, T, E> ScopeResultWarnExt<S> for Result<T, E>
@@ -362,11 +376,14 @@ where
 {
     type Item = T;
 
-    fn report_warn(self, reporter: &ScopedReporter<S>) -> Result<Option<Self::Item>, S::Error> {
+    fn report_warn<R>(self, reporter: R) -> Result<Option<Self::Item>, S::Error>
+    where
+        R: AsRef<ScopedReporter<S>>,
+    {
         match self {
             Ok(item) => Ok(Some(item)),
             Err(err) => {
-                reporter.report_warn(err)?;
+                reporter.as_ref().report_warn(err)?;
                 Ok(None)
             }
         }
@@ -379,7 +396,9 @@ where
 {
     type Item;
 
-    fn report_error(self, reporter: &ScopedReporter<S>) -> Result<Self::Item, S::Error>;
+    fn report_error<R>(self, reporter: R) -> Result<Self::Item, S::Error>
+    where
+        R: AsRef<ScopedReporter<S>>;
 }
 
 impl<S, T, E> ScopeResultErrorExt<S> for Result<T, E>
@@ -388,8 +407,11 @@ where
 {
     type Item = T;
 
-    fn report_error(self, reporter: &ScopedReporter<S>) -> Result<Self::Item, S::Error> {
-        self.map_err(|err| reporter.report_error(err))
+    fn report_error<R>(self, reporter: R) -> Result<Self::Item, S::Error>
+    where
+        R: AsRef<ScopedReporter<S>>,
+    {
+        self.map_err(|err| reporter.as_ref().report_error(err))
     }
 }
 
@@ -421,5 +443,57 @@ where
             return Err(err);
         }
         Ok(items)
+    }
+}
+
+pub(crate) trait ErrorReportExt {
+    fn report_notice<S, R>(self, reporter: R)
+    where
+        S: ReportScope<NoticeReportValue = Self>,
+        R: AsRef<ScopedReporter<S>>,
+        Self: Sized;
+
+    fn report_warn<S, R>(self, reporter: R) -> Result<(), S::Error>
+    where
+        S: ReportScope<WarnReportValue = Self>,
+        R: AsRef<ScopedReporter<S>>,
+        Self: Sized;
+
+    fn report_error<S, R>(self, reporter: R) -> S::Error
+    where
+        S: ReportScope<ErrorReportValue = Self>,
+        R: AsRef<ScopedReporter<S>>,
+        Self: Sized;
+}
+
+impl<T> ErrorReportExt for T
+where
+    T: Error + Send + Sync + 'static,
+{
+    fn report_notice<S, R>(self, reporter: R)
+    where
+        S: ReportScope<NoticeReportValue = Self>,
+        R: AsRef<ScopedReporter<S>>,
+        Self: Sized,
+    {
+        reporter.as_ref().report_notice(self);
+    }
+
+    fn report_warn<S, R>(self, reporter: R) -> Result<(), S::Error>
+    where
+        S: ReportScope<WarnReportValue = Self>,
+        R: AsRef<ScopedReporter<S>>,
+        Self: Sized,
+    {
+        reporter.as_ref().report_warn(self)
+    }
+
+    fn report_error<S, R>(self, reporter: R) -> S::Error
+    where
+        S: ReportScope<ErrorReportValue = Self>,
+        R: AsRef<ScopedReporter<S>>,
+        Self: Sized,
+    {
+        reporter.as_ref().report_error(self)
     }
 }

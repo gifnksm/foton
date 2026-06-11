@@ -24,6 +24,12 @@ pub(crate) struct Context<R> {
 pub(crate) type RootContext = Context<RootReporter>;
 pub(crate) type ReportContext<S> = Context<ScopedReporter<S>>;
 
+impl<S> AsRef<ScopedReporter<S>> for Context<ScopedReporter<S>> {
+    fn as_ref(&self) -> &ScopedReporter<S> {
+        self.reporter()
+    }
+}
+
 impl<R> Context<R> {
     pub(crate) fn new(
         app_id: Arc<str>,

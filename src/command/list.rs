@@ -54,7 +54,6 @@ pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), List
     let ListArgs { show_incomplete } = args;
 
     let cx = ListScope::start(cx);
-    let reporter = cx.reporter();
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
     let db = engine::load_database(&cx, &mut db_lock_file)?;
@@ -67,7 +66,7 @@ pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), List
 
     render_entries(&mut io::stdout().lock(), db.entries(), renderer)
         .context(WriteEntrySnafu)
-        .report_error(reporter)?;
+        .report_error(&cx)?;
 
     Ok(())
 }

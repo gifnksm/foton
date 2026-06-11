@@ -42,7 +42,7 @@ where
     let cx = DatabaseLoadScope::start(cx);
     DbLockFile::open(cx.app_dirs())
         .map_err(DatabaseLoadErrorReport::from)
-        .report_error(cx.reporter())
+        .report_error(&cx)
 }
 
 pub(crate) fn load_database<'a, S>(
@@ -57,9 +57,9 @@ where
     let lock_file_guard = lock_file
         .try_acquire()
         .map_err(DatabaseLoadErrorReport::from)
-        .report_error(cx.reporter())?;
+        .report_error(&cx)?;
     let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard)
         .context(LoadDatabaseSnafu)
-        .report_error(cx.reporter())?;
+        .report_error(&cx)?;
     Ok(db)
 }
