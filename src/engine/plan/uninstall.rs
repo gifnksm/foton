@@ -54,7 +54,7 @@ mod tests {
     fn plan_uninstall_deactivates_then_uninstalls_when_requested() {
         let uninstall_manifest = testing::make_manifest("example-font@0.2.0");
         let uninstall_pkg_id = uninstall_manifest.id();
-        let uninstall_target = testing::make_resolved_uninstall_target(&uninstall_pkg_id);
+        let uninstall_target = ResolvedUninstallTarget::uninstall(uninstall_pkg_id.clone(), true);
 
         let plan = plan_uninstall(&[uninstall_target]);
 
@@ -83,8 +83,7 @@ mod tests {
     fn plan_uninstall_uninstalls_without_deactivating_when_not_requested() {
         let uninstall_manifest = testing::make_manifest("example-font@0.2.0");
         let uninstall_pkg_id = uninstall_manifest.id();
-        let uninstall_target =
-            testing::make_resolved_uninstall_target_with_deactivation(&uninstall_pkg_id, false);
+        let uninstall_target = ResolvedUninstallTarget::uninstall(uninstall_pkg_id.clone(), false);
 
         let plan = plan_uninstall(&[uninstall_target]);
 
@@ -100,9 +99,9 @@ mod tests {
     #[test]
     fn plan_uninstall_skips_non_existing() {
         let uninstall_pkg_id = PackageId::from_str("example-font@0.1.0").unwrap();
-        let uninstall_target = ResolvedUninstallTarget::AlreadyUninstalled {
-            pkg_spec: PackageSpec::from(uninstall_pkg_id.clone()),
-        };
+        let uninstall_target = ResolvedUninstallTarget::already_uninstalled(PackageSpec::from(
+            uninstall_pkg_id.clone(),
+        ));
 
         let plan = plan_uninstall(&[uninstall_target]);
 

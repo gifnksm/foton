@@ -23,7 +23,7 @@ use crate::{
         },
     },
     db::PackageDatabase,
-    engine::{self, InstallTargetSource, ResolvedInstallTarget, ResolvedUninstallTarget},
+    engine,
     package::{InstallationState, PackageDirs, PackageId, PackageManifest},
     registry::{RegistryId, RegistryIndex, RegistrySource, RegistrySpec},
     util::{app_dirs::AppDirs, path::AbsolutePath},
@@ -197,43 +197,6 @@ where
         .join(pkg_id.version().to_string());
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("manifest.toml"), manifest_str).unwrap();
-}
-
-pub(crate) fn make_resolved_install_target(
-    manifest: &Arc<PackageManifest>,
-) -> ResolvedInstallTarget {
-    make_resolved_install_target_with_activation(manifest, true)
-}
-
-pub(crate) fn make_resolved_install_target_with_activation(
-    manifest: &Arc<PackageManifest>,
-    should_activate: bool,
-) -> ResolvedInstallTarget {
-    ResolvedInstallTarget {
-        source: InstallTargetSource::Installed,
-        manifest: Arc::clone(manifest),
-        should_activate,
-    }
-}
-
-pub(crate) fn make_resolved_uninstall_target<I>(pkg_id: I) -> ResolvedUninstallTarget
-where
-    I: TryInto<PackageId, Error: Debug>,
-{
-    make_resolved_uninstall_target_with_deactivation(pkg_id, true)
-}
-
-pub(crate) fn make_resolved_uninstall_target_with_deactivation<I>(
-    pkg_id: I,
-    should_deactivate: bool,
-) -> ResolvedUninstallTarget
-where
-    I: TryInto<PackageId, Error: Debug>,
-{
-    ResolvedUninstallTarget::Uninstall {
-        pkg_id: pkg_id.try_into().unwrap(),
-        should_deactivate,
-    }
 }
 
 pub(crate) fn mark_as_state(

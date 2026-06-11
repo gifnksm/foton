@@ -138,7 +138,7 @@ mod tests {
         let incomplete_deactivation_manifest = testing::make_manifest("example-font@0.2.0");
         let active_manifest = testing::make_manifest("example-font@0.3.0");
         let install_target_manifest = testing::make_manifest("example-font@0.4.0");
-        let install_target = testing::make_resolved_install_target(&install_target_manifest);
+        let install_target = ResolvedInstallTarget::installed(&install_target_manifest, true);
 
         let plan = testing::with_db(|_cx, db| {
             testing::mark_as_installed(db, &incomplete_activation_manifest);
@@ -207,7 +207,7 @@ mod tests {
     #[test]
     fn plan_install_activates_already_installed_inactive_package_without_reinstall() {
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let install_target = testing::make_resolved_install_target(&manifest);
+        let install_target = ResolvedInstallTarget::installed(&manifest, true);
 
         let plan = testing::with_db(|_cx, db| {
             testing::mark_as_installed(db, &manifest);
@@ -232,8 +232,7 @@ mod tests {
     #[test]
     fn plan_install_skips_already_installed_when_activation_is_not_requested() {
         let manifest = testing::make_manifest("example-font@0.1.0");
-        let install_target =
-            testing::make_resolved_install_target_with_activation(&manifest, false);
+        let install_target = ResolvedInstallTarget::installed(&manifest, false);
 
         let plan = testing::with_db(|_cx, db| {
             testing::mark_as_installed(db, &manifest);
@@ -263,8 +262,7 @@ mod tests {
         ];
         for (state, pkg_id) in pairs {
             let manifest = testing::make_manifest(pkg_id);
-            let install_target =
-                testing::make_resolved_install_target_with_activation(&manifest, false);
+            let install_target = ResolvedInstallTarget::installed(&manifest, false);
 
             let plan = testing::with_db(|_cx, db| {
                 testing::mark_as_state(db, &manifest, state);
