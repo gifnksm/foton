@@ -17,7 +17,7 @@ use crate::{
         },
     },
     db::PackageDatabase,
-    package::{InstallationState, PackageDefinition, PackageId, PackageName, PackageSpec},
+    package::{PackageDefinition, PackageId, PackageName, PackageSpec},
     registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySpec},
     util::macros::concat_line,
 };
@@ -151,15 +151,12 @@ fn resolve_spec_from_installed_packages(
 ) -> ResolveState {
     let installed_pkg = db
         .entries_by_spec(pkg_spec)
-        .filter_map(|entry| {
-            (entry.installation_state() == InstallationState::Installed)
-                .then_some(entry.definition())
-        })
-        .max_by(|a, b| a.id.version().cmp(b.id.version()));
-    if let Some(pkg) = installed_pkg {
+        .filter(|entry| entry.installation_state().is_installed())
+        .max_by(|a, b| a.id().version().cmp(b.id().version()));
+    if let Some(entry) = installed_pkg {
         ResolveState::Resolved(ResolvedInstallTarget {
             source: InstallTargetSource::Installed,
-            pkg,
+            pkg: Arc::new(entry.make_definition()),
             should_activate,
         })
     } else {
@@ -313,7 +310,7 @@ mod tests {
                     source: InstallTargetSource::Installed,
                     pkg: resolved_pkg,
                     should_activate: true,
-                }) if Arc::ptr_eq(&resolved_pkg, &PKG)
+                }) if resolved_pkg.id == PKG.id,
             );
         });
     }

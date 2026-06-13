@@ -64,7 +64,7 @@ pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), List
         &InstalledEntryRender {} as &dyn EntryRender
     };
 
-    render_entries(&mut io::stdout().lock(), db.entries(), renderer)
+    render_entries(&mut io::stdout().lock(), db.all_entries(), renderer)
         .context(WriteEntrySnafu)
         .report_error(&cx)?;
 
@@ -97,17 +97,12 @@ impl EntryRender for AllEntryRender {
             writeln!(
                 writer,
                 "{} ({}, {})",
-                entry.definition().id,
+                entry.id(),
                 entry.installation_state(),
                 entry.activation_state(),
             )
         } else {
-            writeln!(
-                writer,
-                "{} ({})",
-                entry.definition().id,
-                entry.installation_state(),
-            )
+            writeln!(writer, "{} ({})", entry.id(), entry.installation_state())
         }
     }
 }
@@ -117,12 +112,7 @@ struct InstalledEntryRender {}
 impl EntryRender for InstalledEntryRender {
     fn render(&self, writer: &mut dyn io::Write, entry: &PackageDbEntry<'_>) -> io::Result<()> {
         if entry.installation_state().is_installed() {
-            writeln!(
-                writer,
-                "{} ({})",
-                entry.definition().id,
-                entry.activation_state(),
-            )?;
+            writeln!(writer, "{} ({})", entry.id(), entry.activation_state())?;
         }
         Ok(())
     }
@@ -160,7 +150,7 @@ mod tests {
             db,
             &testing::make_package_definition("incomplete-uninstall-font@1.2.0"),
         );
-        db.entries()
+        db.all_entries()
     }
 
     #[test]

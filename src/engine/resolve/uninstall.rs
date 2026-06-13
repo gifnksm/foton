@@ -82,14 +82,14 @@ where
             pkg_spec: pkg_spec.clone(),
         }),
         [entry] => Ok(ResolvedUninstallTarget::Uninstall {
-            pkg_id: entry.definition().id.clone(),
+            pkg_id: entry.id().clone(),
             should_deactivate: !entry.activation_state().is_inactive(),
         }),
         _ => Err(MultipleMatchingPackagesSnafu {
             pkg_spec: pkg_spec.clone(),
             pkg_ids: candidates
                 .into_iter()
-                .map(|entry| entry.definition().id.clone())
+                .map(|entry| entry.id().clone())
                 .collect::<Vec<_>>(),
         }
         .build()

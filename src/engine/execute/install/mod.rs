@@ -75,7 +75,7 @@ where
         step: InstallOp,
     ) -> Self {
         let InstallOp { pkg, .. } = step;
-        tx.begin_install(Arc::clone(&pkg));
+        tx.begin_install(&pkg);
         Self {
             pkg,
             cleanup_tracker: CleanupTracker::default(),
