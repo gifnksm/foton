@@ -1,17 +1,4 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    derive_more::Display,
-    derive_more::IsVariant,
-)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display, derive_more::IsVariant)]
 #[display(rename_all = "kebab-case")]
 pub(crate) enum InstallationState {
     Installed,
@@ -19,18 +6,7 @@ pub(crate) enum InstallationState {
     IncompleteUninstall,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    derive_more::Display,
-    derive_more::IsVariant,
-)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display, derive_more::IsVariant)]
 #[display(rename_all = "kebab-case")]
 pub(crate) enum ActivationState {
     Active,

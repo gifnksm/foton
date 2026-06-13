@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::{
@@ -10,33 +9,24 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub(crate) struct PackageDefinition {
     pub(crate) id: PackageId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) display_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) description: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) aliases: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) faces: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) homepage: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) repository: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) license: Option<String>,
     pub(crate) sources: Vec<PackageSource>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub(crate) struct PackageSource {
     pub(crate) url: Url,
     pub(crate) hash: GenericDigest,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) include: Vec<PathPattern>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) exclude: Vec<PathPattern>,
 }
 

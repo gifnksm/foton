@@ -96,7 +96,7 @@ where
         repository,
         license,
         sources,
-    } = &*entry.definition();
+    } = entry.make_definition();
     writeln!(writer, "Name: {}", id.name())?;
     if let Some(display_name) = display_name {
         writeln!(writer, "Display Name: {display_name}")?;

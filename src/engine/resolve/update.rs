@@ -84,7 +84,7 @@ impl UpdateCandidate {
             return None;
         }
         Some(Self::new(
-            entry.definition().id.clone(),
+            entry.id().clone(),
             entry.activation_state().is_active(),
         ))
     }
@@ -169,7 +169,7 @@ where
 
 fn all_installed_packages(db: &PackageDatabase<'_>) -> Vec<UpdateCandidate> {
     let candidates = db
-        .entries()
+        .all_entries()
         .filter_map(|entry| UpdateCandidate::from_db_entry(&entry));
     collect_latest_packages(candidates).into_values().collect()
 }

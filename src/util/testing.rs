@@ -235,7 +235,7 @@ pub(crate) fn mark_as_incomplete_install(
     pkg: &Arc<PackageDefinition>,
 ) {
     let mut tx = db.transaction();
-    tx.begin_install(Arc::clone(pkg));
+    tx.begin_install(pkg);
     tx.commit().unwrap();
     let entry = db.entry_by_id(&pkg.id).unwrap();
     assert!(entry.installation_state().is_incomplete_install());
@@ -244,7 +244,7 @@ pub(crate) fn mark_as_incomplete_install(
 
 pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, pkg: &Arc<PackageDefinition>) {
     let mut tx = db.transaction();
-    tx.begin_install(Arc::clone(pkg));
+    tx.begin_install(pkg);
     tx.complete_install(&pkg.id, &[]).unwrap();
     tx.commit().unwrap();
 
@@ -258,7 +258,7 @@ pub(crate) fn mark_as_incomplete_activation(
     pkg: &Arc<PackageDefinition>,
 ) {
     let mut tx = db.transaction();
-    tx.begin_install(Arc::clone(pkg));
+    tx.begin_install(pkg);
     tx.complete_install(&pkg.id, &[]).unwrap();
     tx.begin_activate(&pkg.id).unwrap();
     tx.commit().unwrap();
@@ -270,7 +270,7 @@ pub(crate) fn mark_as_incomplete_activation(
 
 pub(crate) fn mark_as_active(db: &mut PackageDatabase<'_>, pkg: &Arc<PackageDefinition>) {
     let mut tx = db.transaction();
-    tx.begin_install(Arc::clone(pkg));
+    tx.begin_install(pkg);
     tx.complete_install(&pkg.id, &[]).unwrap();
     tx.begin_activate(&pkg.id).unwrap();
     tx.complete_activate(&pkg.id).unwrap();
@@ -286,7 +286,7 @@ pub(crate) fn mark_as_incomplete_deactivation(
     pkg: &Arc<PackageDefinition>,
 ) {
     let mut tx = db.transaction();
-    tx.begin_install(Arc::clone(pkg));
+    tx.begin_install(pkg);
     tx.complete_install(&pkg.id, &[]).unwrap();
     tx.begin_activate(&pkg.id).unwrap();
     tx.complete_activate(&pkg.id).unwrap();
@@ -303,7 +303,7 @@ pub(crate) fn mark_as_incomplete_uninstall(
     pkg: &Arc<PackageDefinition>,
 ) {
     let mut tx = db.transaction();
-    tx.begin_install(Arc::clone(pkg));
+    tx.begin_install(pkg);
     tx.complete_install(&pkg.id, &[]).unwrap();
     tx.begin_uninstall(&pkg.id).unwrap();
     tx.commit().unwrap();

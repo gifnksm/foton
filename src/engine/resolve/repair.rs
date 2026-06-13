@@ -66,25 +66,25 @@ where
     let _cx =
         RepairResolveScope::start_with_report(cx, format_args!("Resolving repair targets..."));
     let mut targets = db
-        .entries()
+        .all_entries()
         .filter_map(|entry| match entry.installation_state() {
             InstallationState::Installed => match entry.activation_state() {
                 ActivationState::Active | ActivationState::Inactive => None,
                 ActivationState::IncompleteActivation => Some(ResolvedRepairTarget::Deactivate {
-                    pkg_id: entry.definition().id.clone(),
+                    pkg_id: entry.id().clone(),
                     kind: ActivationRepairKind::IncompleteActivation,
                 }),
                 ActivationState::IncompleteDeactivation => Some(ResolvedRepairTarget::Deactivate {
-                    pkg_id: entry.definition().id.clone(),
+                    pkg_id: entry.id().clone(),
                     kind: ActivationRepairKind::IncompleteDeactivation,
                 }),
             },
             InstallationState::IncompleteInstall => Some(ResolvedRepairTarget::Uninstall {
-                pkg_id: entry.definition().id.clone(),
+                pkg_id: entry.id().clone(),
                 kind: InstallationRepairKind::IncompleteInstall,
             }),
             InstallationState::IncompleteUninstall => Some(ResolvedRepairTarget::Uninstall {
-                pkg_id: entry.definition().id.clone(),
+                pkg_id: entry.id().clone(),
                 kind: InstallationRepairKind::IncompleteUninstall,
             }),
         })
@@ -125,24 +125,24 @@ fn resolve_spec(db: &PackageDatabase<'_>, pkg_spec: &PackageSpec) -> Vec<Resolve
                 ActivationState::Active | ActivationState::Inactive => {}
                 ActivationState::IncompleteActivation => {
                     targets.push(ResolvedRepairTarget::Deactivate {
-                        pkg_id: entry.definition().id.clone(),
+                        pkg_id: entry.id().clone(),
                         kind: ActivationRepairKind::IncompleteActivation,
                     });
                 }
                 ActivationState::IncompleteDeactivation => {
                     targets.push(ResolvedRepairTarget::Deactivate {
-                        pkg_id: entry.definition().id.clone(),
+                        pkg_id: entry.id().clone(),
                         kind: ActivationRepairKind::IncompleteDeactivation,
                     });
                 }
             },
             InstallationState::IncompleteInstall => targets.push(ResolvedRepairTarget::Uninstall {
-                pkg_id: entry.definition().id.clone(),
+                pkg_id: entry.id().clone(),
                 kind: InstallationRepairKind::IncompleteInstall,
             }),
             InstallationState::IncompleteUninstall => {
                 targets.push(ResolvedRepairTarget::Uninstall {
-                    pkg_id: entry.definition().id.clone(),
+                    pkg_id: entry.id().clone(),
                     kind: InstallationRepairKind::IncompleteUninstall,
                 });
             }
