@@ -10,13 +10,6 @@ pub(in crate::engine::resolve) enum ExpectedRepairTarget {
     Uninstall(PackageId, InstallationRepairKind),
 }
 
-pub(in crate::engine::resolve) fn assert_install_target_id(
-    target: &ResolvedInstallTarget,
-    expected: &str,
-) {
-    assert_eq!(target.pkg.id.to_string(), expected);
-}
-
 pub(in crate::engine::resolve) fn assert_install_target_ids(
     targets: &[ResolvedInstallTarget],
     expected: &[&str],

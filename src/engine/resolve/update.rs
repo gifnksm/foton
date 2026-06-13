@@ -21,7 +21,7 @@ use crate::{
     util::macros::concat_line,
 };
 
-use super::{InstallTargetSource, ResolvedInstallTarget, lookup};
+use super::ResolvedInstallTarget;
 
 #[derive(Debug, Default)]
 struct UpdateResolveScope<S> {
@@ -89,9 +89,8 @@ impl UpdateCandidate {
         ))
     }
 
-    fn resolved(self, reg_id: RegistryId, pkg: Arc<PackageDefinition>) -> ResolvedInstallTarget {
+    fn resolved(self, pkg: Arc<PackageDefinition>) -> ResolvedInstallTarget {
         ResolvedInstallTarget {
-            source: InstallTargetSource::Registry(reg_id),
             pkg,
             should_activate: self.should_activate,
         }
@@ -123,7 +122,7 @@ where
         .filter_map(|candidate| {
             let res = find_update_target(&cx, &indexes, &candidate.pkg_id, include_pre_release)
                 .transpose()?;
-            Some(res.map(|(reg_id, pkg)| candidate.resolved(reg_id, pkg)))
+            Some(res.map(|pkg| candidate.resolved(pkg)))
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(targets)
@@ -208,33 +207,58 @@ fn find_update_target<S>(
     indexes: &[RegistryIndex],
     pkg_id: &PackageId,
     include_pre_release: bool,
+) -> Result<Option<Arc<PackageDefinition>>, S::Error>
+where
+    S: ReportScope,
+{
+    let matches = indexes
+        .iter()
+        .filter_map(|index| {
+            find_update_target_from_index(cx, index, pkg_id, include_pre_release).transpose()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    match &matches[..] {
+        [] => Ok(None),
+        [(_reg_id, pkg)] => Ok(Some(Arc::clone(pkg))),
+        _ => {
+            let pkg_ids = matches
+                .into_iter()
+                .map(|(reg_id, pkg)| (reg_id.clone(), pkg.id.clone()))
+                .collect::<Vec<_>>();
+            Err(MultipleMatchingPackagesInRegistriesSnafu {
+                name: pkg_id.name(),
+                pkg_ids,
+            }
+            .build()
+            .report_error(cx))
+        }
+    }
+}
+
+fn find_update_target_from_index<S>(
+    cx: &ReportContext<UpdateResolveScope<S>>,
+    index: &RegistryIndex,
+    pkg_id: &PackageId,
+    include_pre_release: bool,
 ) -> Result<Option<(RegistryId, Arc<PackageDefinition>)>, S::Error>
 where
     S: ReportScope,
 {
-    let matches = lookup::collect_registry_matches(indexes, |index| {
-        index
-            .find_latest_package_by_name(pkg_id.name(), include_pre_release)
-            .context(FindLatestPackageSnafu {
-                reg_id: index.id(),
-                name: pkg_id.name(),
-            })
-            .report_error(cx)
-            .map(|pkg| pkg.filter(|pkg| pkg.id.version() > pkg_id.version()))
-    })?;
-
-    lookup::into_unique_match(matches).map_err(|matches| {
-        let pkg_ids = matches
-            .into_iter()
-            .map(|(reg_id, pkg)| (reg_id, pkg.id.clone()))
-            .collect::<Vec<_>>();
-        MultipleMatchingPackagesInRegistriesSnafu {
+    let pkg = index
+        .find_latest_package_by_name(pkg_id.name(), include_pre_release)
+        .context(FindLatestPackageSnafu {
+            reg_id: index.id(),
             name: pkg_id.name(),
-            pkg_ids,
-        }
-        .build()
-        .report_error(cx)
-    })
+        })
+        .report_error(cx)?;
+    if let Some(pkg) = pkg
+        && pkg.id.version() > pkg_id.version()
+    {
+        Ok(Some((index.id().clone(), pkg)))
+    } else {
+        Ok(None)
+    }
 }
 
 #[cfg(test)]

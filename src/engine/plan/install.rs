@@ -17,7 +17,6 @@ pub(crate) fn plan_install(
     let mut ops = vec![];
     for target in targets {
         let ResolvedInstallTarget {
-            source: _,
             pkg,
             should_activate,
         } = target;
@@ -136,7 +135,10 @@ mod tests {
         let incomplete_deactivation_pkg = testing::make_package_definition("example-font@0.2.0");
         let active_pkg = testing::make_package_definition("example-font@0.3.0");
         let install_target_pkg = testing::make_package_definition("example-font@0.4.0");
-        let install_target = ResolvedInstallTarget::installed(&install_target_pkg, true);
+        let install_target = ResolvedInstallTarget {
+            pkg: Arc::clone(&install_target_pkg),
+            should_activate: true,
+        };
 
         let plan = testing::with_db(|_cx, db| {
             testing::mark_as_installed(db, &incomplete_activation_pkg);
@@ -204,7 +206,10 @@ mod tests {
     #[test]
     fn plan_install_activates_already_installed_inactive_package_without_reinstall() {
         let pkg = testing::make_package_definition("example-font@0.1.0");
-        let install_target = ResolvedInstallTarget::installed(&pkg, true);
+        let install_target = ResolvedInstallTarget {
+            pkg: Arc::clone(&pkg),
+            should_activate: true,
+        };
 
         let plan = testing::with_db(|_cx, db| {
             testing::mark_as_installed(db, &pkg);
@@ -229,7 +234,10 @@ mod tests {
     #[test]
     fn plan_install_skips_already_installed_when_activation_is_not_requested() {
         let pkg = testing::make_package_definition("example-font@0.1.0");
-        let install_target = ResolvedInstallTarget::installed(&pkg, false);
+        let install_target = ResolvedInstallTarget {
+            pkg: Arc::clone(&pkg),
+            should_activate: false,
+        };
 
         let plan = testing::with_db(|_cx, db| {
             testing::mark_as_installed(db, &pkg);
@@ -259,7 +267,10 @@ mod tests {
         ];
         for (state, pkg_id) in pairs {
             let pkg = testing::make_package_definition(pkg_id);
-            let install_target = ResolvedInstallTarget::installed(&pkg, false);
+            let install_target = ResolvedInstallTarget {
+                pkg: Arc::clone(&pkg),
+                should_activate: false,
+            };
 
             let plan = testing::with_db(|_cx, db| {
                 testing::mark_as_state(db, &pkg, state);
