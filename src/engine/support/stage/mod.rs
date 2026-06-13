@@ -10,7 +10,7 @@ use crate::{
             ErrorReportExt as _, NeverReport, OperationError as _, ReportScope, SubReportScope,
         },
     },
-    package::{FontEntry, PackageDirs, PackageId, PackageManifest},
+    package::{FontEntry, PackageDefinition, PackageDirs, PackageId},
 };
 
 mod download;
@@ -43,24 +43,23 @@ enum StageErrorReport {
 pub(crate) async fn stage_package<S>(
     cx: &ReportContext<S>,
     pkg_dirs: &PackageDirs,
-    manifest: &PackageManifest,
+    pkg: &PackageDefinition,
 ) -> Result<(Vec<FontEntry>, Vec<ExtractDetail>), S::Error>
 where
     S: ReportScope,
 {
     let cx = StageScope::start(cx);
 
-    let pkg_id = manifest.id();
     let reporter = cx.reporter();
     let package_fonts_dir = pkg_dirs.fonts_dir();
 
     let mut file_names = vec![];
     let mut extract_details = vec![];
 
-    for source in &manifest.sources {
+    for source in &pkg.sources {
         let file = cx
             .cancel_token()
-            .run_until_cancelled(download::download_archive(&cx, &pkg_id, source))
+            .run_until_cancelled(download::download_archive(&cx, &pkg.id, source))
             .await
             .unwrap_or(Err(S::Error::cancelled()))?;
         let (source_file_names, extract_detail) = extract_archive(
@@ -80,7 +79,9 @@ where
     }
 
     if valid_entries.is_empty() {
-        return Err(NoValidFontsSnafu { pkg_id }.build().report_error(&cx));
+        return Err(NoValidFontsSnafu { pkg_id: &pkg.id }
+            .build()
+            .report_error(&cx));
     }
 
     reporter.report_info(format_args!(

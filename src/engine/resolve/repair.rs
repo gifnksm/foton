@@ -71,20 +71,20 @@ where
             InstallationState::Installed => match entry.activation_state() {
                 ActivationState::Active | ActivationState::Inactive => None,
                 ActivationState::IncompleteActivation => Some(ResolvedRepairTarget::Deactivate {
-                    pkg_id: entry.manifest().id(),
+                    pkg_id: entry.definition().id.clone(),
                     kind: ActivationRepairKind::IncompleteActivation,
                 }),
                 ActivationState::IncompleteDeactivation => Some(ResolvedRepairTarget::Deactivate {
-                    pkg_id: entry.manifest().id(),
+                    pkg_id: entry.definition().id.clone(),
                     kind: ActivationRepairKind::IncompleteDeactivation,
                 }),
             },
             InstallationState::IncompleteInstall => Some(ResolvedRepairTarget::Uninstall {
-                pkg_id: entry.manifest().id(),
+                pkg_id: entry.definition().id.clone(),
                 kind: InstallationRepairKind::IncompleteInstall,
             }),
             InstallationState::IncompleteUninstall => Some(ResolvedRepairTarget::Uninstall {
-                pkg_id: entry.manifest().id(),
+                pkg_id: entry.definition().id.clone(),
                 kind: InstallationRepairKind::IncompleteUninstall,
             }),
         })
@@ -125,24 +125,24 @@ fn resolve_spec(db: &PackageDatabase<'_>, pkg_spec: &PackageSpec) -> Vec<Resolve
                 ActivationState::Active | ActivationState::Inactive => {}
                 ActivationState::IncompleteActivation => {
                     targets.push(ResolvedRepairTarget::Deactivate {
-                        pkg_id: entry.manifest().id(),
+                        pkg_id: entry.definition().id.clone(),
                         kind: ActivationRepairKind::IncompleteActivation,
                     });
                 }
                 ActivationState::IncompleteDeactivation => {
                     targets.push(ResolvedRepairTarget::Deactivate {
-                        pkg_id: entry.manifest().id(),
+                        pkg_id: entry.definition().id.clone(),
                         kind: ActivationRepairKind::IncompleteDeactivation,
                     });
                 }
             },
             InstallationState::IncompleteInstall => targets.push(ResolvedRepairTarget::Uninstall {
-                pkg_id: entry.manifest().id(),
+                pkg_id: entry.definition().id.clone(),
                 kind: InstallationRepairKind::IncompleteInstall,
             }),
             InstallationState::IncompleteUninstall => {
                 targets.push(ResolvedRepairTarget::Uninstall {
-                    pkg_id: entry.manifest().id(),
+                    pkg_id: entry.definition().id.clone(),
                     kind: InstallationRepairKind::IncompleteUninstall,
                 });
             }
@@ -176,51 +176,55 @@ mod tests {
     use super::*;
     use crate::{
         engine::resolve::{self, testing::ExpectedRepairTarget},
-        package::PackageManifest,
+        package::PackageDefinition,
         util::testing,
     };
 
     #[expect(clippy::struct_field_names)]
     #[derive(Debug)]
     struct BrokenRepairFixture {
-        incomplete_activation_manifest: Arc<PackageManifest>,
-        incomplete_deactivation_manifest: Arc<PackageManifest>,
-        incomplete_install_manifest: Arc<PackageManifest>,
-        incomplete_uninstall_manifest: Arc<PackageManifest>,
-        installed_manifest: Arc<PackageManifest>,
+        incomplete_activation_pkg: Arc<PackageDefinition>,
+        incomplete_deactivation_pkg: Arc<PackageDefinition>,
+        incomplete_install_pkg: Arc<PackageDefinition>,
+        incomplete_uninstall_pkg: Arc<PackageDefinition>,
+        installed_pkg: Arc<PackageDefinition>,
     }
 
     impl BrokenRepairFixture {
         fn mixed_names() -> Self {
             Self {
-                incomplete_activation_manifest: testing::make_manifest("example-font@0.1.0"),
-                incomplete_deactivation_manifest: testing::make_manifest("example-font@0.2.0"),
-                incomplete_install_manifest: testing::make_manifest("other-font@0.1.0"),
-                incomplete_uninstall_manifest: testing::make_manifest("other-font@0.2.0"),
-                installed_manifest: testing::make_manifest("clean-font@1.0.0"),
+                incomplete_activation_pkg: testing::make_package_definition("example-font@0.1.0"),
+                incomplete_deactivation_pkg: testing::make_package_definition("example-font@0.2.0"),
+                incomplete_install_pkg: testing::make_package_definition("other-font@0.1.0"),
+                incomplete_uninstall_pkg: testing::make_package_definition("other-font@0.2.0"),
+                installed_pkg: testing::make_package_definition("clean-font@1.0.0"),
             }
         }
 
         fn same_name(name: &str) -> Self {
             Self {
-                incomplete_activation_manifest: testing::make_manifest(format!("{name}@0.1.0")),
-                incomplete_deactivation_manifest: testing::make_manifest(format!("{name}@0.2.0")),
-                incomplete_install_manifest: testing::make_manifest(format!("{name}@0.3.0")),
-                incomplete_uninstall_manifest: testing::make_manifest(format!("{name}@0.4.0")),
-                installed_manifest: testing::make_manifest(format!("{name}@1.0.0")),
+                incomplete_activation_pkg: testing::make_package_definition(format!(
+                    "{name}@0.1.0"
+                )),
+                incomplete_deactivation_pkg: testing::make_package_definition(format!(
+                    "{name}@0.2.0"
+                )),
+                incomplete_install_pkg: testing::make_package_definition(format!("{name}@0.3.0")),
+                incomplete_uninstall_pkg: testing::make_package_definition(format!("{name}@0.4.0")),
+                installed_pkg: testing::make_package_definition(format!("{name}@1.0.0")),
             }
         }
     }
 
     fn seed_broken_repair_entries(db: &mut PackageDatabase<'_>, fixture: &BrokenRepairFixture) {
-        testing::mark_as_installed(db, &fixture.incomplete_activation_manifest);
-        testing::mark_as_active(db, &fixture.incomplete_deactivation_manifest);
-        testing::mark_as_incomplete_install(db, &fixture.incomplete_install_manifest);
-        testing::mark_as_incomplete_uninstall(db, &fixture.incomplete_uninstall_manifest);
-        testing::mark_as_installed(db, &fixture.installed_manifest);
+        testing::mark_as_installed(db, &fixture.incomplete_activation_pkg);
+        testing::mark_as_active(db, &fixture.incomplete_deactivation_pkg);
+        testing::mark_as_incomplete_install(db, &fixture.incomplete_install_pkg);
+        testing::mark_as_incomplete_uninstall(db, &fixture.incomplete_uninstall_pkg);
+        testing::mark_as_installed(db, &fixture.installed_pkg);
 
-        begin_incomplete_activation(db, &fixture.incomplete_activation_manifest.id());
-        begin_incomplete_deactivation(db, &fixture.incomplete_deactivation_manifest.id());
+        begin_incomplete_activation(db, &fixture.incomplete_activation_pkg.id);
+        begin_incomplete_deactivation(db, &fixture.incomplete_deactivation_pkg.id);
     }
 
     fn begin_incomplete_activation(db: &mut PackageDatabase<'_>, pkg_id: &PackageId) {
@@ -248,19 +252,19 @@ mod tests {
                 &targets,
                 &[
                     ExpectedRepairTarget::Deactivate(
-                        fixture.incomplete_activation_manifest.id(),
+                        fixture.incomplete_activation_pkg.id.clone(),
                         ActivationRepairKind::IncompleteActivation,
                     ),
                     ExpectedRepairTarget::Deactivate(
-                        fixture.incomplete_deactivation_manifest.id(),
+                        fixture.incomplete_deactivation_pkg.id.clone(),
                         ActivationRepairKind::IncompleteDeactivation,
                     ),
                     ExpectedRepairTarget::Uninstall(
-                        fixture.incomplete_install_manifest.id(),
+                        fixture.incomplete_install_pkg.id.clone(),
                         InstallationRepairKind::IncompleteInstall,
                     ),
                     ExpectedRepairTarget::Uninstall(
-                        fixture.incomplete_uninstall_manifest.id(),
+                        fixture.incomplete_uninstall_pkg.id.clone(),
                         InstallationRepairKind::IncompleteUninstall,
                     ),
                 ],
@@ -289,10 +293,10 @@ mod tests {
 
     #[test]
     fn resolve_spec_returns_not_broken_for_clean_installed_matches() {
-        let manifest = testing::make_manifest("example-font@0.1.0");
+        let pkg = testing::make_package_definition("example-font@0.1.0");
 
         testing::with_db(|_cx, db| {
-            testing::mark_as_installed(db, &manifest);
+            testing::mark_as_installed(db, &pkg);
 
             for spec in [
                 PackageSpec::from_str("example-font@0.1.0").unwrap(),
@@ -314,21 +318,21 @@ mod tests {
         let spec = PackageSpec::from_str("example-font").unwrap();
 
         testing::with_db(|_cx, db| {
-            testing::mark_as_installed(db, &fixture.incomplete_activation_manifest);
-            testing::mark_as_active(db, &fixture.incomplete_deactivation_manifest);
-            begin_incomplete_activation(db, &fixture.incomplete_activation_manifest.id());
-            begin_incomplete_deactivation(db, &fixture.incomplete_deactivation_manifest.id());
+            testing::mark_as_installed(db, &fixture.incomplete_activation_pkg);
+            testing::mark_as_active(db, &fixture.incomplete_deactivation_pkg);
+            begin_incomplete_activation(db, &fixture.incomplete_activation_pkg.id);
+            begin_incomplete_deactivation(db, &fixture.incomplete_deactivation_pkg.id);
 
             let targets = resolve_spec(db, &spec);
             resolve::testing::assert_repair_targets_eq(
                 &targets,
                 &[
                     ExpectedRepairTarget::Deactivate(
-                        fixture.incomplete_activation_manifest.id(),
+                        fixture.incomplete_activation_pkg.id.clone(),
                         ActivationRepairKind::IncompleteActivation,
                     ),
                     ExpectedRepairTarget::Deactivate(
-                        fixture.incomplete_deactivation_manifest.id(),
+                        fixture.incomplete_deactivation_pkg.id.clone(),
                         ActivationRepairKind::IncompleteDeactivation,
                     ),
                 ],
@@ -354,19 +358,19 @@ mod tests {
                 &targets,
                 &[
                     ExpectedRepairTarget::Deactivate(
-                        fixture.incomplete_activation_manifest.id(),
+                        fixture.incomplete_activation_pkg.id.clone(),
                         ActivationRepairKind::IncompleteActivation,
                     ),
                     ExpectedRepairTarget::Deactivate(
-                        fixture.incomplete_deactivation_manifest.id(),
+                        fixture.incomplete_deactivation_pkg.id.clone(),
                         ActivationRepairKind::IncompleteDeactivation,
                     ),
                     ExpectedRepairTarget::Uninstall(
-                        fixture.incomplete_install_manifest.id(),
+                        fixture.incomplete_install_pkg.id.clone(),
                         InstallationRepairKind::IncompleteInstall,
                     ),
                     ExpectedRepairTarget::Uninstall(
-                        fixture.incomplete_uninstall_manifest.id(),
+                        fixture.incomplete_uninstall_pkg.id.clone(),
                         InstallationRepairKind::IncompleteUninstall,
                     ),
                 ],

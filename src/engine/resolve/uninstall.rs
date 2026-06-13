@@ -82,14 +82,14 @@ where
             pkg_spec: pkg_spec.clone(),
         }),
         [entry] => Ok(ResolvedUninstallTarget::Uninstall {
-            pkg_id: entry.manifest().id(),
+            pkg_id: entry.definition().id.clone(),
             should_deactivate: !entry.activation_state().is_inactive(),
         }),
         _ => Err(MultipleMatchingPackagesSnafu {
             pkg_spec: pkg_spec.clone(),
             pkg_ids: candidates
                 .into_iter()
-                .map(|entry| entry.manifest().id())
+                .map(|entry| entry.definition().id.clone())
                 .collect::<Vec<_>>(),
         }
         .build()
@@ -119,11 +119,10 @@ mod tests {
     };
 
     use super::*;
-    use crate::{engine::resolve, package::PackageManifest, util::testing};
+    use crate::{engine::resolve, package::PackageDefinition, util::testing};
 
-    static MANIFEST: LazyLock<Arc<PackageManifest>> =
-        LazyLock::new(|| testing::make_manifest("example-font@0.1.0"));
-    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| MANIFEST.id());
+    static PKG: LazyLock<Arc<PackageDefinition>> =
+        LazyLock::new(|| testing::make_package_definition("example-font@0.1.0"));
     static EXACT_SPEC: LazyLock<PackageSpec> =
         LazyLock::new(|| PackageSpec::from_str("example-font@0.1.0").unwrap());
     static NAME_SPEC: LazyLock<PackageSpec> =
@@ -147,11 +146,11 @@ mod tests {
     #[test]
     fn resolve_spec_resolves_installed_entry_from_id_and_name_without_deactivation() {
         testing::with_scoped_db(|cx, db| {
-            testing::mark_as_installed(db, &MANIFEST);
+            testing::mark_as_installed(db, &PKG);
 
             for spec in [EXACT_SPEC.clone(), NAME_SPEC.clone()] {
                 let target = resolve_spec(cx, db, &spec).unwrap();
-                resolve::testing::assert_uninstall_target(&target, &PKG_ID, false);
+                resolve::testing::assert_uninstall_target(&target, &PKG.id, false);
             }
         });
     }
@@ -159,22 +158,22 @@ mod tests {
     #[test]
     fn resolve_spec_requests_deactivation_for_active_entries() {
         testing::with_scoped_db(|cx, db| {
-            testing::mark_as_active(db, &MANIFEST);
+            testing::mark_as_active(db, &PKG);
 
             let target = resolve_spec(cx, db, &NAME_SPEC).unwrap();
-            resolve::testing::assert_uninstall_target(&target, &PKG_ID, true);
+            resolve::testing::assert_uninstall_target(&target, &PKG.id, true);
         });
     }
 
     #[test]
     fn resolve_spec_reports_multiple_matches_for_name() {
-        let manifest1 = testing::make_manifest("example-font@0.1.0");
-        let manifest2 = testing::make_manifest("example-font@1.0.0");
+        let pkg1 = testing::make_package_definition("example-font@0.1.0");
+        let pkg2 = testing::make_package_definition("example-font@1.0.0");
         let spec = PackageSpec::from_str("example-font").unwrap();
 
         testing::with_scoped_db(|cx, db| {
-            testing::mark_as_installed(db, &manifest1);
-            testing::mark_as_installed(db, &manifest2);
+            testing::mark_as_installed(db, &pkg1);
+            testing::mark_as_installed(db, &pkg2);
 
             let err = resolve_spec(cx, db, &spec).unwrap_err();
             assert!(err.is_failed());
@@ -183,16 +182,16 @@ mod tests {
 
     #[test]
     fn resolve_uninstall_targets_reports_ambiguous_spec_even_with_exact_target() {
-        let manifest1 = testing::make_manifest("example-font@0.1.0");
-        let manifest2 = testing::make_manifest("example-font@1.0.0");
+        let pkg1 = testing::make_package_definition("example-font@0.1.0");
+        let pkg2 = testing::make_package_definition("example-font@1.0.0");
         let pkg_specs = vec![
             PackageSpec::from_str("example-font@0.1.0").unwrap(),
             PackageSpec::from_str("example-font").unwrap(),
         ];
 
         testing::with_db(|cx, db| {
-            testing::mark_as_installed(db, &manifest1);
-            testing::mark_as_installed(db, &manifest2);
+            testing::mark_as_installed(db, &pkg1);
+            testing::mark_as_installed(db, &pkg2);
 
             let err = resolve_uninstall_targets(cx, db, &pkg_specs).unwrap_err();
             assert!(err.is_failed());
@@ -204,11 +203,11 @@ mod tests {
         let pkg_specs = vec![EXACT_SPEC.clone(), NAME_SPEC.clone()];
 
         testing::with_db(|cx, db| {
-            testing::mark_as_installed(db, &MANIFEST);
+            testing::mark_as_installed(db, &PKG);
             let targets = resolve_uninstall_targets(cx, db, &pkg_specs).unwrap();
 
             assert_eq!(targets.len(), 1);
-            resolve::testing::assert_uninstall_target(&targets[0], &PKG_ID, false);
+            resolve::testing::assert_uninstall_target(&targets[0], &PKG.id, false);
         });
     }
 
@@ -219,23 +218,23 @@ mod tests {
                 testing::mark_as_incomplete_install,
                 testing::mark_as_incomplete_uninstall,
             ] {
-                mark_as_state(db, &MANIFEST);
+                mark_as_state(db, &PKG);
 
                 let target = resolve_spec(cx, db, &NAME_SPEC).unwrap();
-                resolve::testing::assert_uninstall_target(&target, &PKG_ID, false);
+                resolve::testing::assert_uninstall_target(&target, &PKG.id, false);
             }
         });
     }
 
     #[test]
     fn resolve_spec_reports_multiple_matches_for_name_across_incomplete_states() {
-        let manifest1 = testing::make_manifest("example-font@0.1.0");
-        let manifest2 = testing::make_manifest("example-font@1.0.0");
+        let pkg1 = testing::make_package_definition("example-font@0.1.0");
+        let pkg2 = testing::make_package_definition("example-font@1.0.0");
         let spec = PackageSpec::from_str("example-font").unwrap();
 
         testing::with_scoped_db(|cx, db| {
-            testing::mark_as_incomplete_install(db, &manifest1);
-            testing::mark_as_incomplete_uninstall(db, &manifest2);
+            testing::mark_as_incomplete_install(db, &pkg1);
+            testing::mark_as_incomplete_uninstall(db, &pkg2);
 
             let err = resolve_spec(cx, db, &spec).unwrap_err();
             assert!(err.is_failed());

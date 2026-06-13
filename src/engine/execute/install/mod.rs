@@ -17,7 +17,7 @@ use crate::{
         },
         support,
     },
-    package::{self, FontEntry, PackageDirs, PackageId, PackageManifest},
+    package::{self, FontEntry, PackageDefinition, PackageDirs, PackageId},
     platform::windows::steps::unregistration::{self, UnregistrationIntent},
     util::{fs::FsError, macros::concat_line},
 };
@@ -59,7 +59,7 @@ pub(in crate::engine) struct PreparedInstallStep<S>
 where
     S: ReportScope,
 {
-    manifest: Arc<PackageManifest>,
+    pkg: Arc<PackageDefinition>,
     cleanup_tracker: CleanupTracker,
     font_entries: Option<Vec<FontEntry>>,
     pkg_dirs_guard: Option<PackageDirsGuard<InstallExecutionScope<S>>>,
@@ -74,10 +74,10 @@ where
         tx: &mut PackageDatabaseTransaction<'_, '_>,
         step: InstallOp,
     ) -> Self {
-        let InstallOp { manifest, .. } = step;
-        tx.begin_install(Arc::clone(&manifest));
+        let InstallOp { pkg, .. } = step;
+        tx.begin_install(Arc::clone(&pkg));
         Self {
-            manifest,
+            pkg,
             cleanup_tracker: CleanupTracker::default(),
             font_entries: None,
             pkg_dirs_guard: None,
@@ -96,19 +96,19 @@ where
         cx: &ReportContext<S>,
         _db: &PackageDatabase<'_>,
     ) -> Result<(), S::Error> {
-        let pkg_id = self.manifest.id();
+        let pkg_id = &self.pkg.id;
         let cx =
             InstallExecutionScope::start_with_report(cx, format_args!("Installing {pkg_id}..."));
-        let pkg_dirs = PackageDirs::new(cx.app_dirs(), &pkg_id);
+        let pkg_dirs = PackageDirs::new(cx.app_dirs(), pkg_id);
 
         self.cleanup_tracker.do_base_cleanup(|| {
             unregistration::unregister_package_fonts(
                 &cx,
-                &pkg_id,
+                pkg_id,
                 UnregistrationIntent::CleanupBeforeInstall,
             )?;
             package::remove_package_dirs(&pkg_dirs)
-                .context(RemovePackageFilesSnafu { pkg_id: &pkg_id })
+                .context(RemovePackageFilesSnafu { pkg_id })
                 .report_error(&cx)?;
             Ok(())
         })?;
@@ -116,10 +116,10 @@ where
         self.pkg_dirs_guard = Some(package_dirs_guard::create_new_package_dirs(
             &cx,
             self.cleanup_tracker.clone(),
-            &pkg_id,
+            pkg_id,
         )?);
         let pkg_dirs_guard = self.pkg_dirs_guard.as_ref().unwrap();
-        let (font_entries, _) = support::stage_package(&cx, pkg_dirs_guard, &self.manifest).await?;
+        let (font_entries, _) = support::stage_package(&cx, pkg_dirs_guard, &self.pkg).await?;
 
         self.font_entries = Some(font_entries);
 
@@ -131,9 +131,8 @@ where
         _cx: &ReportContext<S>,
         tx: &mut PackageDatabaseTransaction<'_, '_>,
     ) -> Result<(), S::Error> {
-        let pkg_id = self.manifest.id();
         let font_entries = self.font_entries.as_ref().unwrap();
-        tx.complete_install(&pkg_id, font_entries).unwrap();
+        tx.complete_install(&self.pkg.id, font_entries).unwrap();
         Ok(())
     }
 
@@ -154,13 +153,12 @@ where
         let _ = self.pkg_dirs_guard.take();
 
         let cleanup_required = self.cleanup_tracker.cleanup_required();
-        tx.cancel_install(&self.manifest.id(), cleanup_required)
-            .unwrap();
+        tx.cancel_install(&self.pkg.id, cleanup_required).unwrap();
     }
 
     fn commit_error_report(&self, source: PackageDatabaseError) -> ExecuteErrorReport {
         super::CommitInstallTransactionSnafu {
-            pkg_id: self.manifest.id(),
+            pkg_id: &self.pkg.id,
         }
         .into_error(source)
     }
@@ -173,17 +171,16 @@ mod tests {
     use super::*;
     use crate::{
         engine::InstallReason,
-        package::{ActivationState, InstallationState},
+        package::{ActivationState, InstallationState, PackageDefinition},
         util::testing::{self, TestScope},
     };
 
-    static MANIFEST: LazyLock<Arc<PackageManifest>> =
-        LazyLock::new(|| testing::make_manifest("example-font@0.1.0"));
-    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| MANIFEST.id());
+    static PKG: LazyLock<Arc<PackageDefinition>> =
+        LazyLock::new(|| testing::make_package_definition("example-font@0.1.0"));
 
-    fn install_op(manifest: &Arc<PackageManifest>) -> InstallOp {
+    fn install_op(pkg: &Arc<PackageDefinition>) -> InstallOp {
         InstallOp {
-            manifest: Arc::clone(manifest),
+            pkg: Arc::clone(pkg),
             reason: InstallReason::RequestedByUser,
         }
     }
@@ -193,14 +190,14 @@ mod tests {
         testing::with_db(|_cx, db| {
             let mut tx = db.transaction();
             let step: PreparedInstallStep<TestScope> =
-                PreparedInstallStep::from_plan_step(&mut tx, install_op(&MANIFEST));
+                PreparedInstallStep::from_plan_step(&mut tx, install_op(&PKG));
             tx.commit().unwrap();
 
             assert_eq!(
-                db.entry_by_id(&PKG_ID).unwrap().installation_state(),
+                db.entry_by_id(&PKG.id).unwrap().installation_state(),
                 InstallationState::IncompleteInstall,
             );
-            assert_eq!(step.manifest.id(), *PKG_ID);
+            assert_eq!(step.pkg.id, PKG.id);
         });
     }
 
@@ -208,14 +205,14 @@ mod tests {
     fn prepared_install_step_after_commit_persists_installed_inactive_state() {
         testing::with_db(|cx, db| {
             let mut tx = db.transaction();
-            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&MANIFEST));
+            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&PKG));
             step.font_entries = Some(vec![]);
 
             step.on_complete(cx, &mut tx).unwrap();
             assert!(!step.installation_persisted);
 
             tx.commit().unwrap();
-            let entry = db.entry_by_id(&PKG_ID).unwrap();
+            let entry = db.entry_by_id(&PKG.id).unwrap();
             assert_eq!(entry.installation_state(), InstallationState::Installed);
             assert_eq!(entry.activation_state(), ActivationState::Inactive);
             assert!(!step.installation_persisted);
@@ -230,12 +227,12 @@ mod tests {
     fn prepared_install_step_on_failure_removes_incomplete_install_without_cleanup() {
         testing::with_db(|cx, db| {
             let mut tx = db.transaction();
-            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&MANIFEST));
+            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&PKG));
 
             step.on_failure(cx, &mut tx);
             tx.commit().unwrap();
 
-            assert!(db.entry_by_id(&PKG_ID).is_none());
+            assert!(db.entry_by_id(&PKG.id).is_none());
         });
     }
 
@@ -243,14 +240,14 @@ mod tests {
     fn prepared_install_step_on_failure_marks_incomplete_uninstall_when_cleanup_is_required() {
         testing::with_db(|cx, db| {
             let mut tx = db.transaction();
-            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&MANIFEST));
+            let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&PKG));
             step.cleanup_tracker.request_cleanup();
 
             step.on_failure(cx, &mut tx);
             tx.commit().unwrap();
 
             assert_eq!(
-                db.entry_by_id(&PKG_ID).unwrap().installation_state(),
+                db.entry_by_id(&PKG.id).unwrap().installation_state(),
                 InstallationState::IncompleteUninstall,
             );
         });

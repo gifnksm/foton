@@ -340,22 +340,20 @@ mod tests {
     fn conditional_uninstall_state(
         db: &mut PackageDatabase<'_>,
     ) -> (ExecutionState<TestScope>, StepId, StepId) {
-        let dependency_manifest = testing::make_manifest("dependency-font@0.1.0");
-        let dependency_pkg_id = dependency_manifest.id();
-        let dependent_manifest = testing::make_manifest("dependent-font@0.1.0");
-        let dependent_pkg_id = dependent_manifest.id();
+        let dependency_pkg = testing::make_package_definition("dependency-font@0.1.0");
+        let dependent_pkg = testing::make_package_definition("dependent-font@0.1.0");
 
-        testing::mark_as_installed(db, &dependency_manifest);
-        testing::mark_as_installed(db, &dependent_manifest);
+        testing::mark_as_installed(db, &dependency_pkg);
+        testing::mark_as_installed(db, &dependent_pkg);
 
         let dependency_step = PlanStep::new(UninstallOp {
-            pkg_id: dependency_pkg_id,
+            pkg_id: dependency_pkg.id.clone(),
             reason: UninstallReason::RequestedByUser,
         });
         let dependency_step_id = dependency_step.step_id();
         let dependent_step = PlanStep::with_conditions(
             UninstallOp {
-                pkg_id: dependent_pkg_id,
+                pkg_id: dependent_pkg.id.clone(),
                 reason: UninstallReason::RequestedByUser,
             },
             vec![StepCondition::AfterSuccess(dependency_step_id)],
@@ -374,11 +372,11 @@ mod tests {
 
         #[test]
         fn returns_prepared_step_for_install_ops() {
-            let manifest = testing::make_manifest("install-font@0.1.0");
+            let pkg = testing::make_package_definition("install-font@0.1.0");
 
             testing::with_db(|_cx, db| {
                 let step = PlanStep::new(InstallOp {
-                    manifest: Arc::clone(&manifest),
+                    pkg: Arc::clone(&pkg),
                     reason: InstallReason::RequestedByUser,
                 });
                 let step_id = step.step_id();
@@ -392,13 +390,12 @@ mod tests {
 
         #[test]
         fn returns_prepared_step_for_uninstall_ops() {
-            let manifest = testing::make_manifest("uninstall-font@0.1.0");
-            let pkg_id = manifest.id();
+            let pkg = testing::make_package_definition("uninstall-font@0.1.0");
 
             testing::with_db(|_cx, db| {
-                testing::mark_as_installed(db, &manifest);
+                testing::mark_as_installed(db, &pkg);
                 let step = PlanStep::new(UninstallOp {
-                    pkg_id,
+                    pkg_id: pkg.id.clone(),
                     reason: UninstallReason::RequestedByUser,
                 });
                 let step_id = step.step_id();
@@ -412,13 +409,12 @@ mod tests {
 
         #[test]
         fn returns_prepared_step_for_activate_ops() {
-            let manifest = testing::make_manifest("activate-font@0.1.0");
-            let pkg_id = manifest.id();
+            let pkg = testing::make_package_definition("activate-font@0.1.0");
 
             testing::with_db(|_cx, db| {
-                testing::mark_as_installed(db, &manifest);
+                testing::mark_as_installed(db, &pkg);
                 let step = PlanStep::new(ActivateOp {
-                    pkg_id,
+                    pkg_id: pkg.id.clone(),
                     reason: ActivateReason::RequestedByUser,
                 });
                 let step_id = step.step_id();
@@ -432,13 +428,12 @@ mod tests {
 
         #[test]
         fn returns_prepared_step_for_deactivate_ops() {
-            let manifest = testing::make_manifest("deactivate-font@0.1.0");
-            let pkg_id = manifest.id();
+            let pkg = testing::make_package_definition("deactivate-font@0.1.0");
 
             testing::with_db(|_cx, db| {
-                testing::mark_as_active(db, &manifest);
+                testing::mark_as_active(db, &pkg);
                 let step = PlanStep::new(DeactivateOp {
-                    pkg_id,
+                    pkg_id: pkg.id.clone(),
                     reason: DeactivateReason::RequestedByUser,
                 });
                 let step_id = step.step_id();

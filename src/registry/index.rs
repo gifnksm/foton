@@ -10,8 +10,8 @@ use snafu::{IntoError, OptionExt as _, ResultExt as _, Snafu};
 
 use crate::{
     package::{
-        PackageId, PackageManifest, PackageManifestError, PackageName, PackageSpec, PackageVersion,
-        ParsePackageNameError, ParsePackageVersionError,
+        PackageDefinition, PackageId, PackageManifest, PackageManifestError, PackageName,
+        PackageSpec, PackageVersion, ParsePackageNameError, ParsePackageVersionError,
     },
     registry::RegistryId,
 };
@@ -79,7 +79,7 @@ impl RegistryIndex {
         &self,
         pkg_spec: &PackageSpec,
         include_pre_release: bool,
-    ) -> Result<Option<Arc<PackageManifest>>, RegistryIndexError> {
+    ) -> Result<Option<Arc<PackageDefinition>>, RegistryIndexError> {
         match pkg_spec {
             PackageSpec::Name(name) => self.find_latest_package_by_name(name, include_pre_release),
             PackageSpec::Id(pkg_id) => self.find_package_by_id(pkg_id),
@@ -89,7 +89,7 @@ impl RegistryIndex {
     pub(crate) fn find_package_by_id(
         &self,
         pkg_id: &PackageId,
-    ) -> Result<Option<Arc<PackageManifest>>, RegistryIndexError> {
+    ) -> Result<Option<Arc<PackageDefinition>>, RegistryIndexError> {
         let package_dir = self
             .path
             .join(pkg_id.name())
@@ -100,23 +100,23 @@ impl RegistryIndex {
         let manifest_path = package_dir.join("manifest.toml");
         let manifest =
             PackageManifest::read(&manifest_path).context(ReadManifestSnafu { pkg_id })?;
-        let manifest_id = manifest.id();
+        let pkg = PackageDefinition::from(manifest);
         snafu::ensure!(
-            manifest_id == *pkg_id,
+            pkg.id == *pkg_id,
             PackageIdMismatchSnafu {
                 expected: pkg_id,
-                got: manifest_id,
+                got: &pkg.id,
                 manifest_path,
             }
         );
-        Ok(Some(manifest))
+        Ok(Some(Arc::new(pkg)))
     }
 
     pub(crate) fn find_latest_package_by_name(
         &self,
         name: &PackageName,
         include_pre_release: bool,
-    ) -> Result<Option<Arc<PackageManifest>>, RegistryIndexError> {
+    ) -> Result<Option<Arc<PackageDefinition>>, RegistryIndexError> {
         let base_path = self.path.join(name);
         let Some(versions) = read_child_directories::<PackageVersion, _, _>(&base_path, |path| {
             InvalidVersionInDirectoryEntrySnafu { path }
@@ -140,7 +140,7 @@ impl RegistryIndex {
         &self,
         include_pre_release: bool,
     ) -> Result<
-        Option<impl Iterator<Item = Result<Arc<PackageManifest>, RegistryIndexError>>>,
+        Option<impl Iterator<Item = Result<Arc<PackageDefinition>, RegistryIndexError>>>,
         RegistryIndexError,
     > {
         let Some(names) = read_child_directories::<PackageName, _, _>(&self.path, |path| {
@@ -233,9 +233,9 @@ mod tests {
         testing::write_manifest(registry_dir.path(), "example-font@0.1.0");
 
         let pkg_id: PackageId = "example-font@0.1.0".parse().unwrap();
-        let manifest = registry.find_package_by_id(&pkg_id).unwrap().unwrap();
+        let pkg = registry.find_package_by_id(&pkg_id).unwrap().unwrap();
 
-        assert_eq!(manifest.id(), pkg_id);
+        assert_eq!(pkg.id, pkg_id);
     }
 
     #[test]
@@ -245,12 +245,12 @@ mod tests {
         testing::write_manifest(registry_dir.path(), "example-font@0.2.0");
 
         let name: PackageName = "example-font".parse().unwrap();
-        let manifest = registry
+        let pkg = registry
             .find_latest_package_by_name(&name, false)
             .unwrap()
             .unwrap();
 
-        assert_eq!(manifest.id().to_string(), "example-font@0.2.0");
+        assert_eq!(pkg.id.to_string(), "example-font@0.2.0");
     }
 
     #[test]
@@ -269,8 +269,8 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(stable.id().to_string(), "example-font@1.0.0");
-        assert_eq!(pre_release.id().to_string(), "example-font@2.0.0-rc-1");
+        assert_eq!(stable.id.to_string(), "example-font@1.0.0");
+        assert_eq!(pre_release.id.to_string(), "example-font@2.0.0-rc-1");
     }
 
     #[test]
@@ -279,12 +279,12 @@ mod tests {
         testing::write_manifest(registry_dir.path(), "example-font@2.0.0-rc-1");
 
         let spec: PackageSpec = "example-font@2.0.0-rc-1".parse().unwrap();
-        let manifest = registry
+        let pkg = registry
             .find_latest_package_by_spec(&spec, false)
             .unwrap()
             .unwrap();
 
-        assert_eq!(manifest.id().to_string(), "example-font@2.0.0-rc-1");
+        assert_eq!(pkg.id.to_string(), "example-font@2.0.0-rc-1");
     }
 
     #[test]
@@ -309,15 +309,15 @@ mod tests {
         testing::write_manifest(registry_dir.path(), "other-font@1.0.0");
         fs::create_dir_all(registry_dir.path().join("empty-font")).unwrap();
 
-        let manifests = registry
+        let pkgs = registry
             .all_latest_packages(false)
             .unwrap()
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        let mut ids = manifests
+        let mut ids = pkgs
             .into_iter()
-            .map(|manifest| manifest.id().to_string())
+            .map(|pkg| pkg.id.to_string())
             .collect::<Vec<_>>();
         ids.sort();
 
@@ -338,7 +338,7 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .unwrap()
             .into_iter()
-            .map(|manifest| manifest.id().to_string())
+            .map(|pkg| pkg.id.to_string())
             .collect::<Vec<_>>();
         let all_ids = registry
             .all_latest_packages(true)
@@ -347,7 +347,7 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .unwrap()
             .into_iter()
-            .map(|manifest| manifest.id().to_string())
+            .map(|pkg| pkg.id.to_string())
             .collect::<Vec<_>>();
 
         assert_eq!(stable_ids, ["stable-font@1.0.0"]);

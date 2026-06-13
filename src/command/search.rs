@@ -11,7 +11,7 @@ use crate::{
         },
     },
     engine,
-    package::{ManifestMatchResult, PackageManifest},
+    package::{PackageDefinition, PackageMatchResult},
     registry::{RegistryId, RegistryIndexError},
     util::text::TextMatcher,
 };
@@ -79,9 +79,9 @@ pub(crate) fn search_packages(cx: &RootContext, args: &SearchArgs) -> Result<(),
     let indexes = engine::fetch_registries(&cx, &registries)?;
 
     let matcher = TextMatcher::new(queries.clone());
-    let manifests =
+    let pkgs =
         collect_search_results(&indexes, &matcher, *limit, *pre_release).report_error(&cx)?;
-    render_search_results(&mut io::stdout().lock(), manifests)
+    render_search_results(&mut io::stdout().lock(), pkgs)
         .context(WriteResultSnafu)
         .report_error(&cx)?;
 
@@ -93,11 +93,11 @@ fn collect_search_results(
     matcher: &TextMatcher,
     limit: usize,
     include_pre_release: bool,
-) -> Result<Vec<ScoredManifest>, SearchErrorReport> {
+) -> Result<Vec<ScoredPackage>, SearchErrorReport> {
     let mut heap = BinaryHeap::new();
 
     for index in indexes {
-        let Some(manifests) = index
+        let Some(pkgs) = index
             .all_latest_packages(include_pre_release)
             .with_context(|_| AllLatestPackagesSnafu {
                 reg_id: index.id().clone(),
@@ -105,16 +105,16 @@ fn collect_search_results(
         else {
             continue;
         };
-        for manifest in manifests {
-            let manifest = manifest.with_context(|_| ReadLatestPackageSnafu {
+        for pkg in pkgs {
+            let pkg = pkg.with_context(|_| ReadLatestPackageSnafu {
                 reg_id: index.id().clone(),
             })?;
-            if let Some(score) = manifest.match_manifest(matcher) {
+            if let Some(score) = pkg.match_package(matcher) {
                 let reg_id = index.id().clone();
-                heap.push(Reverse(ScoredManifest {
+                heap.push(Reverse(ScoredPackage {
                     score,
                     reg_id,
-                    manifest,
+                    definition: pkg,
                 }));
                 if heap.len() > limit {
                     heap.pop();
@@ -130,18 +130,18 @@ fn collect_search_results(
     Ok(heap
         .into_sorted_vec()
         .into_iter()
-        .map(|Reverse(manifest)| manifest)
+        .map(|Reverse(pkg)| pkg)
         .collect())
 }
 
-fn render_search_results<I>(writer: &mut dyn io::Write, manifests: I) -> io::Result<()>
+fn render_search_results<I>(writer: &mut dyn io::Write, pkgs: I) -> io::Result<()>
 where
-    I: IntoIterator<Item = ScoredManifest>,
+    I: IntoIterator<Item = ScoredPackage>,
 {
-    for manifest in manifests {
-        let m = &manifest.manifest;
-        writeln!(writer, "{} [{}]", m.id(), manifest.reg_id)?;
-        if let Some(description) = m.description.as_deref() {
+    for pkg in pkgs {
+        let d = &pkg.definition;
+        writeln!(writer, "{} [{}]", d.id, pkg.reg_id)?;
+        if let Some(description) = d.description.as_deref() {
             writeln!(writer, "  {description}")?;
         }
     }
@@ -149,34 +149,34 @@ where
 }
 
 #[derive(Debug)]
-pub(crate) struct ScoredManifest {
-    score: ManifestMatchResult,
+pub(crate) struct ScoredPackage {
+    score: PackageMatchResult,
     reg_id: RegistryId,
-    manifest: Arc<PackageManifest>,
+    definition: Arc<PackageDefinition>,
 }
 
-impl PartialEq for ScoredManifest {
+impl PartialEq for ScoredPackage {
     fn eq(&self, other: &Self) -> bool {
         self.score == other.score
             && self.reg_id == other.reg_id
-            && self.manifest.id() == other.manifest.id()
+            && self.definition.id == other.definition.id
     }
 }
 
-impl Eq for ScoredManifest {}
+impl Eq for ScoredPackage {}
 
-impl PartialOrd for ScoredManifest {
+impl PartialOrd for ScoredPackage {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for ScoredManifest {
+impl Ord for ScoredPackage {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.score
             .cmp(&other.score)
             .then_with(|| self.reg_id.cmp(&other.reg_id))
-            .then_with(|| self.manifest.id().cmp(&other.manifest.id()))
+            .then_with(|| self.definition.id.cmp(&other.definition.id))
     }
 }
 
@@ -194,26 +194,26 @@ mod tests {
         TextMatcher::new(vec![QueryString::try_new(query).unwrap()])
     }
 
-    fn make_scored_manifest(manifest: Arc<PackageManifest>) -> ScoredManifest {
-        ScoredManifest {
-            score: ManifestMatchResult {
+    fn make_scored_package(pkg: Arc<PackageDefinition>) -> ScoredPackage {
+        ScoredPackage {
+            score: PackageMatchResult {
                 form: crate::util::text::MatchForm::Separated,
                 kind: crate::util::text::MatchKind::Exact,
-                field: crate::package::ManifestField::Name,
+                field: crate::package::PackageDefinitionField::Name,
             },
             reg_id: RegistryId::new("foton").unwrap(),
-            manifest,
+            definition: pkg,
         }
     }
 
     #[test]
     fn render_search_results_prints_registry_without_description() {
-        let manifests = vec![make_scored_manifest(testing::make_manifest(
+        let pkgs = vec![make_scored_package(testing::make_package_definition(
             "example-font@1.0.0",
         ))];
         let mut output = Vec::new();
 
-        render_search_results(&mut output, manifests).unwrap();
+        render_search_results(&mut output, pkgs).unwrap();
 
         assert_eq!(
             String::from_utf8(output).unwrap(),
@@ -223,9 +223,8 @@ mod tests {
 
     #[test]
     fn render_search_results_prints_description_when_present() {
-        let manifest = Arc::new(
-            toml::from_str::<PackageManifest>(
-                r#"
+        let manifest = testing::parse_manifest(
+            r#"
 name = "example-font"
 version = "1.0.0"
 description = "Example font family for UI and coding"
@@ -234,13 +233,12 @@ description = "Example font family for UI and coding"
 url = "https://example.com/example-font-1.0.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 "#,
-            )
-            .unwrap(),
         );
-        let manifests = vec![make_scored_manifest(manifest)];
+        let pkg = Arc::new(manifest.into());
+        let pkgs = vec![make_scored_package(pkg)];
         let mut output = Vec::new();
 
-        render_search_results(&mut output, manifests).unwrap();
+        render_search_results(&mut output, pkgs).unwrap();
 
         assert_eq!(
             String::from_utf8(output).unwrap(),
@@ -273,7 +271,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
         assert_eq!(results.len(), 1);
         assert_eq!(
-            results[0].manifest.id().to_string(),
+            results[0].definition.id.to_string(),
             "preview-font@1.0.0-rc-1"
         );
     }

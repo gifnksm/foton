@@ -5,7 +5,6 @@ use std::{
 };
 
 use snafu::{OptionExt as _, ResultExt as _, Snafu};
-use url::Url;
 
 use crate::{
     cli::{
@@ -18,7 +17,10 @@ use crate::{
         },
     },
     engine::{self, ExtractDetail},
-    package::{self, FontEntry, PackageDirs, PackageId, PackageManifest, PackageManifestError},
+    package::{
+        self, FontEntry, PackageDefinition, PackageDirs, PackageId, PackageManifest,
+        PackageManifestError,
+    },
     util::{
         fs::FsError, glob::PathPattern, macros::concat_line, path::AbsolutePath,
         text::NormalizedString,
@@ -52,7 +54,7 @@ enum CheckManifestWarnReport {
         ),
         url = url,
     ))]
-    SameHomepageAndRepository { url: Url },
+    SameHomepageAndRepository { url: String },
     #[snafu(display(
         concat_line!(
             "following fields have the same normalized display name: {normalized}",
@@ -211,32 +213,33 @@ pub(crate) async fn check_manifest(
         .report_error(&cx)?;
 
     let pkg_dirs = PackageDirs::new_in(&tempdir_path, &pkg_id);
+    let pkg = manifest.into();
 
     package::create_new_package_dirs(&pkg_dirs)
         .context(CreatePackageDirsSnafu { pkg_id })
         .report_error(&cx)?;
 
-    let (font_entries, extract_details) = engine::stage_package(&cx, &pkg_dirs, &manifest).await?;
-    check_manifest_fields(&cx, &manifest, &font_entries, &extract_details)?;
+    let (font_entries, extract_details) = engine::stage_package(&cx, &pkg_dirs, &pkg).await?;
+    check_fields(&cx, &pkg, &font_entries, &extract_details)?;
 
     Ok(())
 }
 
-fn check_manifest_fields(
+fn check_fields(
     cx: &ReportContext<CheckManifestScope>,
-    manifest: &PackageManifest,
+    pkg: &PackageDefinition,
     font_entries: &[FontEntry],
     extract_details: &[ExtractDetail],
 ) -> Result<(), CheckManifestError> {
     let mut reports = vec![];
 
-    check_missing_fields(manifest, &mut reports);
-    check_homepage_and_repository_url(manifest, &mut reports);
-    check_display_name_duplication(manifest, &mut reports);
-    check_face_duplication(manifest, &mut reports);
-    check_face_completeness(manifest, font_entries, &mut reports);
-    check_include_extraction(manifest, extract_details, &mut reports);
-    check_exclude_extraction(manifest, extract_details, &mut reports);
+    check_missing_fields(pkg, &mut reports);
+    check_homepage_and_repository_url(pkg, &mut reports);
+    check_display_name_duplication(pkg, &mut reports);
+    check_face_duplication(pkg, &mut reports);
+    check_face_completeness(pkg, font_entries, &mut reports);
+    check_include_extraction(pkg, extract_details, &mut reports);
+    check_exclude_extraction(pkg, extract_details, &mut reports);
     check_suspicious_skips(extract_details, &mut reports);
 
     let mut err = None;
@@ -251,35 +254,35 @@ fn check_manifest_fields(
     Ok(())
 }
 
-fn check_missing_fields(manifest: &PackageManifest, reports: &mut Vec<CheckManifestWarnReport>) {
-    if manifest.display_name.is_none() {
+fn check_missing_fields(pkg: &PackageDefinition, reports: &mut Vec<CheckManifestWarnReport>) {
+    if pkg.display_name.is_none() {
         reports.push(MissingDisplayNameSnafu.build());
     }
-    if manifest.license.is_none() {
+    if pkg.license.is_none() {
         reports.push(MissingLicenseSnafu.build());
     }
-    if manifest.description.is_none() {
+    if pkg.description.is_none() {
         reports.push(MissingDescriptionSnafu.build());
     }
 }
 
 fn check_homepage_and_repository_url(
-    manifest: &PackageManifest,
+    pkg: &PackageDefinition,
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
-    if let Some(url) = &manifest.homepage
-        && manifest.repository == manifest.homepage
+    if let Some(url) = &pkg.homepage
+        && pkg.repository == pkg.homepage
     {
         reports.push(SameHomepageAndRepositorySnafu { url: url.clone() }.build());
     }
 }
 
 fn check_display_name_duplication(
-    manifest: &PackageManifest,
+    pkg: &PackageDefinition,
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
     let mut display_names: BTreeMap<String, Vec<_>> = BTreeMap::new();
-    if let Some(display_name) = &manifest.display_name {
+    if let Some(display_name) = &pkg.display_name {
         let normalized = NormalizedString::new(display_name).into_compact();
         display_names
             .entry(normalized)
@@ -289,7 +292,7 @@ fn check_display_name_duplication(
                 source_field: "display-name",
             });
     }
-    for alias in &manifest.aliases {
+    for alias in &pkg.aliases {
         let normalized = NormalizedString::new(alias).into_compact();
         display_names
             .entry(normalized)
@@ -306,9 +309,9 @@ fn check_display_name_duplication(
     }
 }
 
-fn check_face_duplication(manifest: &PackageManifest, reports: &mut Vec<CheckManifestWarnReport>) {
+fn check_face_duplication(pkg: &PackageDefinition, reports: &mut Vec<CheckManifestWarnReport>) {
     let mut faces: BTreeMap<String, Vec<_>> = BTreeMap::new();
-    for face in &manifest.faces {
+    for face in &pkg.faces {
         let normalized = NormalizedString::new(face).into_compact();
         faces.entry(normalized).or_default().push(ValueWithSource {
             value: face.clone(),
@@ -323,12 +326,12 @@ fn check_face_duplication(manifest: &PackageManifest, reports: &mut Vec<CheckMan
 }
 
 fn check_face_completeness(
-    manifest: &PackageManifest,
+    pkg: &PackageDefinition,
     font_entries: &[FontEntry],
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
     for entry in font_entries {
-        if !manifest.faces.iter().any(|face| entry.title() == face) {
+        if !pkg.faces.iter().any(|face| entry.title() == face) {
             reports.push(
                 UnlistedFaceSnafu {
                     face: entry.title(),
@@ -364,13 +367,13 @@ fn collect_excluded_paths(
 }
 
 fn check_include_extraction(
-    manifest: &PackageManifest,
+    pkg: &PackageDefinition,
     extract_details: &[ExtractDetail],
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
-    assert_eq!(manifest.sources.len(), extract_details.len());
+    assert_eq!(pkg.sources.len(), extract_details.len());
     for (source_index, (source, extract_detail)) in
-        iter::zip(&manifest.sources, extract_details).enumerate()
+        iter::zip(&pkg.sources, extract_details).enumerate()
     {
         let mut source_patterns: BTreeMap<PathBuf, Vec<_>> = BTreeMap::new();
         for pattern in &source.include {
@@ -416,13 +419,13 @@ fn check_include_extraction(
 }
 
 fn check_exclude_extraction(
-    manifest: &PackageManifest,
+    pkg: &PackageDefinition,
     extract_details: &[ExtractDetail],
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
-    assert_eq!(manifest.sources.len(), extract_details.len());
+    assert_eq!(pkg.sources.len(), extract_details.len());
     for (source_index, (source, extract_detail)) in
-        iter::zip(&manifest.sources, extract_details).enumerate()
+        iter::zip(&pkg.sources, extract_details).enumerate()
     {
         for pattern in &source.exclude {
             let extracted = collect_excluded_paths(extract_detail, pattern);
@@ -466,11 +469,11 @@ mod tests {
     use std::assert_matches;
 
     use super::*;
-    use crate::{engine::ExtractEntry, package::FontEntry, util::path::FileName};
-
-    fn parse_manifest(input: &str) -> PackageManifest {
-        toml::from_str(input).unwrap()
-    }
+    use crate::{
+        engine::ExtractEntry,
+        package::FontEntry,
+        util::{path::FileName, testing},
+    };
 
     fn make_font_entries(entries: &[(&str, &str)]) -> Vec<FontEntry> {
         entries
@@ -504,7 +507,7 @@ mod tests {
 
     #[test]
     fn check_missing_fields_reports_all_missing_fields() {
-        let manifest = parse_manifest(
+        let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -516,7 +519,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
         let mut reports = vec![];
 
-        check_missing_fields(&manifest, &mut reports);
+        check_missing_fields(&pkg, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
@@ -530,7 +533,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn check_homepage_and_repository_url_reports_same_url() {
-        let manifest = parse_manifest(
+        let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -544,7 +547,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
         let mut reports = vec![];
 
-        check_homepage_and_repository_url(&manifest, &mut reports);
+        check_homepage_and_repository_url(&pkg, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
@@ -554,7 +557,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn check_display_name_duplication_reports_compact_duplicates() {
-        let manifest = parse_manifest(
+        let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
 display-name = "UDPGothic"
@@ -568,7 +571,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
         let mut reports = vec![];
 
-        check_display_name_duplication(&manifest, &mut reports);
+        check_display_name_duplication(&pkg, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
@@ -579,7 +582,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn check_face_duplication_reports_compact_duplicates() {
-        let manifest = parse_manifest(
+        let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -592,7 +595,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
         let mut reports = vec![];
 
-        check_face_duplication(&manifest, &mut reports);
+        check_face_duplication(&pkg, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
@@ -603,7 +606,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn check_face_completeness_reports_unlisted_faces() {
-        let manifest = parse_manifest(
+        let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -617,7 +620,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         let font_entries = make_font_entries(&[("Actual Face", "actual.ttf")]);
         let mut reports = vec![];
 
-        check_face_completeness(&manifest, &font_entries, &mut reports);
+        check_face_completeness(&pkg, &font_entries, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
@@ -627,7 +630,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn check_include_extraction_reports_patterns_matching_no_font_paths() {
-        let manifest = parse_manifest(
+        let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -641,7 +644,7 @@ include = ["fonts/missing.ttf"]
         let extract_details = [make_extract_detail(&["fonts/actual.ttf"], &[], &[])];
         let mut reports = vec![];
 
-        check_include_extraction(&manifest, &extract_details, &mut reports);
+        check_include_extraction(&pkg, &extract_details, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
@@ -652,7 +655,7 @@ include = ["fonts/missing.ttf"]
 
     #[test]
     fn check_include_extraction_reports_wildcard_patterns_with_matching_font_paths() {
-        let manifest = parse_manifest(
+        let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -674,7 +677,7 @@ include = ["fonts/c.ttf"]
         ];
         let mut reports = vec![];
 
-        check_include_extraction(&manifest, &extract_details, &mut reports);
+        check_include_extraction(&pkg, &extract_details, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
@@ -688,7 +691,7 @@ include = ["fonts/c.ttf"]
 
     #[test]
     fn check_include_extraction_reports_multiple_patterns_matching_same_path() {
-        let manifest = parse_manifest(
+        let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -702,7 +705,7 @@ include = ["fonts/a.ttf", "fonts/a.ttf"]
         let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[], &[])];
         let mut reports = vec![];
 
-        check_include_extraction(&manifest, &extract_details, &mut reports);
+        check_include_extraction(&pkg, &extract_details, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
@@ -719,7 +722,7 @@ include = ["fonts/a.ttf", "fonts/a.ttf"]
 
     #[test]
     fn check_include_extraction_reports_wildcard_and_duplicate_match_independently() {
-        let manifest = parse_manifest(
+        let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -733,7 +736,7 @@ include = ["fonts/*.ttf", "fonts/a.ttf"]
         let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[], &[])];
         let mut reports = vec![];
 
-        check_include_extraction(&manifest, &extract_details, &mut reports);
+        check_include_extraction(&pkg, &extract_details, &mut reports);
 
         assert!(reports.iter().any(|report| matches!(
             report,
@@ -760,7 +763,7 @@ include = ["fonts/*.ttf", "fonts/a.ttf"]
 
     #[test]
     fn check_exclude_extraction_reports_patterns_matching_no_paths() {
-        let manifest = parse_manifest(
+        let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -774,7 +777,7 @@ exclude = ["fonts/missing.ttf"]
         let extract_details = [make_extract_detail(&["fonts/actual.ttf"], &[], &[])];
         let mut reports = vec![];
 
-        check_exclude_extraction(&manifest, &extract_details, &mut reports);
+        check_exclude_extraction(&pkg, &extract_details, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
@@ -785,7 +788,7 @@ exclude = ["fonts/missing.ttf"]
 
     #[test]
     fn check_exclude_extraction_does_not_report_when_pattern_matches_paths() {
-        let manifest = parse_manifest(
+        let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -803,7 +806,7 @@ exclude = ["fonts/skip.ttf"]
         )];
         let mut reports = vec![];
 
-        check_exclude_extraction(&manifest, &extract_details, &mut reports);
+        check_exclude_extraction(&pkg, &extract_details, &mut reports);
 
         assert!(reports.is_empty());
     }

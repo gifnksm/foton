@@ -1,7 +1,6 @@
 use std::{
     fs, io,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 use reqwest::Url;
@@ -9,12 +8,8 @@ use serde::{Deserialize, Serialize};
 use snafu::{IntoError as _, ResultExt as _, Snafu};
 
 use crate::{
-    package::{PackageId, PackageName, PackageVersion},
-    util::{
-        glob::PathPattern,
-        hash::GenericDigest,
-        text::{MatchForm, MatchKind, TextMatcher},
-    },
+    package::{PackageDefinition, PackageId, PackageName, PackageSource, PackageVersion},
+    util::{glob::PathPattern, hash::GenericDigest},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,13 +97,13 @@ pub(crate) struct PackageManifest {
     pub(crate) license: Option<spdx::Expression>,
     /// Download sources from which the package's font files can be installed.
     #[serde(deserialize_with = "non_empty_vec::deserialize")]
-    pub(crate) sources: Vec<PackageSource>,
+    pub(crate) sources: Vec<PackageManifestSource>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) struct PackageSource {
+pub(crate) struct PackageManifestSource {
     /// URL of the downloadable archive or file that contains the package contents.
     #[serde(deserialize_with = "http_url::deserialize")]
     pub(crate) url: Url,
@@ -126,6 +121,51 @@ pub(crate) struct PackageSource {
     /// Glob patterns excluding files from installation even if they are matched by `include`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) exclude: Vec<PathPattern>,
+}
+
+impl From<PackageManifest> for PackageDefinition {
+    fn from(manifest: PackageManifest) -> Self {
+        let PackageManifest {
+            name,
+            display_name,
+            version,
+            description,
+            aliases,
+            faces,
+            homepage,
+            repository,
+            license,
+            sources,
+        } = manifest;
+        Self {
+            id: PackageId::new(name, version),
+            display_name,
+            description,
+            aliases,
+            faces,
+            homepage: homepage.map(|url| url.to_string()),
+            repository: repository.map(|url| url.to_string()),
+            license: license.map(|expr| expr.to_string()),
+            sources: sources.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<PackageManifestSource> for PackageSource {
+    fn from(source: PackageManifestSource) -> Self {
+        let PackageManifestSource {
+            url,
+            hash,
+            include,
+            exclude,
+        } = source;
+        Self {
+            url,
+            hash,
+            include,
+            exclude,
+        }
+    }
 }
 
 impl PackageManifest {
@@ -287,7 +327,7 @@ pub(crate) enum PackageManifestError {
 }
 
 impl PackageManifest {
-    pub(crate) fn read<P>(path: P) -> Result<Arc<Self>, PackageManifestError>
+    pub(crate) fn read<P>(path: P) -> Result<Self, PackageManifestError>
     where
         P: AsRef<Path>,
     {
@@ -300,89 +340,8 @@ impl PackageManifest {
             }
         })?;
         let manifest = toml::from_str(&manifest_str).context(DeserializeManifestSnafu { path })?;
-        Ok(Arc::new(manifest))
+        Ok(manifest)
     }
-
-    pub(crate) fn match_manifest(&self, matcher: &TextMatcher) -> Option<ManifestMatchResult> {
-        let mut max_res = None;
-
-        if let Some(res) = matcher.match_text(self.name.as_str()) {
-            let res = Some(ManifestMatchResult {
-                form: res.form,
-                kind: res.kind,
-                field: ManifestField::Name,
-            });
-            max_res = Option::max(max_res, res);
-        }
-
-        if let Some(res) = self
-            .display_name
-            .as_deref()
-            .and_then(|display_name| matcher.match_text(display_name))
-        {
-            let res = Some(ManifestMatchResult {
-                form: res.form,
-                kind: res.kind,
-                field: ManifestField::DisplayName,
-            });
-            max_res = Option::max(max_res, res);
-        }
-
-        for alias in &self.aliases {
-            let Some(res) = matcher.match_text(alias.as_str()) else {
-                continue;
-            };
-            let res = Some(ManifestMatchResult {
-                form: res.form,
-                kind: res.kind,
-                field: ManifestField::Aliases,
-            });
-            max_res = Option::max(max_res, res);
-        }
-
-        for face in &self.faces {
-            let Some(res) = matcher.match_text(face.as_str()) else {
-                continue;
-            };
-            let res = Some(ManifestMatchResult {
-                form: res.form,
-                kind: res.kind,
-                field: ManifestField::Faces,
-            });
-            max_res = Option::max(max_res, res);
-        }
-
-        if let Some(res) = self
-            .description
-            .as_deref()
-            .and_then(|description| matcher.match_text(description))
-        {
-            let res = Some(ManifestMatchResult {
-                form: res.form,
-                kind: res.kind,
-                field: ManifestField::Description,
-            });
-            max_res = Option::max(max_res, res);
-        }
-
-        max_res
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum ManifestField {
-    Description,
-    Faces,
-    Aliases,
-    DisplayName,
-    Name,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct ManifestMatchResult {
-    pub(crate) form: MatchForm,
-    pub(crate) kind: MatchKind,
-    pub(crate) field: ManifestField,
 }
 
 #[cfg(test)]
@@ -392,20 +351,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::util::text::QueryString;
-
-    fn parse_manifest(input: &str) -> Result<PackageManifest, toml::de::Error> {
-        toml::from_str(input)
-    }
-
-    fn make_matcher(queries: &[&str]) -> TextMatcher {
-        TextMatcher::new(
-            queries
-                .iter()
-                .map(|query| QueryString::try_new(query).unwrap())
-                .collect(),
-        )
-    }
+    use crate::util::testing;
 
     fn minimal_manifest_toml() -> &'static str {
         r#"
@@ -421,7 +367,7 @@ include = ["*/*.ttf"]
 
     #[test]
     fn package_manifest_deserializes_minimal_manifest() {
-        let manifest = parse_manifest(minimal_manifest_toml()).unwrap();
+        let manifest = testing::parse_manifest(minimal_manifest_toml());
 
         assert_eq!(manifest.name, "example-font");
         assert_eq!(manifest.display_name, None);
@@ -454,7 +400,7 @@ include = ["*/*.ttf"]
 
     #[test]
     fn package_manifest_deserializes_manifest_with_all_metadata_fields() {
-        let manifest = parse_manifest(
+        let manifest = testing::parse_manifest(
             r#"
 name = "example-font"
 display-name = "Example Font"
@@ -471,8 +417,7 @@ url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = ["*/*.ttf"]
 "#,
-        )
-        .unwrap();
+        );
 
         assert_eq!(manifest.name, "example-font");
         assert_eq!(manifest.display_name.as_deref(), Some("Example Font"));
@@ -524,7 +469,7 @@ include = ["*/*.ttf"]
 
     #[test]
     fn package_manifest_rejects_invalid_license_expression() {
-        let err = parse_manifest(
+        let err = testing::try_parse_manifest(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -542,7 +487,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn package_manifest_rejects_empty_sources() {
-        let err = parse_manifest(
+        let err = testing::try_parse_manifest(
             r#"
 sources = []
 
@@ -557,7 +502,7 @@ version = "0.1.0"
 
     #[test]
     fn package_manifest_rejects_empty_include() {
-        let err = parse_manifest(
+        let err = testing::try_parse_manifest(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -575,7 +520,7 @@ include = []
 
     #[test]
     fn package_manifest_rejects_empty_description() {
-        let err = parse_manifest(
+        let err = testing::try_parse_manifest(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -596,7 +541,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn package_manifest_rejects_empty_display_name() {
-        let err = parse_manifest(
+        let err = testing::try_parse_manifest(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -617,7 +562,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn package_manifest_rejects_description_with_surrounding_whitespace() {
-        let err = parse_manifest(
+        let err = testing::try_parse_manifest(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -638,7 +583,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn package_manifest_rejects_aliases_with_surrounding_whitespace() {
-        let err = parse_manifest(
+        let err = testing::try_parse_manifest(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -659,7 +604,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn package_manifest_rejects_empty_faces() {
-        let err = parse_manifest(
+        let err = testing::try_parse_manifest(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -680,7 +625,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn package_manifest_rejects_non_http_source_url() {
-        let err = parse_manifest(
+        let err = testing::try_parse_manifest(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -697,7 +642,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn package_manifest_rejects_non_http_homepage_url() {
-        let err = parse_manifest(
+        let err = testing::try_parse_manifest(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -714,84 +659,8 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     }
 
     #[test]
-    fn package_metadata_match_manifest_prefers_stronger_match_from_another_field() {
-        let manifest = parse_manifest(
-            r#"
-name = "example-font-nerd"
-display-name = "Example Font"
-version = "0.1.0"
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-"#,
-        )
-        .unwrap();
-        let text_matcher = make_matcher(&["example font"]);
-
-        let result = manifest.match_manifest(&text_matcher).unwrap();
-
-        assert_eq!(
-            result,
-            ManifestMatchResult {
-                form: MatchForm::Separated,
-                kind: MatchKind::Exact,
-                field: ManifestField::DisplayName,
-            }
-        );
-    }
-
-    #[test]
-    fn package_metadata_match_manifest_requires_all_queries_in_the_same_field() {
-        let manifest = parse_manifest(
-            r#"
-name = "example-font"
-display-name = "Example Font"
-description = "Nerd variant"
-version = "0.1.0"
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-"#,
-        )
-        .unwrap();
-        let text_matcher = make_matcher(&["example", "nerd"]);
-
-        assert_eq!(manifest.match_manifest(&text_matcher), None);
-    }
-
-    #[test]
-    fn package_metadata_match_manifest_uses_weakest_match_kind_for_multiple_queries() {
-        let manifest = parse_manifest(
-            r#"
-name = "typeface"
-display-name = "Example Font Nerd"
-version = "0.1.0"
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-"#,
-        )
-        .unwrap();
-        let text_matcher = make_matcher(&["example", "font"]);
-
-        let result = manifest.match_manifest(&text_matcher).unwrap();
-
-        assert_eq!(
-            result,
-            ManifestMatchResult {
-                form: MatchForm::Separated,
-                kind: MatchKind::Substring,
-                field: ManifestField::DisplayName,
-            }
-        );
-    }
-
-    #[test]
     fn package_manifest_uses_default_include_when_omitted() {
-        let manifest = parse_manifest(
+        let manifest = testing::parse_manifest(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -800,8 +669,7 @@ version = "0.1.0"
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 "#,
-        )
-        .unwrap();
+        );
 
         assert_eq!(
             manifest.sources[0]
@@ -816,7 +684,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn package_manifest_deserializes_exclude_patterns() {
-        let manifest = parse_manifest(
+        let manifest = testing::parse_manifest(
             r#"
 name = "example-font"
 version = "0.1.0"
@@ -827,8 +695,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = ["fonts/*.ttf"]
 exclude = ["fonts/exclude.ttf", "fonts/legacy/*.ttf"]
 "#,
-        )
-        .unwrap();
+        );
 
         assert_eq!(
             manifest.sources[0]

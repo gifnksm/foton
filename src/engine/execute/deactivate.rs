@@ -106,17 +106,16 @@ mod tests {
     use super::*;
     use crate::{
         engine::DeactivateReason,
-        package::{ActivationState, PackageManifest},
+        package::{ActivationState, PackageDefinition},
         util::testing,
     };
 
-    static MANIFEST: LazyLock<Arc<PackageManifest>> =
-        LazyLock::new(|| testing::make_manifest("example-font@0.1.0"));
-    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| MANIFEST.id());
+    static PKG: LazyLock<Arc<PackageDefinition>> =
+        LazyLock::new(|| testing::make_package_definition("example-font@0.1.0"));
 
     fn deactivate_op() -> DeactivateOp {
         DeactivateOp {
-            pkg_id: PKG_ID.clone(),
+            pkg_id: PKG.id.clone(),
             reason: DeactivateReason::RequestedByUser,
         }
     }
@@ -124,24 +123,24 @@ mod tests {
     #[test]
     fn prepared_deactivate_step_from_plan_step_begins_incomplete_deactivation_in_transaction() {
         testing::with_db(|_cx, db| {
-            testing::mark_as_active(db, &MANIFEST);
+            testing::mark_as_active(db, &PKG);
 
             let mut tx = db.transaction();
             let step = PreparedDeactivateStep::from_plan_step(&mut tx, deactivate_op());
             tx.commit().unwrap();
 
             assert_eq!(
-                db.entry_by_id(&PKG_ID).unwrap().activation_state(),
+                db.entry_by_id(&PKG.id).unwrap().activation_state(),
                 ActivationState::IncompleteDeactivation,
             );
-            assert_eq!(step.pkg_id, *PKG_ID);
+            assert_eq!(step.pkg_id, PKG.id);
         });
     }
 
     #[test]
     fn prepared_deactivate_step_on_complete_marks_entry_inactive() {
         testing::with_db(|cx, db| {
-            testing::mark_as_active(db, &MANIFEST);
+            testing::mark_as_active(db, &PKG);
 
             let mut tx = db.transaction();
             let mut step = PreparedDeactivateStep::from_plan_step(&mut tx, deactivate_op());
@@ -150,7 +149,7 @@ mod tests {
             tx.commit().unwrap();
 
             assert_eq!(
-                db.entry_by_id(&PKG_ID).unwrap().activation_state(),
+                db.entry_by_id(&PKG.id).unwrap().activation_state(),
                 ActivationState::Inactive,
             );
         });

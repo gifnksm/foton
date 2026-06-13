@@ -1,21 +1,21 @@
 use std::sync::Arc;
 
 use crate::{
-    package::PackageManifest,
+    package::PackageDefinition,
     registry::{RegistryId, RegistryIndex},
 };
 
 pub(in crate::engine::resolve) fn collect_registry_matches<E, F>(
     indexes: &[RegistryIndex],
     mut find: F,
-) -> Result<Vec<(RegistryId, Arc<PackageManifest>)>, E>
+) -> Result<Vec<(RegistryId, Arc<PackageDefinition>)>, E>
 where
-    F: FnMut(&RegistryIndex) -> Result<Option<Arc<PackageManifest>>, E>,
+    F: FnMut(&RegistryIndex) -> Result<Option<Arc<PackageDefinition>>, E>,
 {
     let mut matches = vec![];
     for index in indexes {
-        if let Some(manifest) = find(index)? {
-            matches.push((index.id().clone(), manifest));
+        if let Some(pkg) = find(index)? {
+            matches.push((index.id().clone(), pkg));
         }
     }
     Ok(matches)

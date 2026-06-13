@@ -24,7 +24,7 @@ use crate::{
     },
     db::PackageDatabase,
     engine,
-    package::{InstallationState, PackageDirs, PackageId, PackageManifest},
+    package::{InstallationState, PackageDefinition, PackageDirs, PackageId, PackageManifest},
     registry::{RegistryId, RegistryIndex, RegistrySource, RegistrySpec},
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
@@ -167,12 +167,31 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     )
 }
 
-pub(crate) fn make_manifest<I>(pkg_id: I) -> Arc<PackageManifest>
+pub(crate) fn make_manifest<I>(pkg_id: I) -> PackageManifest
 where
     I: TryInto<PackageId, Error: Debug>,
 {
     let manifest_str = make_manifest_str(pkg_id);
-    Arc::new(toml::from_str(&manifest_str).unwrap())
+    parse_manifest(&manifest_str)
+}
+
+pub(crate) fn try_parse_manifest(manifest_str: &str) -> Result<PackageManifest, toml::de::Error> {
+    toml::from_str(manifest_str)
+}
+
+pub(crate) fn parse_manifest(manifest_str: &str) -> PackageManifest {
+    try_parse_manifest(manifest_str).unwrap()
+}
+
+pub(crate) fn parse_manifest_to_definition(manifest_str: &str) -> Arc<PackageDefinition> {
+    Arc::new(parse_manifest(manifest_str).into())
+}
+
+pub(crate) fn make_package_definition<I>(pkg_id: I) -> Arc<PackageDefinition>
+where
+    I: TryInto<PackageId, Error: Debug>,
+{
+    Arc::new(make_manifest(pkg_id).into())
 }
 
 pub(crate) fn write_manifest<P, I>(registry_dir: P, pkg_id: I)
@@ -201,101 +220,95 @@ where
 
 pub(crate) fn mark_as_state(
     db: &mut PackageDatabase<'_>,
-    manifest: &Arc<PackageManifest>,
+    pkg: &Arc<PackageDefinition>,
     state: InstallationState,
 ) {
     match state {
-        InstallationState::Installed => mark_as_installed(db, manifest),
-        InstallationState::IncompleteInstall => mark_as_incomplete_install(db, manifest),
-        InstallationState::IncompleteUninstall => mark_as_incomplete_uninstall(db, manifest),
+        InstallationState::Installed => mark_as_installed(db, pkg),
+        InstallationState::IncompleteInstall => mark_as_incomplete_install(db, pkg),
+        InstallationState::IncompleteUninstall => mark_as_incomplete_uninstall(db, pkg),
     }
 }
 
 pub(crate) fn mark_as_incomplete_install(
     db: &mut PackageDatabase<'_>,
-    manifest: &Arc<PackageManifest>,
+    pkg: &Arc<PackageDefinition>,
 ) {
-    let pkg_id = manifest.id();
     let mut tx = db.transaction();
-    tx.begin_install(Arc::clone(manifest));
+    tx.begin_install(Arc::clone(pkg));
     tx.commit().unwrap();
-    let entry = db.entry_by_id(&pkg_id).unwrap();
+    let entry = db.entry_by_id(&pkg.id).unwrap();
     assert!(entry.installation_state().is_incomplete_install());
     assert!(entry.activation_state().is_inactive());
 }
 
-pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, manifest: &Arc<PackageManifest>) {
-    let pkg_id = manifest.id();
+pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, pkg: &Arc<PackageDefinition>) {
     let mut tx = db.transaction();
-    tx.begin_install(Arc::clone(manifest));
-    tx.complete_install(&pkg_id, &[]).unwrap();
+    tx.begin_install(Arc::clone(pkg));
+    tx.complete_install(&pkg.id, &[]).unwrap();
     tx.commit().unwrap();
 
-    let entry = db.entry_by_id(&pkg_id).unwrap();
+    let entry = db.entry_by_id(&pkg.id).unwrap();
     assert!(entry.installation_state().is_installed());
     assert!(entry.activation_state().is_inactive());
 }
 
 pub(crate) fn mark_as_incomplete_activation(
     db: &mut PackageDatabase<'_>,
-    manifest: &Arc<PackageManifest>,
+    pkg: &Arc<PackageDefinition>,
 ) {
-    let pkg_id = manifest.id();
     let mut tx = db.transaction();
-    tx.begin_install(Arc::clone(manifest));
-    tx.complete_install(&pkg_id, &[]).unwrap();
-    tx.begin_activate(&pkg_id).unwrap();
+    tx.begin_install(Arc::clone(pkg));
+    tx.complete_install(&pkg.id, &[]).unwrap();
+    tx.begin_activate(&pkg.id).unwrap();
     tx.commit().unwrap();
 
-    let entry = db.entry_by_id(&pkg_id).unwrap();
+    let entry = db.entry_by_id(&pkg.id).unwrap();
     assert!(entry.installation_state().is_installed());
     assert!(entry.activation_state().is_incomplete_activation());
 }
 
-pub(crate) fn mark_as_active(db: &mut PackageDatabase<'_>, manifest: &Arc<PackageManifest>) {
-    let pkg_id = manifest.id();
+pub(crate) fn mark_as_active(db: &mut PackageDatabase<'_>, pkg: &Arc<PackageDefinition>) {
     let mut tx = db.transaction();
-    tx.begin_install(Arc::clone(manifest));
-    tx.complete_install(&pkg_id, &[]).unwrap();
-    tx.begin_activate(&pkg_id).unwrap();
-    tx.complete_activate(&pkg_id).unwrap();
+    tx.begin_install(Arc::clone(pkg));
+    tx.complete_install(&pkg.id, &[]).unwrap();
+    tx.begin_activate(&pkg.id).unwrap();
+    tx.complete_activate(&pkg.id).unwrap();
     tx.commit().unwrap();
 
-    let entry = db.entry_by_id(&pkg_id).unwrap();
+    let entry = db.entry_by_id(&pkg.id).unwrap();
     assert!(entry.installation_state().is_installed());
     assert!(entry.activation_state().is_active());
 }
 
 pub(crate) fn mark_as_incomplete_deactivation(
     db: &mut PackageDatabase<'_>,
-    manifest: &Arc<PackageManifest>,
+    pkg: &Arc<PackageDefinition>,
 ) {
-    let pkg_id = manifest.id();
     let mut tx = db.transaction();
-    tx.begin_install(Arc::clone(manifest));
-    tx.complete_install(&pkg_id, &[]).unwrap();
-    tx.begin_activate(&pkg_id).unwrap();
-    tx.complete_activate(&pkg_id).unwrap();
-    tx.begin_deactivate(&pkg_id).unwrap();
+    tx.begin_install(Arc::clone(pkg));
+    tx.complete_install(&pkg.id, &[]).unwrap();
+    tx.begin_activate(&pkg.id).unwrap();
+    tx.complete_activate(&pkg.id).unwrap();
+    tx.begin_deactivate(&pkg.id).unwrap();
     tx.commit().unwrap();
 
-    let entry = db.entry_by_id(&pkg_id).unwrap();
+    let entry = db.entry_by_id(&pkg.id).unwrap();
     assert!(entry.installation_state().is_installed());
     assert!(entry.activation_state().is_incomplete_deactivation());
 }
 
 pub(crate) fn mark_as_incomplete_uninstall(
     db: &mut PackageDatabase<'_>,
-    manifest: &Arc<PackageManifest>,
+    pkg: &Arc<PackageDefinition>,
 ) {
-    let pkg_id = manifest.id();
     let mut tx = db.transaction();
-    tx.begin_install(Arc::clone(manifest));
-    tx.complete_install(&pkg_id, &[]).unwrap();
-    tx.begin_uninstall(&pkg_id).unwrap();
+    tx.begin_install(Arc::clone(pkg));
+    tx.complete_install(&pkg.id, &[]).unwrap();
+    tx.begin_uninstall(&pkg.id).unwrap();
     tx.commit().unwrap();
 
-    let entry = db.entry_by_id(&pkg_id).unwrap();
+    let entry = db.entry_by_id(&pkg.id).unwrap();
     assert!(entry.installation_state().is_incomplete_uninstall());
     assert!(entry.activation_state().is_inactive());
 }

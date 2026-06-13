@@ -14,7 +14,7 @@ pub(in crate::engine::resolve) fn assert_install_target_id(
     target: &ResolvedInstallTarget,
     expected: &str,
 ) {
-    assert_eq!(target.manifest.id().to_string(), expected);
+    assert_eq!(target.pkg.id.to_string(), expected);
 }
 
 pub(in crate::engine::resolve) fn assert_install_target_ids(
@@ -23,7 +23,7 @@ pub(in crate::engine::resolve) fn assert_install_target_ids(
 ) {
     let actual = targets
         .iter()
-        .map(|target| target.manifest.id().to_string())
+        .map(|target| target.pkg.id.to_string())
         .collect::<Vec<_>>();
     let expected = expected.iter().map(ToString::to_string).collect::<Vec<_>>();
     assert_eq!(actual, expected);
