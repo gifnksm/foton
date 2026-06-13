@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use snafu::{ResultExt as _, Snafu};
+use snafu::{OptionExt as _, ResultExt as _, Snafu};
 
 use crate::{
     cli::{
@@ -44,18 +44,6 @@ impl<S> SubReportScope<S> for UpdateResolveScope<S> where S: ReportScope {}
 enum UpdateResolveErrorReport {
     #[snafu(display("no installed package matches the specified package `{pkg_spec}`"))]
     NoMatchingPackage { pkg_spec: PackageSpec },
-    #[snafu(display(
-    concat_line!(
-        "multiple installed packages match the specified package `{pkg_spec}`:",
-        "{pkg_ids}",
-    ),
-    pkg_spec = pkg_spec,
-    pkg_ids = BulletList(pkg_ids),
-))]
-    MultipleMatchingPackages {
-        pkg_spec: PackageSpec,
-        pkg_ids: Vec<PackageId>,
-    },
     #[snafu(display("failed to find the latest package for `{name}` in registry `{reg_id}`"))]
     FindLatestPackage {
         reg_id: RegistryId,
@@ -91,8 +79,14 @@ impl UpdateCandidate {
         }
     }
 
-    fn from_db_entry(entry: &PackageDbEntry<'_>) -> Self {
-        Self::new(entry.manifest().id(), entry.activation_state().is_active())
+    fn from_db_entry(entry: &PackageDbEntry<'_>) -> Option<Self> {
+        if !entry.installation_state().is_installed() {
+            return None;
+        }
+        Some(Self::new(
+            entry.manifest().id(),
+            entry.activation_state().is_active(),
+        ))
     }
 
     fn resolved(self, reg_id: RegistryId, manifest: Arc<PackageManifest>) -> ResolvedInstallTarget {
@@ -174,14 +168,10 @@ where
 }
 
 fn all_installed_packages(db: &PackageDatabase<'_>) -> Vec<UpdateCandidate> {
-    collect_latest_packages(db.entries().filter_map(|entry| {
-        entry
-            .installation_state()
-            .is_installed()
-            .then(|| UpdateCandidate::from_db_entry(&entry))
-    }))
-    .into_values()
-    .collect()
+    let candidates = db
+        .entries()
+        .filter_map(|entry| UpdateCandidate::from_db_entry(&entry));
+    collect_latest_packages(candidates).into_values().collect()
 }
 
 fn resolve_spec_from_installed_packages<S>(
@@ -192,29 +182,13 @@ fn resolve_spec_from_installed_packages<S>(
 where
     S: ReportScope,
 {
-    let latest_packages =
-        collect_latest_packages(db.entries_by_spec(pkg_spec).filter_map(|entry| {
-            entry
-                .installation_state()
-                .is_installed()
-                .then(|| UpdateCandidate::from_db_entry(&entry))
-        }));
-    if latest_packages.len() > 1 {
-        return Err(MultipleMatchingPackagesSnafu {
-            pkg_spec,
-            pkg_ids: latest_packages
-                .values()
-                .map(|candidate| candidate.pkg_id.clone())
-                .collect::<Vec<_>>(),
-        }
-        .build()
-        .report_error(&cx));
-    }
-    let Some(candidate) = latest_packages.into_values().next() else {
-        return Err(NoMatchingPackageSnafu { pkg_spec }
-            .build()
-            .report_error(&cx));
-    };
+    let latest_package = db
+        .entries_by_spec(pkg_spec)
+        .filter_map(|entry| UpdateCandidate::from_db_entry(&entry))
+        .max_by(|a, b| a.pkg_id.version().cmp(b.pkg_id.version()));
+    let candidate = latest_package
+        .context(NoMatchingPackageSnafu { pkg_spec })
+        .report_error(cx)?;
     Ok(candidate)
 }
 
