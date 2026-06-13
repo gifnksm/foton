@@ -3,7 +3,6 @@ pub(crate) use self::{
 };
 
 mod install;
-mod lookup;
 mod manifest;
 mod registry;
 mod repair;
