@@ -12,7 +12,7 @@ const GLOB_MATCH_OPTIONS: MatchOptions = MatchOptions {
     require_literal_leading_dot: true,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct PathPattern {
     pattern: Pattern,
 }

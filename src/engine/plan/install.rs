@@ -4,10 +4,10 @@ use crate::{
     db::{Activatability, Installability, PackageDatabase},
     engine::{
         ActivateOp, ActivateReason, DeactivateOp, DeactivateReason, ExecutionPlan, InstallOp,
-        InstallReason, PlanStep, ResolvedInstallTarget, SkipOp, StepCondition, StepId,
-        plan::SkipReason,
+        InstallReason, InstallTargetKind, PlanStep, ResolvedInstallTarget, SkipOp, StepCondition,
+        StepId, plan::SkipReason,
     },
-    package::{PackageDefinition, PackageId},
+    package::PackageId,
 };
 
 pub(crate) fn plan_install(
@@ -17,12 +17,13 @@ pub(crate) fn plan_install(
     let mut ops = vec![];
     for target in targets {
         let ResolvedInstallTarget {
-            pkg,
+            kind,
+            detail: _,
             should_activate,
         } = target;
-        let install_step_id = plan_install_op(db, pkg, &mut ops);
+        let install_step_id = plan_install_op(db, kind, &mut ops);
         if *should_activate {
-            plan_activate_op(db, &target.pkg.id, install_step_id, &mut ops);
+            plan_activate_op(db, kind.pkg_id(), install_step_id, &mut ops);
         }
     }
     ExecutionPlan { steps: ops }
@@ -30,26 +31,35 @@ pub(crate) fn plan_install(
 
 fn plan_install_op(
     db: &PackageDatabase<'_>,
-    pkg: &Arc<PackageDefinition>,
+    kind: &InstallTargetKind,
     ops: &mut Vec<PlanStep>,
 ) -> Option<StepId> {
-    match db.check_installability(&pkg.id) {
-        Installability::Installable => {
-            let step = PlanStep::new(InstallOp {
-                pkg: Arc::clone(pkg),
-                reason: InstallReason::RequestedByUser,
-            });
-            let step_id = step.step_id;
-            ops.push(step);
-            Some(step_id)
-        }
-        Installability::AlreadyInstalled => {
+    match kind {
+        InstallTargetKind::AlreadyInstalled { pkg_id, .. } => {
             ops.push(PlanStep::new(SkipOp {
-                pkg_spec: pkg.id.clone().into(),
+                pkg_spec: pkg_id.clone().into(),
                 reason: SkipReason::AlreadyInstalled,
             }));
             None
         }
+        InstallTargetKind::Install { pkg, .. } => match db.check_installability(&pkg.id) {
+            Installability::Installable => {
+                let step = PlanStep::new(InstallOp {
+                    pkg: Arc::clone(pkg),
+                    reason: InstallReason::RequestedByUser,
+                });
+                let step_id = step.step_id;
+                ops.push(step);
+                Some(step_id)
+            }
+            Installability::AlreadyInstalled => {
+                ops.push(PlanStep::new(SkipOp {
+                    pkg_spec: pkg.id.clone().into(),
+                    reason: SkipReason::AlreadyInstalled,
+                }));
+                None
+            }
+        },
     }
 }
 
@@ -135,10 +145,8 @@ mod tests {
         let incomplete_deactivation_pkg = testing::make_package_definition("example-font@0.2.0");
         let active_pkg = testing::make_package_definition("example-font@0.3.0");
         let install_target_pkg = testing::make_package_definition("example-font@0.4.0");
-        let install_target = ResolvedInstallTarget {
-            pkg: Arc::clone(&install_target_pkg),
-            should_activate: true,
-        };
+        let install_target =
+            ResolvedInstallTarget::manifest(install_target_pkg.id.clone(), "dummy", true);
 
         let plan = testing::with_db(|_cx, db| {
             testing::mark_as_installed(db, &incomplete_activation_pkg);
@@ -158,7 +166,7 @@ mod tests {
         });
 
         let install_step = PlanStep::new(InstallOp {
-            pkg: Arc::clone(&install_target_pkg),
+            pkg: Arc::new(install_target_pkg.clone()),
             reason: InstallReason::RequestedByUser,
         });
         let install_step_id = install_step.step_id;
@@ -206,10 +214,7 @@ mod tests {
     #[test]
     fn plan_install_activates_already_installed_inactive_package_without_reinstall() {
         let pkg = testing::make_package_definition("example-font@0.1.0");
-        let install_target = ResolvedInstallTarget {
-            pkg: Arc::clone(&pkg),
-            should_activate: true,
-        };
+        let install_target = ResolvedInstallTarget::manifest(pkg.id.clone(), "dummy", true);
 
         let plan = testing::with_db(|_cx, db| {
             testing::mark_as_installed(db, &pkg);
@@ -234,15 +239,10 @@ mod tests {
     #[test]
     fn plan_install_skips_already_installed_when_activation_is_not_requested() {
         let pkg = testing::make_package_definition("example-font@0.1.0");
-        let install_target = ResolvedInstallTarget {
-            pkg: Arc::clone(&pkg),
-            should_activate: false,
-        };
+        let install_target =
+            ResolvedInstallTarget::already_installed(pkg.id.clone(), pkg.id.clone(), false);
 
-        let plan = testing::with_db(|_cx, db| {
-            testing::mark_as_installed(db, &pkg);
-            plan_install(db, &[install_target])
-        });
+        let plan = testing::with_db(|_cx, db| plan_install(db, &[install_target]));
 
         plan::testing::assert_plan_eq(
             &plan,
@@ -267,10 +267,7 @@ mod tests {
         ];
         for (state, pkg_id) in pairs {
             let pkg = testing::make_package_definition(pkg_id);
-            let install_target = ResolvedInstallTarget {
-                pkg: Arc::clone(&pkg),
-                should_activate: false,
-            };
+            let install_target = ResolvedInstallTarget::manifest(pkg.id.clone(), "dummy", false);
 
             let plan = testing::with_db(|_cx, db| {
                 testing::mark_as_state(db, &pkg, state);
@@ -280,7 +277,7 @@ mod tests {
             plan::testing::assert_plan_eq(
                 &plan,
                 &ExecutionPlan::new_for_test([PlanStep::new(InstallOp {
-                    pkg: Arc::clone(&pkg),
+                    pkg: Arc::new(pkg.clone()),
                     reason: InstallReason::RequestedByUser,
                 })]),
             );

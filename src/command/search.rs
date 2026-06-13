@@ -208,8 +208,8 @@ mod tests {
 
     #[test]
     fn render_search_results_prints_registry_without_description() {
-        let pkgs = vec![make_scored_package(testing::make_package_definition(
-            "example-font@1.0.0",
+        let pkgs = vec![make_scored_package(Arc::new(
+            testing::make_package_definition("example-font@1.0.0"),
         ))];
         let mut output = Vec::new();
 

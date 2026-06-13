@@ -113,15 +113,12 @@ fn dedup_targets(targets: &mut Vec<ResolvedUninstallTarget>) {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        str::FromStr as _,
-        sync::{Arc, LazyLock},
-    };
+    use std::{str::FromStr as _, sync::LazyLock};
 
     use super::*;
     use crate::{engine::resolve, package::PackageDefinition, util::testing};
 
-    static PKG: LazyLock<Arc<PackageDefinition>> =
+    static PKG: LazyLock<PackageDefinition> =
         LazyLock::new(|| testing::make_package_definition("example-font@0.1.0"));
     static EXACT_SPEC: LazyLock<PackageSpec> =
         LazyLock::new(|| PackageSpec::from_str("example-font@0.1.0").unwrap());

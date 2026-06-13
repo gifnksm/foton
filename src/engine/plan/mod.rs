@@ -13,7 +13,7 @@ mod repair;
 mod testing;
 mod uninstall;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ExecutionPlan {
     steps: Vec<PlanStep>,
 }
@@ -42,7 +42,7 @@ impl ExecutionPlan {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::engine) struct PlanStep {
     step_id: StepId,
     op: PlanStepOp,
@@ -109,7 +109,7 @@ impl StepId {
     }
 }
 
-#[derive(Debug, Clone, derive_more::IsVariant, derive_more::From)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::IsVariant, derive_more::From)]
 pub(in crate::engine) enum PlanStepOp {
     Install(InstallOp),
     Uninstall(UninstallOp),
@@ -130,43 +130,43 @@ pub(in crate::engine) enum StepCondition {
     Never,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::engine) struct InstallOp {
     pub(in crate::engine) pkg: Arc<PackageDefinition>,
     pub(in crate::engine) reason: InstallReason,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::engine) struct UninstallOp {
     pub(in crate::engine) pkg_id: PackageId,
     pub(in crate::engine) reason: UninstallReason,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::engine) struct ActivateOp {
     pub(in crate::engine) pkg_id: PackageId,
     pub(in crate::engine) reason: ActivateReason,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::engine) struct DeactivateOp {
     pub(in crate::engine) pkg_id: PackageId,
     pub(in crate::engine) reason: DeactivateReason,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::engine) struct SkipOp {
     pub(in crate::engine) pkg_spec: PackageSpec,
     pub(in crate::engine) reason: SkipReason,
 }
 
-#[derive(Debug, Clone, derive_more::Display, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::Display)]
 pub(in crate::engine) enum InstallReason {
     #[display("requested by user")]
     RequestedByUser,
 }
 
-#[derive(Debug, Clone, derive_more::Display, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::Display)]
 pub(in crate::engine) enum UninstallReason {
     #[display("requested by user")]
     RequestedByUser,
@@ -176,13 +176,13 @@ pub(in crate::engine) enum UninstallReason {
     RepairIncompleteUninstall,
 }
 
-#[derive(Debug, Clone, derive_more::Display, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::Display)]
 pub(in crate::engine) enum ActivateReason {
     #[display("requested by user")]
     RequestedByUser,
 }
 
-#[derive(Debug, Clone, derive_more::Display, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::Display)]
 pub(in crate::engine) enum DeactivateReason {
     #[display("requested by user")]
     RequestedByUser,
@@ -198,7 +198,7 @@ pub(in crate::engine) enum DeactivateReason {
     RepairIncompleteDeactivation,
 }
 
-#[derive(Debug, Clone, derive_more::Display, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::Display)]
 pub(in crate::engine) enum SkipReason {
     #[display("already installed")]
     AlreadyInstalled,

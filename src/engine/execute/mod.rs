@@ -376,7 +376,7 @@ mod tests {
 
             testing::with_db(|_cx, db| {
                 let step = PlanStep::new(InstallOp {
-                    pkg: Arc::clone(&pkg),
+                    pkg: Arc::new(pkg.clone()),
                     reason: InstallReason::RequestedByUser,
                 });
                 let step_id = step.step_id();

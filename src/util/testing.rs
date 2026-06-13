@@ -183,15 +183,15 @@ pub(crate) fn parse_manifest(manifest_str: &str) -> PackageManifest {
     try_parse_manifest(manifest_str).unwrap()
 }
 
-pub(crate) fn parse_manifest_to_definition(manifest_str: &str) -> Arc<PackageDefinition> {
-    Arc::new(parse_manifest(manifest_str).into())
+pub(crate) fn parse_manifest_to_definition(manifest_str: &str) -> PackageDefinition {
+    parse_manifest(manifest_str).into()
 }
 
-pub(crate) fn make_package_definition<I>(pkg_id: I) -> Arc<PackageDefinition>
+pub(crate) fn make_package_definition<I>(pkg_id: I) -> PackageDefinition
 where
     I: TryInto<PackageId, Error: Debug>,
 {
-    Arc::new(make_manifest(pkg_id).into())
+    make_manifest(pkg_id).into()
 }
 
 pub(crate) fn write_manifest<P, I>(registry_dir: P, pkg_id: I)
@@ -220,7 +220,7 @@ where
 
 pub(crate) fn mark_as_state(
     db: &mut PackageDatabase<'_>,
-    pkg: &Arc<PackageDefinition>,
+    pkg: &PackageDefinition,
     state: InstallationState,
 ) {
     match state {
@@ -230,10 +230,7 @@ pub(crate) fn mark_as_state(
     }
 }
 
-pub(crate) fn mark_as_incomplete_install(
-    db: &mut PackageDatabase<'_>,
-    pkg: &Arc<PackageDefinition>,
-) {
+pub(crate) fn mark_as_incomplete_install(db: &mut PackageDatabase<'_>, pkg: &PackageDefinition) {
     let mut tx = db.transaction();
     tx.begin_install(pkg);
     tx.commit().unwrap();
@@ -242,7 +239,7 @@ pub(crate) fn mark_as_incomplete_install(
     assert!(entry.activation_state().is_inactive());
 }
 
-pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, pkg: &Arc<PackageDefinition>) {
+pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, pkg: &PackageDefinition) {
     let mut tx = db.transaction();
     tx.begin_install(pkg);
     tx.complete_install(&pkg.id, &[]).unwrap();
@@ -253,10 +250,7 @@ pub(crate) fn mark_as_installed(db: &mut PackageDatabase<'_>, pkg: &Arc<PackageD
     assert!(entry.activation_state().is_inactive());
 }
 
-pub(crate) fn mark_as_incomplete_activation(
-    db: &mut PackageDatabase<'_>,
-    pkg: &Arc<PackageDefinition>,
-) {
+pub(crate) fn mark_as_incomplete_activation(db: &mut PackageDatabase<'_>, pkg: &PackageDefinition) {
     let mut tx = db.transaction();
     tx.begin_install(pkg);
     tx.complete_install(&pkg.id, &[]).unwrap();
@@ -268,7 +262,7 @@ pub(crate) fn mark_as_incomplete_activation(
     assert!(entry.activation_state().is_incomplete_activation());
 }
 
-pub(crate) fn mark_as_active(db: &mut PackageDatabase<'_>, pkg: &Arc<PackageDefinition>) {
+pub(crate) fn mark_as_active(db: &mut PackageDatabase<'_>, pkg: &PackageDefinition) {
     let mut tx = db.transaction();
     tx.begin_install(pkg);
     tx.complete_install(&pkg.id, &[]).unwrap();
@@ -283,7 +277,7 @@ pub(crate) fn mark_as_active(db: &mut PackageDatabase<'_>, pkg: &Arc<PackageDefi
 
 pub(crate) fn mark_as_incomplete_deactivation(
     db: &mut PackageDatabase<'_>,
-    pkg: &Arc<PackageDefinition>,
+    pkg: &PackageDefinition,
 ) {
     let mut tx = db.transaction();
     tx.begin_install(pkg);
@@ -298,10 +292,7 @@ pub(crate) fn mark_as_incomplete_deactivation(
     assert!(entry.activation_state().is_incomplete_deactivation());
 }
 
-pub(crate) fn mark_as_incomplete_uninstall(
-    db: &mut PackageDatabase<'_>,
-    pkg: &Arc<PackageDefinition>,
-) {
+pub(crate) fn mark_as_incomplete_uninstall(db: &mut PackageDatabase<'_>, pkg: &PackageDefinition) {
     let mut tx = db.transaction();
     tx.begin_install(pkg);
     tx.complete_install(&pkg.id, &[]).unwrap();

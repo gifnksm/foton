@@ -1,6 +1,5 @@
 use super::{
-    ActivationRepairKind, InstallationRepairKind, ResolvedInstallTarget, ResolvedRepairTarget,
-    ResolvedUninstallTarget,
+    ActivationRepairKind, InstallationRepairKind, ResolvedRepairTarget, ResolvedUninstallTarget,
 };
 use crate::package::{PackageId, PackageSpec};
 
@@ -8,35 +7,6 @@ use crate::package::{PackageId, PackageSpec};
 pub(in crate::engine::resolve) enum ExpectedRepairTarget {
     Deactivate(PackageId, ActivationRepairKind),
     Uninstall(PackageId, InstallationRepairKind),
-}
-
-pub(in crate::engine::resolve) fn assert_install_target_ids(
-    targets: &[ResolvedInstallTarget],
-    expected: &[&str],
-) {
-    let actual = targets
-        .iter()
-        .map(|target| target.pkg.id.to_string())
-        .collect::<Vec<_>>();
-    let expected = expected.iter().map(ToString::to_string).collect::<Vec<_>>();
-    assert_eq!(actual, expected);
-}
-
-pub(in crate::engine::resolve) fn assert_single_install_target_id(
-    targets: &[ResolvedInstallTarget],
-    expected_id: &str,
-) {
-    assert_eq!(targets.len(), 1);
-    assert_install_target_ids(targets, &[expected_id]);
-}
-
-pub(in crate::engine::resolve) fn assert_single_install_target(
-    targets: &[ResolvedInstallTarget],
-    expected_id: &str,
-    should_activate: bool,
-) {
-    assert_single_install_target_id(targets, expected_id);
-    assert_eq!(targets[0].should_activate, should_activate);
 }
 
 pub(in crate::engine::resolve) fn assert_uninstall_target(
