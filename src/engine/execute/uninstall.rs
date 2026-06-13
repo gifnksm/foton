@@ -124,21 +124,20 @@ mod tests {
     use super::*;
     use crate::{
         engine::UninstallReason,
-        package::{ActivationState, InstallationState, PackageId, PackageManifest},
+        package::{ActivationState, InstallationState, PackageDefinition},
         util::testing,
     };
 
-    static MANIFEST: LazyLock<Arc<PackageManifest>> =
-        LazyLock::new(|| testing::make_manifest("example-font@0.1.0"));
-    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| MANIFEST.id());
+    static PKG: LazyLock<Arc<PackageDefinition>> =
+        LazyLock::new(|| testing::make_package_definition("example-font@0.1.0"));
 
     #[test]
     fn prepared_uninstall_step_from_plan_step_begins_incomplete_uninstall_in_transaction() {
         testing::with_db(|_cx, db| {
-            testing::mark_as_installed(db, &MANIFEST);
+            testing::mark_as_installed(db, &PKG);
 
             let step = UninstallOp {
-                pkg_id: PKG_ID.clone(),
+                pkg_id: PKG.id.clone(),
                 reason: UninstallReason::RequestedByUser,
             };
 
@@ -146,29 +145,29 @@ mod tests {
             let prepared = PreparedUninstallStep::from_plan_step(&mut tx, step);
             tx.commit().unwrap();
 
-            let entry = db.entry_by_id(&PKG_ID).unwrap();
+            let entry = db.entry_by_id(&PKG.id).unwrap();
             assert_eq!(
                 entry.installation_state(),
                 InstallationState::IncompleteUninstall
             );
             assert_eq!(entry.activation_state(), ActivationState::Inactive);
-            assert_eq!(prepared.pkg_id, *PKG_ID);
+            assert_eq!(prepared.pkg_id, PKG.id);
         });
     }
 
     #[test]
     fn prepared_uninstall_step_on_complete_removes_db_record() {
         testing::with_db(|cx, db| {
-            testing::mark_as_incomplete_uninstall(db, &MANIFEST);
+            testing::mark_as_incomplete_uninstall(db, &PKG);
             let mut prepared = PreparedUninstallStep {
-                pkg_id: PKG_ID.clone(),
+                pkg_id: PKG.id.clone(),
             };
 
             let mut tx = db.transaction();
             prepared.on_complete(cx, &mut tx).unwrap();
             tx.commit().unwrap();
 
-            assert!(db.entry_by_id(&PKG_ID).is_none());
+            assert!(db.entry_by_id(&PKG.id).is_none());
         });
     }
 
@@ -179,11 +178,11 @@ mod tests {
     )]
     fn execute_uninstall_removes_package_files_on_success() {
         testing::with_context(|cx| {
-            let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
+            let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG.id);
             fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
             fs::write(pkg_dirs.fonts_dir().join("example.ttf"), b"font").unwrap();
 
-            execute_uninstall(cx, &PKG_ID).unwrap();
+            execute_uninstall(cx, &PKG.id).unwrap();
 
             assert!(!pkg_dirs.fonts_dir().exists());
             assert!(!pkg_dirs.version_dir().exists());
@@ -198,13 +197,13 @@ mod tests {
     )]
     fn execute_uninstall_keeps_version_directory_when_leftovers_remain() {
         testing::with_context(|cx| {
-            let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG_ID);
+            let pkg_dirs = PackageDirs::new(cx.app_dirs(), &PKG.id);
             fs::create_dir_all(pkg_dirs.fonts_dir()).unwrap();
             fs::write(pkg_dirs.fonts_dir().join("example.ttf"), b"font").unwrap();
             let leftover = pkg_dirs.version_dir().join("leftover.txt");
             fs::write(&leftover, b"leftover").unwrap();
 
-            execute_uninstall(cx, &PKG_ID).unwrap_err();
+            execute_uninstall(cx, &PKG.id).unwrap_err();
 
             assert!(!pkg_dirs.fonts_dir().exists());
             assert!(pkg_dirs.version_dir().exists());

@@ -145,17 +145,16 @@ mod tests {
     use super::*;
     use crate::{
         engine::ActivateReason,
-        package::{ActivationState, PackageManifest},
+        package::{ActivationState, PackageDefinition},
         util::testing::{self, TestScope},
     };
 
-    static MANIFEST: LazyLock<Arc<PackageManifest>> =
-        LazyLock::new(|| testing::make_manifest("example-font@0.1.0"));
-    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| MANIFEST.id());
+    static PKG: LazyLock<Arc<PackageDefinition>> =
+        LazyLock::new(|| testing::make_package_definition("example-font@0.1.0"));
 
     fn activate_op() -> ActivateOp {
         ActivateOp {
-            pkg_id: PKG_ID.clone(),
+            pkg_id: PKG.id.clone(),
             reason: ActivateReason::RequestedByUser,
         }
     }
@@ -163,7 +162,7 @@ mod tests {
     #[test]
     fn prepared_activate_step_from_plan_step_begins_incomplete_activation_in_transaction() {
         testing::with_db(|_cx, db| {
-            testing::mark_as_installed(db, &MANIFEST);
+            testing::mark_as_installed(db, &PKG);
 
             let mut tx = db.transaction();
             let step: PreparedActivateStep<TestScope> =
@@ -171,17 +170,17 @@ mod tests {
             tx.commit().unwrap();
 
             assert_eq!(
-                db.entry_by_id(&PKG_ID).unwrap().activation_state(),
+                db.entry_by_id(&PKG.id).unwrap().activation_state(),
                 ActivationState::IncompleteActivation,
             );
-            assert_eq!(step.pkg_id, *PKG_ID);
+            assert_eq!(step.pkg_id, PKG.id);
         });
     }
 
     #[test]
     fn prepared_activate_step_on_complete_marks_entry_active() {
         testing::with_db(|cx, db| {
-            testing::mark_as_installed(db, &MANIFEST);
+            testing::mark_as_installed(db, &PKG);
 
             let mut tx = db.transaction();
             let mut step = PreparedActivateStep::from_plan_step(&mut tx, activate_op());
@@ -190,7 +189,7 @@ mod tests {
             tx.commit().unwrap();
 
             assert_eq!(
-                db.entry_by_id(&PKG_ID).unwrap().activation_state(),
+                db.entry_by_id(&PKG.id).unwrap().activation_state(),
                 ActivationState::Active,
             );
         });
@@ -199,7 +198,7 @@ mod tests {
     #[test]
     fn prepared_activate_step_on_failure_restores_inactive_when_cleanup_is_not_required() {
         testing::with_db(|cx, db| {
-            testing::mark_as_installed(db, &MANIFEST);
+            testing::mark_as_installed(db, &PKG);
 
             let mut tx = db.transaction();
             let mut step = PreparedActivateStep::from_plan_step(&mut tx, activate_op());
@@ -208,7 +207,7 @@ mod tests {
             tx.commit().unwrap();
 
             assert_eq!(
-                db.entry_by_id(&PKG_ID).unwrap().activation_state(),
+                db.entry_by_id(&PKG.id).unwrap().activation_state(),
                 ActivationState::Inactive,
             );
         });
@@ -217,7 +216,7 @@ mod tests {
     #[test]
     fn prepared_activate_step_on_failure_marks_incomplete_deactivation_when_cleanup_is_required() {
         testing::with_db(|cx, db| {
-            testing::mark_as_installed(db, &MANIFEST);
+            testing::mark_as_installed(db, &PKG);
 
             let mut tx = db.transaction();
             let mut step = PreparedActivateStep::from_plan_step(&mut tx, activate_op());
@@ -227,7 +226,7 @@ mod tests {
             tx.commit().unwrap();
 
             assert_eq!(
-                db.entry_by_id(&PKG_ID).unwrap().activation_state(),
+                db.entry_by_id(&PKG.id).unwrap().activation_state(),
                 ActivationState::IncompleteDeactivation,
             );
         });

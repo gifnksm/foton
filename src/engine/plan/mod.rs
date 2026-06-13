@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-use crate::package::{PackageId, PackageManifest, PackageSpec};
+use crate::package::{PackageDefinition, PackageId, PackageSpec};
 
 pub(crate) use self::{install::*, repair::*, uninstall::*};
 
@@ -132,7 +132,7 @@ pub(in crate::engine) enum StepCondition {
 
 #[derive(Debug, Clone)]
 pub(in crate::engine) struct InstallOp {
-    pub(in crate::engine) manifest: Arc<PackageManifest>,
+    pub(in crate::engine) pkg: Arc<PackageDefinition>,
     pub(in crate::engine) reason: InstallReason,
 }
 

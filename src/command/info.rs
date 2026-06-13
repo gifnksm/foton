@@ -13,7 +13,7 @@ use crate::{
     },
     db::PackageDbEntry,
     engine,
-    package::{PackageManifest, PackageSource, PackageSpec},
+    package::{PackageDefinition, PackageSource, PackageSpec},
 };
 
 #[derive(Debug, Default)]
@@ -86,10 +86,9 @@ fn render_package_info<W>(mut writer: W, entry: &PackageDbEntry<'_>) -> io::Resu
 where
     W: io::Write,
 {
-    let PackageManifest {
-        name,
+    let PackageDefinition {
+        id,
         display_name,
-        version,
         description,
         aliases,
         faces,
@@ -97,12 +96,12 @@ where
         repository,
         license,
         sources,
-    } = &*entry.manifest();
-    writeln!(writer, "Name: {name}")?;
+    } = &*entry.definition();
+    writeln!(writer, "Name: {}", id.name())?;
     if let Some(display_name) = display_name {
         writeln!(writer, "Display Name: {display_name}")?;
     }
-    writeln!(writer, "Version: {version}")?;
+    writeln!(writer, "Version: {}", id.version())?;
     writeln!(writer, "Installation State: {}", entry.installation_state())?;
     writeln!(writer, "Activation State: {}", entry.activation_state())?;
     if let Some(description) = description {
@@ -158,20 +157,19 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use super::*;
     use crate::util::{macros::concat_line, testing};
 
     #[test]
     fn render_package_info_prints_all_present_fields() {
-        let manifest = testing::make_manifest("example-font@0.1.0");
+        let pkg = testing::make_package_definition("example-font@0.1.0");
 
         let output = testing::with_db(|_cx, db| {
-            testing::mark_as_active(db, &manifest);
+            testing::mark_as_active(db, &pkg);
 
             let mut output = Vec::new();
-            let entry = db.entry_by_id(&manifest.id()).unwrap();
+            let entry = db.entry_by_id(&pkg.id).unwrap();
             render_package_info(&mut output, &entry).unwrap();
             String::from_utf8(output).unwrap()
         });
@@ -198,7 +196,7 @@ mod tests {
 
     #[test]
     fn render_package_info_prints_optional_metadata_fields_when_present() {
-        let manifest: PackageManifest = toml::from_str(
+        let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
 display-name = "Example Font"
@@ -216,15 +214,13 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 include = ["fonts/*.ttf"]
 exclude = ["fonts/exclude.ttf"]
 "#,
-        )
-        .unwrap();
-        let manifest = Arc::new(manifest);
+        );
 
         let output = testing::with_db(|_cx, db| {
-            testing::mark_as_incomplete_install(db, &manifest);
+            testing::mark_as_incomplete_install(db, &pkg);
 
             let mut output = Vec::new();
-            let entry = db.entry_by_id(&manifest.id()).unwrap();
+            let entry = db.entry_by_id(&pkg.id).unwrap();
             render_package_info(&mut output, &entry).unwrap();
             String::from_utf8(output).unwrap()
         });

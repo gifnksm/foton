@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use crate::{
-    package::{PackageId, PackageManifest, PackageSpec},
+    package::{PackageDefinition, PackageId, PackageSpec},
     registry::RegistryId,
 };
 
@@ -18,16 +18,16 @@ pub(crate) enum InstallTargetSource {
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedInstallTarget {
     pub(in crate::engine) source: InstallTargetSource,
-    pub(in crate::engine) manifest: Arc<PackageManifest>,
+    pub(in crate::engine) pkg: Arc<PackageDefinition>,
     pub(in crate::engine) should_activate: bool,
 }
 
 impl ResolvedInstallTarget {
     #[cfg(test)]
-    pub(crate) fn installed(manifest: &Arc<PackageManifest>, should_activate: bool) -> Self {
+    pub(crate) fn installed(pkg: &Arc<PackageDefinition>, should_activate: bool) -> Self {
         Self {
             source: InstallTargetSource::Installed,
-            manifest: Arc::clone(manifest),
+            pkg: Arc::clone(pkg),
             should_activate,
         }
     }

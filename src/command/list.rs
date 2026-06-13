@@ -97,7 +97,7 @@ impl EntryRender for AllEntryRender {
             writeln!(
                 writer,
                 "{} ({}, {})",
-                entry.manifest().id(),
+                entry.definition().id,
                 entry.installation_state(),
                 entry.activation_state(),
             )
@@ -105,7 +105,7 @@ impl EntryRender for AllEntryRender {
             writeln!(
                 writer,
                 "{} ({})",
-                entry.manifest().id(),
+                entry.definition().id,
                 entry.installation_state(),
             )
         }
@@ -120,7 +120,7 @@ impl EntryRender for InstalledEntryRender {
             writeln!(
                 writer,
                 "{} ({})",
-                entry.manifest().id(),
+                entry.definition().id,
                 entry.activation_state(),
             )?;
         }
@@ -139,23 +139,26 @@ mod tests {
     fn make_entries<'db>(
         db: &'db mut PackageDatabase<'_>,
     ) -> impl Iterator<Item = PackageDbEntry<'db>> + 'db {
-        testing::mark_as_installed(db, &testing::make_manifest("installed-font@1.0.0"));
-        testing::mark_as_active(db, &testing::make_manifest("active-font@1.0.0"));
+        testing::mark_as_installed(
+            db,
+            &testing::make_package_definition("installed-font@1.0.0"),
+        );
+        testing::mark_as_active(db, &testing::make_package_definition("active-font@1.0.0"));
         testing::mark_as_incomplete_activation(
             db,
-            &testing::make_manifest("incomplete-activate-font@1.0.0"),
+            &testing::make_package_definition("incomplete-activate-font@1.0.0"),
         );
         testing::mark_as_incomplete_deactivation(
             db,
-            &testing::make_manifest("incomplete-deactivate-font@1.0.0"),
+            &testing::make_package_definition("incomplete-deactivate-font@1.0.0"),
         );
         testing::mark_as_incomplete_install(
             db,
-            &testing::make_manifest("incomplete-install-font@1.1.0"),
+            &testing::make_package_definition("incomplete-install-font@1.1.0"),
         );
         testing::mark_as_incomplete_uninstall(
             db,
-            &testing::make_manifest("incomplete-uninstall-font@1.2.0"),
+            &testing::make_package_definition("incomplete-uninstall-font@1.2.0"),
         );
         db.entries()
     }

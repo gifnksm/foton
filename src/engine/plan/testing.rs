@@ -38,15 +38,15 @@ pub(super) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
         match (actual_op, expected_op) {
             (
                 PlanStepOp::Install(InstallOp {
-                    manifest: actual_manifest,
+                    pkg: actual_pkg,
                     reason: actual_reason,
                 }),
                 PlanStepOp::Install(InstallOp {
-                    manifest: expected_manifest,
+                    pkg: expected_pkg,
                     reason: expected_reason,
                 }),
             ) => {
-                assert!(Arc::ptr_eq(actual_manifest, expected_manifest));
+                assert!(Arc::ptr_eq(actual_pkg, expected_pkg));
                 assert_eq!(actual_reason, expected_reason);
             }
             (

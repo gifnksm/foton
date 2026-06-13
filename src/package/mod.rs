@@ -1,6 +1,9 @@
-pub(crate) use self::{dirs::*, id::*, manifest::*, name::*, spec::*, state::*, version::*};
+pub(crate) use self::{
+    definition::*, dirs::*, id::*, manifest::*, name::*, spec::*, state::*, version::*,
+};
 use crate::util::path::FileName;
 
+mod definition;
 mod dirs;
 mod id;
 mod manifest;

@@ -27,7 +27,7 @@ where
             BulletList(
                 &install_ops
                     .iter()
-                    .map(|op| format!("{} ({})", op.manifest.id(), op.reason))
+                    .map(|op| format!("{} ({})", op.pkg.id, op.reason))
                     .collect::<Vec<_>>()
             )
         ));

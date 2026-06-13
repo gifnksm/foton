@@ -63,17 +63,15 @@ mod tests {
 
     #[test]
     fn plan_repair_deactivates_incomplete_activation_entries() {
-        let incomplete_activation_manifest = testing::make_manifest("example-font@0.1.0");
-        let incomplete_deactivation_manifest = testing::make_manifest("example-font@0.2.0");
-        let incomplete_activation_pkg_id = incomplete_activation_manifest.id();
-        let incomplete_deactivation_pkg_id = incomplete_deactivation_manifest.id();
+        let incomplete_activation_pkg = testing::make_package_definition("example-font@0.1.0");
+        let incomplete_deactivation_pkg = testing::make_package_definition("example-font@0.2.0");
         let targets = vec![
             ResolvedRepairTarget::Deactivate {
-                pkg_id: incomplete_activation_pkg_id.clone(),
+                pkg_id: incomplete_activation_pkg.id.clone(),
                 kind: ActivationRepairKind::IncompleteActivation,
             },
             ResolvedRepairTarget::Deactivate {
-                pkg_id: incomplete_deactivation_pkg_id.clone(),
+                pkg_id: incomplete_deactivation_pkg.id.clone(),
                 kind: ActivationRepairKind::IncompleteDeactivation,
             },
         ];
@@ -84,11 +82,11 @@ mod tests {
             &plan,
             &ExecutionPlan::new_for_test([
                 PlanStep::new(DeactivateOp {
-                    pkg_id: incomplete_activation_pkg_id,
+                    pkg_id: incomplete_activation_pkg.id.clone(),
                     reason: DeactivateReason::RepairIncompleteActivation,
                 }),
                 PlanStep::new(DeactivateOp {
-                    pkg_id: incomplete_deactivation_pkg_id,
+                    pkg_id: incomplete_deactivation_pkg.id.clone(),
                     reason: DeactivateReason::RepairIncompleteDeactivation,
                 }),
             ]),
@@ -97,17 +95,15 @@ mod tests {
 
     #[test]
     fn plan_repair_uninstalls_incomplete_entries() {
-        let incomplete_install_manifest = testing::make_manifest("example-font@0.1.0");
-        let incomplete_uninstall_manifest = testing::make_manifest("example-font@0.2.0");
-        let incomplete_install_pkg_id = incomplete_install_manifest.id();
-        let incomplete_uninstall_pkg_id = incomplete_uninstall_manifest.id();
+        let incomplete_install_pkg = testing::make_package_definition("example-font@0.1.0");
+        let incomplete_uninstall_pkg = testing::make_package_definition("example-font@0.2.0");
         let targets = vec![
             ResolvedRepairTarget::Uninstall {
-                pkg_id: incomplete_install_pkg_id.clone(),
+                pkg_id: incomplete_install_pkg.id.clone(),
                 kind: InstallationRepairKind::IncompleteInstall,
             },
             ResolvedRepairTarget::Uninstall {
-                pkg_id: incomplete_uninstall_pkg_id.clone(),
+                pkg_id: incomplete_uninstall_pkg.id.clone(),
                 kind: InstallationRepairKind::IncompleteUninstall,
             },
         ];
@@ -118,11 +114,11 @@ mod tests {
             &plan,
             &ExecutionPlan::new_for_test([
                 PlanStep::new(UninstallOp {
-                    pkg_id: incomplete_install_pkg_id,
+                    pkg_id: incomplete_install_pkg.id.clone(),
                     reason: UninstallReason::RepairIncompleteInstall,
                 }),
                 PlanStep::new(UninstallOp {
-                    pkg_id: incomplete_uninstall_pkg_id,
+                    pkg_id: incomplete_uninstall_pkg.id.clone(),
                     reason: UninstallReason::RepairIncompleteUninstall,
                 }),
             ]),

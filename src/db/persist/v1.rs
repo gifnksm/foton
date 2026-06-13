@@ -29,7 +29,7 @@ pub(in crate::db) mod types {
 
     use crate::{
         package::{
-            ActivationState, InstallationState, PackageManifest, PackageName, PackageVersion,
+            ActivationState, InstallationState, PackageDefinition, PackageName, PackageVersion,
         },
         util::path::FileName,
     };
@@ -48,7 +48,7 @@ pub(in crate::db) mod types {
     pub(in crate::db) struct PersistedPackageEntry {
         pub(in crate::db) installation_state: InstallationState,
         pub(in crate::db) activation_state: ActivationState,
-        pub(in crate::db) manifest: Arc<PackageManifest>,
+        pub(in crate::db) definition: Arc<PackageDefinition>,
         pub(in crate::db) font_entries: Vec<PersistedFontEntry>,
     }
 

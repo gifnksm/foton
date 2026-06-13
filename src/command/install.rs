@@ -10,7 +10,7 @@ use crate::{
     },
     db::PackageDatabase,
     engine::{self, ResolvedInstallTarget},
-    package::{PackageManifest, PackageSpec},
+    package::{PackageDefinition, PackageSpec},
     registry::RegistrySpec,
 };
 
@@ -84,7 +84,7 @@ pub(crate) async fn install_package(
 
 enum CheckedInstallTargets {
     Manifest {
-        manifests: Vec<(PathBuf, Arc<PackageManifest>)>,
+        pkgs: Vec<(PathBuf, Arc<PackageDefinition>)>,
     },
     PackageSpec {
         registries: Vec<RegistrySpec>,
@@ -100,8 +100,8 @@ impl CheckedInstallTargets {
     ) -> Result<Self, InstallError> {
         match target {
             InstallTargets::Manifest { manifests } => {
-                let manifests = engine::resolve_manifests(cx, &manifests)?;
-                Ok(Self::Manifest { manifests })
+                let pkgs = engine::resolve_manifests(cx, &manifests)?;
+                Ok(Self::Manifest { pkgs })
             }
             InstallTargets::PackageSpec {
                 registries,
@@ -125,8 +125,8 @@ impl CheckedInstallTargets {
         should_activate: bool,
     ) -> Result<Vec<ResolvedInstallTarget>, InstallError> {
         match self {
-            CheckedInstallTargets::Manifest { manifests } => {
-                engine::resolve_install_targets_by_manifest(cx, manifests, should_activate)
+            CheckedInstallTargets::Manifest { pkgs } => {
+                engine::resolve_install_targets_by_manifest(cx, pkgs, should_activate)
             }
             CheckedInstallTargets::PackageSpec {
                 registries,

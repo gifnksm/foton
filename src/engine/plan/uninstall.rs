@@ -52,14 +52,13 @@ mod tests {
 
     #[test]
     fn plan_uninstall_deactivates_then_uninstalls_when_requested() {
-        let uninstall_manifest = testing::make_manifest("example-font@0.2.0");
-        let uninstall_pkg_id = uninstall_manifest.id();
-        let uninstall_target = ResolvedUninstallTarget::uninstall(uninstall_pkg_id.clone(), true);
+        let uninstall_pkg = testing::make_package_definition("example-font@0.2.0");
+        let uninstall_target = ResolvedUninstallTarget::uninstall(uninstall_pkg.id.clone(), true);
 
         let plan = plan_uninstall(&[uninstall_target]);
 
         let deactivate_step = PlanStep::new(DeactivateOp {
-            pkg_id: uninstall_pkg_id.clone(),
+            pkg_id: uninstall_pkg.id.clone(),
             reason: DeactivateReason::RequestedByUser,
         });
         let deactivate_step_id = deactivate_step.step_id();
@@ -70,7 +69,7 @@ mod tests {
                 deactivate_step,
                 PlanStep::with_conditions(
                     UninstallOp {
-                        pkg_id: uninstall_pkg_id,
+                        pkg_id: uninstall_pkg.id.clone(),
                         reason: UninstallReason::RequestedByUser,
                     },
                     vec![StepCondition::AfterSuccess(deactivate_step_id)],
@@ -81,16 +80,15 @@ mod tests {
 
     #[test]
     fn plan_uninstall_uninstalls_without_deactivating_when_not_requested() {
-        let uninstall_manifest = testing::make_manifest("example-font@0.2.0");
-        let uninstall_pkg_id = uninstall_manifest.id();
-        let uninstall_target = ResolvedUninstallTarget::uninstall(uninstall_pkg_id.clone(), false);
+        let uninstall_pkg = testing::make_package_definition("example-font@0.2.0");
+        let uninstall_target = ResolvedUninstallTarget::uninstall(uninstall_pkg.id.clone(), false);
 
         let plan = plan_uninstall(&[uninstall_target]);
 
         plan::testing::assert_plan_eq(
             &plan,
             &ExecutionPlan::new_for_test([PlanStep::new(UninstallOp {
-                pkg_id: uninstall_pkg_id,
+                pkg_id: uninstall_pkg.id.clone(),
                 reason: UninstallReason::RequestedByUser,
             })]),
         );

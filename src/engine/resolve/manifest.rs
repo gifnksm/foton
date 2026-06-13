@@ -10,7 +10,7 @@ use crate::{
             SubReportScope,
         },
     },
-    package::{PackageManifest, PackageManifestError},
+    package::{PackageDefinition, PackageManifest, PackageManifestError},
 };
 
 #[derive(Debug, Default)]
@@ -39,7 +39,7 @@ enum ManifestErrorReport {
 pub(crate) fn resolve_manifests<S>(
     cx: &ReportContext<S>,
     manifests: &[PathBuf],
-) -> Result<Vec<(PathBuf, Arc<PackageManifest>)>, S::Error>
+) -> Result<Vec<(PathBuf, Arc<PackageDefinition>)>, S::Error>
 where
     S: ReportScope,
 {
@@ -50,7 +50,7 @@ where
             let manifest = PackageManifest::read(path)
                 .map_err(ManifestErrorReport::from)
                 .report_error(&cx)?;
-            Ok((path.clone(), manifest))
+            Ok((path.clone(), Arc::new(manifest.into())))
         })
         .collect_to_end()
 }
@@ -74,7 +74,7 @@ mod tests {
             let manifests = resolve_manifests(cx, std::slice::from_ref(&path)).unwrap();
             assert_eq!(manifests.len(), 1);
             assert_eq!(manifests[0].0, path);
-            assert_eq!(manifests[0].1.id().to_string(), "example-font@0.1.0");
+            assert_eq!(manifests[0].1.id.to_string(), "example-font@0.1.0");
         });
     }
 

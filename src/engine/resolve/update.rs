@@ -16,7 +16,7 @@ use crate::{
         },
     },
     db::{PackageDatabase, PackageDbEntry},
-    package::{PackageId, PackageManifest, PackageName, PackageSpec},
+    package::{PackageDefinition, PackageId, PackageName, PackageSpec},
     registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySpec},
     util::macros::concat_line,
 };
@@ -84,15 +84,15 @@ impl UpdateCandidate {
             return None;
         }
         Some(Self::new(
-            entry.manifest().id(),
+            entry.definition().id.clone(),
             entry.activation_state().is_active(),
         ))
     }
 
-    fn resolved(self, reg_id: RegistryId, manifest: Arc<PackageManifest>) -> ResolvedInstallTarget {
+    fn resolved(self, reg_id: RegistryId, pkg: Arc<PackageDefinition>) -> ResolvedInstallTarget {
         ResolvedInstallTarget {
             source: InstallTargetSource::Registry(reg_id),
-            manifest,
+            pkg,
             should_activate: self.should_activate,
         }
     }
@@ -123,7 +123,7 @@ where
         .filter_map(|candidate| {
             let res = find_update_target(&cx, &indexes, &candidate.pkg_id, include_pre_release)
                 .transpose()?;
-            Some(res.map(|(reg_id, manifest)| candidate.resolved(reg_id, manifest)))
+            Some(res.map(|(reg_id, pkg)| candidate.resolved(reg_id, pkg)))
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(targets)
@@ -208,7 +208,7 @@ fn find_update_target<S>(
     indexes: &[RegistryIndex],
     pkg_id: &PackageId,
     include_pre_release: bool,
-) -> Result<Option<(RegistryId, Arc<PackageManifest>)>, S::Error>
+) -> Result<Option<(RegistryId, Arc<PackageDefinition>)>, S::Error>
 where
     S: ReportScope,
 {
@@ -220,13 +220,13 @@ where
                 name: pkg_id.name(),
             })
             .report_error(cx)
-            .map(|manifest| manifest.filter(|manifest| &manifest.version > pkg_id.version()))
+            .map(|pkg| pkg.filter(|pkg| pkg.id.version() > pkg_id.version()))
     })?;
 
     lookup::into_unique_match(matches).map_err(|matches| {
         let pkg_ids = matches
             .into_iter()
-            .map(|(reg_id, manifest)| (reg_id, manifest.id()))
+            .map(|(reg_id, pkg)| (reg_id, pkg.id.clone()))
             .collect::<Vec<_>>();
         MultipleMatchingPackagesInRegistriesSnafu {
             name: pkg_id.name(),
@@ -252,13 +252,13 @@ mod tests {
         testing::write_manifest(registry_dir.path(), "incomplete-font@2.0.0");
 
         testing::with_db(|cx, db| {
-            let update_manifest = testing::make_manifest("update-font@1.0.0");
-            let current_manifest = testing::make_manifest("current-font@1.0.0");
-            let incomplete_manifest = testing::make_manifest("incomplete-font@1.0.0");
+            let update_pkg = testing::make_package_definition("update-font@1.0.0");
+            let current_pkg = testing::make_package_definition("current-font@1.0.0");
+            let incomplete_pkg = testing::make_package_definition("incomplete-font@1.0.0");
 
-            testing::mark_as_installed(db, &update_manifest);
-            testing::mark_as_installed(db, &current_manifest);
-            testing::mark_as_incomplete_install(db, &incomplete_manifest);
+            testing::mark_as_installed(db, &update_pkg);
+            testing::mark_as_installed(db, &current_pkg);
+            testing::mark_as_incomplete_install(db, &incomplete_pkg);
 
             let targets = resolve_update_targets(cx, db, &[registry], &[], false).unwrap();
             resolve::testing::assert_install_target_ids(&targets, &["update-font@2.0.0"]);
@@ -276,8 +276,8 @@ mod tests {
         ];
 
         testing::with_db(|cx, db| {
-            let manifest = testing::make_manifest("example-font@1.0.0");
-            testing::mark_as_installed(db, &manifest);
+            let pkg = testing::make_package_definition("example-font@1.0.0");
+            testing::mark_as_installed(db, &pkg);
 
             let targets = resolve_update_targets(cx, db, &[registry], &pkg_specs, false).unwrap();
 
@@ -297,10 +297,10 @@ mod tests {
         ];
 
         testing::with_db(|cx, db| {
-            let older_manifest = testing::make_manifest("example-font@1.0.0");
-            let newer_manifest = testing::make_manifest("example-font@3.0.0");
-            testing::mark_as_installed(db, &older_manifest);
-            testing::mark_as_installed(db, &newer_manifest);
+            let older_pkg = testing::make_package_definition("example-font@1.0.0");
+            let newer_pkg = testing::make_package_definition("example-font@3.0.0");
+            testing::mark_as_installed(db, &older_pkg);
+            testing::mark_as_installed(db, &newer_pkg);
 
             let targets = resolve_update_targets(cx, db, &[registry], &pkg_specs, false).unwrap();
 
@@ -316,10 +316,10 @@ mod tests {
         let pkg_specs = vec![PackageSpec::from_str("example-font").unwrap()];
 
         testing::with_db(|cx, db| {
-            let older_manifest = testing::make_manifest("example-font@1.0.0");
-            let newer_manifest = testing::make_manifest("example-font@3.0.0");
-            testing::mark_as_active(db, &older_manifest);
-            testing::mark_as_installed(db, &newer_manifest);
+            let older_pkg = testing::make_package_definition("example-font@1.0.0");
+            let newer_pkg = testing::make_package_definition("example-font@3.0.0");
+            testing::mark_as_active(db, &older_pkg);
+            testing::mark_as_installed(db, &newer_pkg);
 
             let targets = resolve_update_targets(cx, db, &[registry], &pkg_specs, false).unwrap();
 
@@ -338,8 +338,8 @@ mod tests {
         let pkg_specs = vec![PackageSpec::from_str("example-font").unwrap()];
 
         testing::with_db(|cx, db| {
-            let manifest = testing::make_manifest("example-font@1.0.0");
-            testing::mark_as_installed(db, &manifest);
+            let pkg = testing::make_package_definition("example-font@1.0.0");
+            testing::mark_as_installed(db, &pkg);
 
             let err = resolve_update_targets(cx, db, &registries, &pkg_specs, false).unwrap_err();
 
@@ -356,8 +356,8 @@ mod tests {
         let registries = [registry];
 
         testing::with_db(|cx, db| {
-            let manifest = testing::make_manifest("example-font@1.0.0");
-            testing::mark_as_installed(db, &manifest);
+            let pkg = testing::make_package_definition("example-font@1.0.0");
+            testing::mark_as_installed(db, &pkg);
 
             let targets = resolve_update_targets(cx, db, &registries, &[], false).unwrap();
 
@@ -374,8 +374,8 @@ mod tests {
         let registries = [registry];
 
         testing::with_db(|cx, db| {
-            let manifest = testing::make_manifest("example-font@1.0.0");
-            testing::mark_as_installed(db, &manifest);
+            let pkg = testing::make_package_definition("example-font@1.0.0");
+            testing::mark_as_installed(db, &pkg);
 
             let targets = resolve_update_targets(cx, db, &registries, &[], true).unwrap();
 
