@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    iter,
     marker::PhantomData,
     path::PathBuf,
     sync::Arc,
@@ -140,7 +141,7 @@ where
         .collect_to_end::<Vec<_>>()?;
 
     dedup_by_id(&mut targets);
-    check_conflicts(&cx, &targets)?;
+    check_conflicting_targets(&cx, &targets)?;
 
     Ok(targets
         .into_iter()
@@ -168,7 +169,7 @@ where
         })
         .collect::<Vec<_>>();
 
-    check_conflicts(&cx, &targets)?;
+    check_conflicting_targets(&cx, &targets)?;
 
     Ok(targets
         .into_iter()
@@ -308,23 +309,32 @@ fn dedup_by_id(targets: &mut Vec<ResolvedInstallTargetWithSource>) {
     targets.retain(|target| seen.insert(target.pkg.id.clone()));
 }
 
-fn check_conflicts<S>(
+fn check_conflicting_targets<S>(
     cx: &ReportContext<InstallResolveScope<S>>,
     targets: &[ResolvedInstallTargetWithSource],
 ) -> Result<(), S::Error>
 where
     S: ReportScope,
 {
-    let mut versions_by_name: BTreeMap<PackageName, Vec<_>> = BTreeMap::new();
+    let mut pkg_ids = BTreeMap::<PackageId, Vec<_>>::new();
+    let mut versions_by_name = BTreeMap::<PackageName, Vec<_>>::new();
     for target in targets {
-        let pkg = &target.pkg;
-        versions_by_name
-            .entry(pkg.id.name().clone())
+        let pkg_id = &target.pkg.id;
+        pkg_ids
+            .entry(pkg_id.clone())
             .or_default()
-            .push((target.source.clone(), pkg.id.clone()));
+            .push((target.source.clone(), pkg_id.clone()));
+
+        if !target.should_activate {
+            continue;
+        }
+
+        versions_by_name
+            .entry(pkg_id.name().clone())
+            .or_default()
+            .push((target.source.clone(), pkg_id.clone()));
     }
-    versions_by_name
-        .into_values()
+    iter::chain(pkg_ids.into_values(), versions_by_name.into_values())
         .map(|pkg_ids| {
             if pkg_ids.len() > 1 {
                 Err(ConflictingRequirementsSnafu { pkg_ids }
@@ -495,6 +505,67 @@ mod tests {
     }
 
     #[test]
+    fn resolve_install_targets_by_manifest_reports_duplicated_package_ids_without_activation() {
+        let pkgs = vec![
+            (
+                PathBuf::from("manifest-a.toml"),
+                testing::make_package_definition("example-font@0.1.0"),
+            ),
+            (
+                PathBuf::from("manifest-b.toml"),
+                testing::make_package_definition("example-font@0.1.0"),
+            ),
+        ];
+
+        testing::with_context(|cx| {
+            let err = resolve_install_targets_by_manifest(cx, &pkgs, false).unwrap_err();
+            assert!(err.is_failed());
+        });
+    }
+
+    #[test]
+    fn resolve_install_targets_by_manifest_reports_multiple_versions_with_activation() {
+        let pkgs = vec![
+            (
+                PathBuf::from("manifest-a.toml"),
+                testing::make_package_definition("example-font@0.1.0"),
+            ),
+            (
+                PathBuf::from("manifest-b.toml"),
+                testing::make_package_definition("example-font@0.2.0"),
+            ),
+        ];
+
+        testing::with_context(|cx| {
+            let err = resolve_install_targets_by_manifest(cx, &pkgs, true).unwrap_err();
+            assert!(err.is_failed());
+        });
+    }
+
+    #[test]
+    fn resolve_install_targets_by_manifest_allows_multiple_versions_without_activation() {
+        let pkgs = vec![
+            (
+                PathBuf::from("manifest-a.toml"),
+                testing::make_package_definition("example-font@0.1.0"),
+            ),
+            (
+                PathBuf::from("manifest-b.toml"),
+                testing::make_package_definition("example-font@0.2.0"),
+            ),
+        ];
+
+        testing::with_context(|cx| {
+            let targets = resolve_install_targets_by_manifest(cx, &pkgs, false).unwrap();
+            resolve::testing::assert_install_target_ids(
+                &targets,
+                &["example-font@0.1.0", "example-font@0.2.0"],
+            );
+            assert!(targets.iter().all(|target| !target.should_activate));
+        });
+    }
+
+    #[test]
     fn resolve_spec_from_registry_resolves_name_to_latest_package() {
         let old_pkg_id = PackageId::from_str("example-font@0.1.0").unwrap();
         let new_pkg_id = PackageId::from_str("example-font@0.2.0").unwrap();
@@ -576,7 +647,7 @@ mod tests {
     }
 
     #[test]
-    fn check_conflicts_reports_multiple_versions_of_same_package() {
+    fn check_conflicting_targets_reports_multiple_versions_of_same_package() {
         let targets = vec![
             installed_target(
                 &testing::make_package_definition("example-font@0.1.0"),
@@ -589,8 +660,49 @@ mod tests {
         ];
 
         testing::with_scoped_context(|cx| {
-            let err = check_conflicts(cx, &targets).unwrap_err();
+            let err = check_conflicting_targets(cx, &targets).unwrap_err();
             assert!(err.is_failed());
+        });
+    }
+
+    #[test]
+    fn check_conflicting_targets_allows_multiple_versions_without_activation() {
+        let targets = vec![
+            installed_target(
+                &testing::make_package_definition("example-font@0.1.0"),
+                false,
+            ),
+            installed_target(
+                &testing::make_package_definition("example-font@0.2.0"),
+                false,
+            ),
+        ];
+
+        testing::with_scoped_context(|cx| {
+            check_conflicting_targets(cx, &targets).unwrap();
+        });
+    }
+
+    #[test]
+    fn resolve_install_targets_by_spec_allows_multiple_versions_without_activation() {
+        let (registry_dir, registry) = testing::make_registry_spec("test-registry");
+        testing::write_manifest(registry_dir.path(), "example-font@0.1.0");
+        testing::write_manifest(registry_dir.path(), "example-font@0.2.0");
+
+        let pkg_specs = vec![
+            PackageSpec::from_str("example-font@0.1.0").unwrap(),
+            PackageSpec::from_str("example-font@0.2.0").unwrap(),
+        ];
+
+        testing::with_db(|cx, db| {
+            let targets =
+                resolve_install_targets_by_spec(cx, db, &[registry], &pkg_specs, false, false)
+                    .unwrap();
+            resolve::testing::assert_install_target_ids(
+                &targets,
+                &["example-font@0.1.0", "example-font@0.2.0"],
+            );
+            assert!(targets.iter().all(|target| !target.should_activate));
         });
     }
 
