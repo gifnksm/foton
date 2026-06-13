@@ -9,7 +9,7 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct PackageDefinition {
     pub(crate) id: PackageId,
     pub(crate) display_name: Option<String>,
@@ -22,7 +22,7 @@ pub(crate) struct PackageDefinition {
     pub(crate) sources: Vec<PackageSource>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct PackageSource {
     pub(crate) url: Url,
     pub(crate) hash: GenericDigest,

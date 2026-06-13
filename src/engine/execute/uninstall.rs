@@ -116,10 +116,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        sync::{Arc, LazyLock},
-    };
+    use std::{fs, sync::LazyLock};
 
     use super::*;
     use crate::{
@@ -128,7 +125,7 @@ mod tests {
         util::testing,
     };
 
-    static PKG: LazyLock<Arc<PackageDefinition>> =
+    static PKG: LazyLock<PackageDefinition> =
         LazyLock::new(|| testing::make_package_definition("example-font@0.1.0"));
 
     #[test]

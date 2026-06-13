@@ -175,12 +175,12 @@ mod tests {
         util::testing::{self, TestScope},
     };
 
-    static PKG: LazyLock<Arc<PackageDefinition>> =
+    static PKG: LazyLock<PackageDefinition> =
         LazyLock::new(|| testing::make_package_definition("example-font@0.1.0"));
 
-    fn install_op(pkg: &Arc<PackageDefinition>) -> InstallOp {
+    fn install_op(pkg: &PackageDefinition) -> InstallOp {
         InstallOp {
-            pkg: Arc::clone(pkg),
+            pkg: Arc::new(pkg.clone()),
             reason: InstallReason::RequestedByUser,
         }
     }

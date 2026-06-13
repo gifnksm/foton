@@ -16,6 +16,7 @@ use crate::{
         },
     },
     db::{PackageDatabase, PackageDbEntry},
+    engine::{InstallResolutionDetail, InstallTargetKind},
     package::{PackageDefinition, PackageId, PackageName, PackageSpec},
     registry::{RegistryId, RegistryIndex, RegistryIndexError, RegistrySpec},
     util::macros::concat_line,
@@ -67,31 +68,54 @@ enum UpdateResolveErrorReport {
 
 #[derive(Debug, Clone)]
 struct UpdateCandidate {
+    pkg_spec: PackageSpec,
     pkg_id: PackageId,
     should_activate: bool,
 }
 
 impl UpdateCandidate {
-    fn new(pkg_id: PackageId, should_activate: bool) -> Self {
+    fn new(pkg_spec: PackageSpec, pkg_id: PackageId, should_activate: bool) -> Self {
         Self {
+            pkg_spec,
             pkg_id,
             should_activate,
         }
     }
 
-    fn from_db_entry(entry: &PackageDbEntry<'_>) -> Option<Self> {
+    fn from_db_entry(pkg_spec: PackageSpec, entry: &PackageDbEntry<'_>) -> Option<Self> {
         if !entry.installation_state().is_installed() {
             return None;
         }
         Some(Self::new(
+            pkg_spec,
             entry.id().clone(),
             entry.activation_state().is_active(),
         ))
     }
 
-    fn resolved(self, pkg: Arc<PackageDefinition>) -> ResolvedInstallTarget {
+    fn found_update(
+        self,
+        reg_id: RegistryId,
+        pkg: Arc<PackageDefinition>,
+    ) -> ResolvedInstallTarget {
         ResolvedInstallTarget {
-            pkg,
+            kind: InstallTargetKind::Install { pkg },
+            detail: InstallResolutionDetail::Registry {
+                reg_id,
+                pkg_spec: self.pkg_spec,
+            },
+            should_activate: self.should_activate,
+        }
+    }
+
+    fn already_up_to_date(self) -> ResolvedInstallTarget {
+        ResolvedInstallTarget {
+            kind: InstallTargetKind::AlreadyInstalled {
+                pkg_id: self.pkg_id,
+            },
+            detail: InstallResolutionDetail::Installed {
+                pkg_spec: self.pkg_spec,
+            },
             should_activate: self.should_activate,
         }
     }
@@ -108,7 +132,13 @@ where
     S: ReportScope,
 {
     let cx = UpdateResolveScope::start_with_report(cx, format_args!("Resolving update target..."));
-    let mut candidates = collect_requested_packages(&cx, db, pkg_specs)?;
+    let update_all_packages = pkg_specs.is_empty();
+
+    let mut candidates = if update_all_packages {
+        all_installed_packages(db)
+    } else {
+        collect_requested_packages(&cx, db, pkg_specs)?
+    };
 
     if candidates.is_empty() {
         return Ok(vec![]);
@@ -120,9 +150,20 @@ where
     let targets = candidates
         .into_iter()
         .filter_map(|candidate| {
-            let res = find_update_target(&cx, &indexes, &candidate.pkg_id, include_pre_release)
-                .transpose()?;
-            Some(res.map(|pkg| candidate.resolved(pkg)))
+            (|| {
+                let target = match find_update_target(
+                    &cx,
+                    &indexes,
+                    &candidate.pkg_id,
+                    include_pre_release,
+                )? {
+                    Some((reg_id, pkg)) => Some(candidate.found_update(reg_id, pkg)),
+                    None if update_all_packages => None,
+                    None => Some(candidate.already_up_to_date()),
+                };
+                Ok(target)
+            })()
+            .transpose()
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(targets)
@@ -136,14 +177,10 @@ fn collect_requested_packages<S>(
 where
     S: ReportScope,
 {
-    if pkg_specs.is_empty() {
-        Ok(all_installed_packages(db))
-    } else {
-        pkg_specs
-            .iter()
-            .map(|pkg_spec| resolve_spec_from_installed_packages(cx, db, pkg_spec))
-            .collect_to_end()
-    }
+    pkg_specs
+        .iter()
+        .map(|pkg_spec| resolve_spec_from_installed_packages(cx, db, pkg_spec))
+        .collect_to_end()
 }
 
 fn collect_latest_packages<I>(candidates: I) -> BTreeMap<PackageName, UpdateCandidate>
@@ -169,7 +206,7 @@ where
 fn all_installed_packages(db: &PackageDatabase<'_>) -> Vec<UpdateCandidate> {
     let candidates = db
         .all_entries()
-        .filter_map(|entry| UpdateCandidate::from_db_entry(&entry));
+        .filter_map(|entry| UpdateCandidate::from_db_entry(entry.id().clone().into(), &entry));
     collect_latest_packages(candidates).into_values().collect()
 }
 
@@ -183,7 +220,7 @@ where
 {
     let latest_package = db
         .entries_by_spec(pkg_spec)
-        .filter_map(|entry| UpdateCandidate::from_db_entry(&entry))
+        .filter_map(|entry| UpdateCandidate::from_db_entry(pkg_spec.clone(), &entry))
         .max_by(|a, b| a.pkg_id.version().cmp(b.pkg_id.version()));
     let candidate = latest_package
         .context(NoMatchingPackageSnafu { pkg_spec })
@@ -207,7 +244,7 @@ fn find_update_target<S>(
     indexes: &[RegistryIndex],
     pkg_id: &PackageId,
     include_pre_release: bool,
-) -> Result<Option<Arc<PackageDefinition>>, S::Error>
+) -> Result<Option<(RegistryId, Arc<PackageDefinition>)>, S::Error>
 where
     S: ReportScope,
 {
@@ -220,7 +257,7 @@ where
 
     match &matches[..] {
         [] => Ok(None),
-        [(_reg_id, pkg)] => Ok(Some(Arc::clone(pkg))),
+        [(reg_id, pkg)] => Ok(Some((reg_id.clone(), Arc::clone(pkg)))),
         _ => {
             let pkg_ids = matches
                 .into_iter()
@@ -266,7 +303,7 @@ mod tests {
     use std::str::FromStr as _;
 
     use super::*;
-    use crate::{engine::resolve, util::testing};
+    use crate::util::testing;
 
     #[test]
     fn resolve_update_targets_updates_installed_packages_with_newer_versions_only() {
@@ -285,7 +322,15 @@ mod tests {
             testing::mark_as_incomplete_install(db, &incomplete_pkg);
 
             let targets = resolve_update_targets(cx, db, &[registry], &[], false).unwrap();
-            resolve::testing::assert_install_target_ids(&targets, &["update-font@2.0.0"]);
+            assert_eq!(
+                targets,
+                vec![ResolvedInstallTarget::registry(
+                    "update-font@2.0.0",
+                    "test-registry",
+                    "update-font@1.0.0",
+                    false,
+                )],
+            );
         });
     }
 
@@ -305,7 +350,15 @@ mod tests {
 
             let targets = resolve_update_targets(cx, db, &[registry], &pkg_specs, false).unwrap();
 
-            resolve::testing::assert_single_install_target_id(&targets, "example-font@2.0.0");
+            assert_eq!(
+                targets,
+                vec![ResolvedInstallTarget::registry(
+                    "example-font@2.0.0",
+                    "test-registry",
+                    "example-font@1.0.0",
+                    false,
+                )],
+            );
         });
     }
 
@@ -328,7 +381,14 @@ mod tests {
 
             let targets = resolve_update_targets(cx, db, &[registry], &pkg_specs, false).unwrap();
 
-            assert!(targets.is_empty());
+            assert_eq!(
+                targets,
+                vec![ResolvedInstallTarget::already_installed(
+                    "example-font@3.0.0",
+                    "example-font@3.0.0",
+                    false,
+                )],
+            );
         });
     }
 
@@ -347,7 +407,15 @@ mod tests {
 
             let targets = resolve_update_targets(cx, db, &[registry], &pkg_specs, false).unwrap();
 
-            resolve::testing::assert_single_install_target(&targets, "example-font@4.0.0", false);
+            assert_eq!(
+                targets,
+                vec![ResolvedInstallTarget::registry(
+                    "example-font@4.0.0",
+                    "test-registry",
+                    "example-font",
+                    false,
+                )],
+            );
         });
     }
 
@@ -385,7 +453,15 @@ mod tests {
 
             let targets = resolve_update_targets(cx, db, &registries, &[], false).unwrap();
 
-            resolve::testing::assert_single_install_target_id(&targets, "example-font@1.0.1");
+            assert_eq!(
+                targets,
+                vec![ResolvedInstallTarget::registry(
+                    "example-font@1.0.1",
+                    "test-registry",
+                    "example-font@1.0.0",
+                    false,
+                )],
+            );
         });
     }
 
@@ -403,7 +479,15 @@ mod tests {
 
             let targets = resolve_update_targets(cx, db, &registries, &[], true).unwrap();
 
-            resolve::testing::assert_single_install_target_id(&targets, "example-font@2.0.0-rc-1");
+            assert_eq!(
+                targets,
+                vec![ResolvedInstallTarget::registry(
+                    "example-font@2.0.0-rc-1",
+                    "test-registry",
+                    "example-font@1.0.0",
+                    false,
+                )],
+            );
         });
     }
 }

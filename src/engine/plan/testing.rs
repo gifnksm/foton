@@ -1,9 +1,6 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use crate::engine::{
-    ActivateOp, DeactivateOp, ExecutionPlan, InstallOp, PlanStep, PlanStepOp, SkipOp,
-    StepCondition, StepId, UninstallOp,
-};
+use crate::engine::{ExecutionPlan, PlanStep, StepCondition, StepId};
 
 #[track_caller]
 pub(super) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
@@ -34,77 +31,8 @@ pub(super) fn assert_plan_eq(actual: &ExecutionPlan, expected: &ExecutionPlan) {
             op: expected_op,
             conditions: expected_conditions,
         } = expected_step;
+        assert_eq!(actual_op, expected_op);
         assert_conditions_eq(&step_id_map, actual_conditions, expected_conditions);
-        match (actual_op, expected_op) {
-            (
-                PlanStepOp::Install(InstallOp {
-                    pkg: actual_pkg,
-                    reason: actual_reason,
-                }),
-                PlanStepOp::Install(InstallOp {
-                    pkg: expected_pkg,
-                    reason: expected_reason,
-                }),
-            ) => {
-                assert!(Arc::ptr_eq(actual_pkg, expected_pkg));
-                assert_eq!(actual_reason, expected_reason);
-            }
-            (
-                PlanStepOp::Uninstall(UninstallOp {
-                    pkg_id: actual_pkg_id,
-                    reason: actual_reason,
-                }),
-                PlanStepOp::Uninstall(UninstallOp {
-                    pkg_id: expected_pkg_id,
-                    reason: expected_reason,
-                }),
-            ) => {
-                assert_eq!(actual_pkg_id, expected_pkg_id);
-                assert_eq!(actual_reason, expected_reason);
-            }
-            (
-                PlanStepOp::Activate(ActivateOp {
-                    pkg_id: actual_pkg_id,
-                    reason: actual_reason,
-                }),
-                PlanStepOp::Activate(ActivateOp {
-                    pkg_id: expected_pkg_id,
-                    reason: expected_reason,
-                }),
-            ) => {
-                assert_eq!(actual_pkg_id, expected_pkg_id);
-                assert_eq!(actual_reason, expected_reason);
-            }
-            (
-                PlanStepOp::Deactivate(DeactivateOp {
-                    pkg_id: actual_pkg_id,
-                    reason: actual_reason,
-                }),
-                PlanStepOp::Deactivate(DeactivateOp {
-                    pkg_id: expected_pkg_id,
-                    reason: expected_reason,
-                }),
-            ) => {
-                assert_eq!(actual_pkg_id, expected_pkg_id);
-                assert_eq!(actual_reason, expected_reason);
-            }
-            (
-                PlanStepOp::Skip(SkipOp {
-                    pkg_spec: actual_pkg_spec,
-                    reason: actual_reason,
-                }),
-                PlanStepOp::Skip(SkipOp {
-                    pkg_spec: expected_pkg_spec,
-                    reason: expected_reason,
-                }),
-            ) => {
-                assert_eq!(actual_pkg_spec, expected_pkg_spec);
-                assert_eq!(actual_reason, expected_reason);
-            }
-            (actual_op, expected_op) => {
-                panic!("mismatched plan ops\n  actual: {actual_op:?}\nexpected: {expected_op:?}")
-            }
-        }
     }
 }
 

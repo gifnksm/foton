@@ -31,6 +31,22 @@ impl FromStr for PackageSpec {
     }
 }
 
+impl TryFrom<String> for PackageSpec {
+    type Error = ParsePackageSpecError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl TryFrom<&str> for PackageSpec {
+    type Error = ParsePackageSpecError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
 impl Display for PackageSpec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

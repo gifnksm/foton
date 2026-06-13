@@ -171,7 +171,7 @@ fn dedup_targets(targets: &mut Vec<ResolvedRepairTarget>) {
 
 #[cfg(test)]
 mod tests {
-    use std::{assert_matches, str::FromStr as _, sync::Arc};
+    use std::{assert_matches, str::FromStr as _};
 
     use super::*;
     use crate::{
@@ -183,11 +183,11 @@ mod tests {
     #[expect(clippy::struct_field_names)]
     #[derive(Debug)]
     struct BrokenRepairFixture {
-        incomplete_activation_pkg: Arc<PackageDefinition>,
-        incomplete_deactivation_pkg: Arc<PackageDefinition>,
-        incomplete_install_pkg: Arc<PackageDefinition>,
-        incomplete_uninstall_pkg: Arc<PackageDefinition>,
-        installed_pkg: Arc<PackageDefinition>,
+        incomplete_activation_pkg: PackageDefinition,
+        incomplete_deactivation_pkg: PackageDefinition,
+        incomplete_install_pkg: PackageDefinition,
+        incomplete_uninstall_pkg: PackageDefinition,
+        installed_pkg: PackageDefinition,
     }
 
     impl BrokenRepairFixture {
