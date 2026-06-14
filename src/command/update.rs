@@ -54,6 +54,7 @@ pub(crate) async fn update_package(cx: &RootContext, args: &UpdateArgs) -> Resul
     let cx = UpdateScope::start_with_report(cx, report);
 
     let registries = engine::resolve_registries_by_id(&cx, registries.as_deref())?;
+    engine::ensure_non_empty_registries(&cx, &registries)?;
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
     let mut db = engine::load_database(&cx, &mut db_lock_file)?;

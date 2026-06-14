@@ -4,16 +4,8 @@ Install packages from package registries or manifest files.
 
 ## Usage
 
-Install from package registries:
-
 ```text
-foton install [OPTIONS] [<PACKAGE>...]
-```
-
-Install from local manifest files:
-
-```text
-foton install [OPTIONS] --manifest <MANIFEST>...
+foton install [OPTIONS] [<PACKAGE>...] [--manifest <MANIFEST>...]
 ```
 
 ## Arguments
@@ -22,8 +14,7 @@ foton install [OPTIONS] --manifest <MANIFEST>...
 
 Package names, optionally with an exact version as `<package-name>@<version>`.
 
-Required unless `--manifest` is specified.
-This cannot be used together with `--manifest`.
+At least one `<PACKAGE>` or `--manifest` is required.
 
 ## Options
 
@@ -32,14 +23,13 @@ This cannot be used together with `--manifest`.
 Install packages defined in the given manifest files.
 
 This option can be specified multiple times.
-It cannot be used together with `--registry`, `--pre-release` or `<PACKAGE>`.
 
 ### `--registry <REGISTRY_ID>`
 
 Package registry IDs to resolve packages from.
 
 Use a comma-separated list such as `--registry local,foton`.
-This option is only available when installing by `<PACKAGE>`.
+This option applies only to packages installed by `<PACKAGE>`.
 
 ### `--no-confirm`
 
@@ -55,7 +45,7 @@ Allow installing pre-release versions when resolving packages from registries.
 
 Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored
 unless an exact version is specified.
-This cannot be used together with `--manifest`.
+This option applies only to packages installed by `<PACKAGE>`.
 
 ### `--no-activate`
 
