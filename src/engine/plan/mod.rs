@@ -186,8 +186,8 @@ pub(in crate::engine) enum ActivateReason {
 pub(in crate::engine) enum DeactivateReason {
     #[display("requested by user")]
     RequestedByUser,
-    #[display("conflicts with package {pkg_id}")]
-    ConflictWithActive { pkg_id: PackageId },
+    #[display("conflicts with package {pkg_id} activation")]
+    ConflictWithActivation { pkg_id: PackageId },
     #[display("cleanup after incomplete activation")]
     CleanupIncompleteActivation,
     #[display("cleanup after incomplete deactivation")]
