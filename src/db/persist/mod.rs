@@ -185,6 +185,10 @@ impl PersistedPackageEntry {
     pub(in crate::db) fn set_font_entries(&mut self, entries: &[FontEntry]) {
         self.font_entries = entries.iter().map(Into::into).collect();
     }
+
+    pub(in crate::db) fn has_same_definition_as(&self, pkg: &PackageDefinition) -> bool {
+        self.definition == *pkg
+    }
 }
 
 impl From<PersistedInstallationState> for InstallationState {
@@ -257,6 +261,45 @@ impl PersistedPackageDefinition {
             license: self.license.clone(),
             sources: self.sources.iter().map(Into::into).collect(),
         }
+    }
+}
+
+impl PartialEq<PackageDefinition> for PersistedPackageDefinition {
+    fn eq(&self, pkg: &PackageDefinition) -> bool {
+        let Self {
+            display_name,
+            description,
+            aliases,
+            faces,
+            homepage,
+            repository,
+            license,
+            sources,
+        } = self;
+
+        *display_name == pkg.display_name
+            && *description == pkg.description
+            && *aliases == pkg.aliases
+            && *faces == pkg.faces
+            && *homepage == pkg.homepage
+            && *repository == pkg.repository
+            && *license == pkg.license
+            && sources.iter().eq(&pkg.sources)
+    }
+}
+
+impl PartialEq<PackageSource> for PersistedPackageSource {
+    fn eq(&self, source: &PackageSource) -> bool {
+        let Self {
+            url,
+            hash,
+            include,
+            exclude,
+        } = self;
+        *url == source.url
+            && *hash == source.hash
+            && *include == source.include
+            && *exclude == source.exclude
     }
 }
 
