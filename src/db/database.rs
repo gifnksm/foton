@@ -469,7 +469,7 @@ mod tests {
         lock_file: &mut DbLockFile,
         id: &PackageId,
     ) -> Option<InstallationState> {
-        let lock_file_guard = lock_file.try_acquire().unwrap();
+        let lock_file_guard = lock_file.try_lock().unwrap();
         let db = PackageDatabase::load(app_dirs, lock_file_guard).unwrap();
         get_entry_installation_state(&db, id)
     }
@@ -478,7 +478,7 @@ mod tests {
     where
         F: FnOnce(&mut PackageDatabase<'_>) -> R,
     {
-        let lock_file_guard = lock_file.try_acquire().unwrap();
+        let lock_file_guard = lock_file.try_lock().unwrap();
         let mut db = PackageDatabase::load(app_dirs, lock_file_guard).unwrap();
         f(&mut db)
     }

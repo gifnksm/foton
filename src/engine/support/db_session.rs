@@ -55,7 +55,7 @@ where
     let cx = DatabaseLoadScope::start(cx);
 
     let lock_file_guard = lock_file
-        .try_acquire()
+        .try_lock()
         .map_err(DatabaseLoadErrorReport::from)
         .report_error(&cx)?;
     let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard)
