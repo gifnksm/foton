@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, HashSet},
-    iter,
     marker::PhantomData,
     path::PathBuf,
     sync::Arc,
@@ -64,21 +63,30 @@ enum InstallResolveErrorReport {
         pkg_spec: PackageSpec,
         pkg_ids: Vec<(RegistryId, PackageId)>,
     },
-    #[snafu(display(
-        "cannot resolve package `{pkg_spec}` because no enabled registries found in configuration"
-    ))]
+    #[snafu(display("cannot look up package `{pkg_spec}` because no enabled registries were found in configuration", pkg_spec = pkg_spec))]
     NoRegistriesForSpecResolution { pkg_spec: PackageSpec },
-    #[snafu(display("no package found for `{pkg_spec}`"))]
+    #[snafu(display("no package matching `{pkg_spec}` was found in the selected registries"))]
     PackageNotFoundForSpec { pkg_spec: PackageSpec },
     #[snafu(display(
         concat_line!(
-            "conflicting packages are being installed:",
+            "the same package ID was resolved from multiple install targets:",
             "{pkg_ids}",
-            "this may cause unexpected behavior; consider installing only one version of the package",
+            "install the package from a single source, or remove the duplicate target",
         ),
         pkg_ids = BulletList(&pkg_ids.iter().map(|(source, pkg_id)| format!("{pkg_id} (resolved from {source})")).collect::<Vec<_>>()),
     ))]
-    ConflictingRequirements {
+    ConflictingInstalls {
+        pkg_ids: Vec<(InstallResolutionDetail, PackageId)>,
+    },
+    #[snafu(display(
+        concat_line!(
+            "multiple versions of the same package would be activated:",
+            "{pkg_ids}",
+            "activate only one version, or rerun with `--no-activate`",
+        ),
+        pkg_ids = BulletList(&pkg_ids.iter().map(|(source, pkg_id)| format!("{pkg_id} (resolved from {source})")).collect::<Vec<_>>()),
+    ))]
+    ConflictingActivations {
         pkg_ids: Vec<(InstallResolutionDetail, PackageId)>,
     },
 }
@@ -126,7 +134,8 @@ where
         .collect_to_end::<Vec<_>>()?;
 
     dedup_targets(&mut resolved_targets);
-    check_conflicting_targets(&cx, &resolved_targets)?;
+    check_conflicting_installs(&cx, &resolved_targets)?;
+    check_conflicting_activations(&cx, &resolved_targets)?;
 
     Ok(resolved_targets)
 }
@@ -303,7 +312,7 @@ fn dedup_targets(targets: &mut Vec<ResolvedInstallTarget>) {
     targets.retain(|target| seen.insert(target.kind.clone()));
 }
 
-fn check_conflicting_targets<S>(
+fn check_conflicting_installs<S>(
     cx: &ReportContext<InstallResolveScope<S>>,
     targets: &[ResolvedInstallTarget],
 ) -> Result<(), S::Error>
@@ -311,27 +320,51 @@ where
     S: ReportScope,
 {
     let mut pkg_ids = BTreeMap::<PackageId, Vec<_>>::new();
-    let mut versions_by_name = BTreeMap::<PackageName, Vec<_>>::new();
     for target in targets {
         let pkg_id = target.kind.pkg_id();
         pkg_ids
             .entry(pkg_id.clone())
             .or_default()
             .push((target.detail.clone(), pkg_id.clone()));
+    }
+    pkg_ids
+        .into_values()
+        .map(|pkg_ids| {
+            if pkg_ids.len() > 1 {
+                Err(ConflictingInstallsSnafu { pkg_ids }
+                    .build()
+                    .report_error(&cx))
+            } else {
+                Ok(())
+            }
+        })
+        .collect_to_end::<()>()?;
+    Ok(())
+}
 
+fn check_conflicting_activations<S>(
+    cx: &ReportContext<InstallResolveScope<S>>,
+    targets: &[ResolvedInstallTarget],
+) -> Result<(), S::Error>
+where
+    S: ReportScope,
+{
+    let mut versions_by_name = BTreeMap::<PackageName, Vec<_>>::new();
+    for target in targets {
         if !target.should_activate {
             continue;
         }
-
+        let pkg_id = target.kind.pkg_id();
         versions_by_name
             .entry(pkg_id.name().clone())
             .or_default()
             .push((target.detail.clone(), pkg_id.clone()));
     }
-    iter::chain(pkg_ids.into_values(), versions_by_name.into_values())
+    versions_by_name
+        .into_values()
         .map(|pkg_ids| {
             if pkg_ids.len() > 1 {
-                Err(ConflictingRequirementsSnafu { pkg_ids }
+                Err(ConflictingActivationsSnafu { pkg_ids }
                     .build()
                     .report_error(&cx))
             } else {
@@ -344,9 +377,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{assert_matches, str::FromStr as _, sync::LazyLock};
-
-    use tempfile::TempDir;
+    use std::sync::LazyLock;
 
     use super::*;
     use crate::util::testing;
@@ -374,208 +405,197 @@ mod tests {
         }
     }
 
-    #[test]
-    fn resolve_spec_from_installed_packages_returns_resolved_when_matching_package_is_installed() {
-        let spec = PackageSpec::from(PKG.id.name().clone());
+    mod lower_level_responsibility_tests {
+        use std::str::FromStr as _;
 
-        testing::with_db(|_cx, db| {
-            testing::mark_as_installed(db, &PKG);
+        use super::*;
 
-            let options = test_options(false, true);
-            let target = resolve_spec_from_installed_packages(db, &spec, &options);
-            let ResolveState::Resolved(target) = target else {
-                panic!("expected resolved target");
-            };
-            assert_eq!(
-                target,
-                ResolvedInstallTarget::already_installed(
-                    "example-font@1.0.0",
-                    "example-font",
-                    true
-                ),
-            );
-        });
-    }
+        #[test]
+        fn resolve_spec_from_installed_packages_returns_resolved_when_matching_package_is_installed()
+         {
+            let spec = PackageSpec::from(PKG.id.name().clone());
 
-    #[test]
-    fn resolve_spec_from_installed_packages_returns_unresolved_when_matching_package_is_incomplete_install()
-     {
-        let spec = PackageSpec::from(PKG.id.name().clone());
+            testing::with_db(|_cx, db| {
+                testing::mark_as_installed(db, &PKG);
 
-        testing::with_db(|_cx, db| {
-            testing::mark_as_incomplete_install(db, &PKG);
-
-            let options = test_options(false, true);
-            let target = resolve_spec_from_installed_packages(db, &spec, &options);
-            assert_matches!(
-                target,
-                ResolveState::Unresolved { pkg_spec } if pkg_spec == spec
-            );
-        });
-    }
-
-    #[test]
-    fn resolve_spec_from_installed_packages_returns_unresolved_when_no_packages_match() {
-        let installed_pkg = testing::make_package_definition("installed-font@1.0.0");
-        let missing_spec = PackageSpec::from_str("missing-font").unwrap();
-
-        testing::with_db(|_cx, db| {
-            testing::mark_as_installed(db, &installed_pkg);
-
-            let options = test_options(false, true);
-            let target = resolve_spec_from_installed_packages(db, &missing_spec, &options);
-            assert_matches!(
-                target,
-                ResolveState::Unresolved { pkg_spec } if pkg_spec == missing_spec
-            );
-        });
-    }
-
-    #[test]
-    fn resolve_install_targets_supports_manifests_and_package_specs_together() {
-        let (registry_dir, registry) = testing::make_registry_spec("test-registry");
-        testing::write_manifest(registry_dir.path(), "example-font@1.0.0");
-
-        let installed_pkg = testing::make_package_definition("installed-font@1.0.0");
-        let manifest_pkg = testing::make_package_definition("manifest-font@0.1.0");
-        let targets = vec![
-            InstallResolveInput::Manifest {
-                path: PathBuf::from("manifest-font.toml"),
-                pkg: Arc::new(manifest_pkg),
-            },
-            InstallResolveInput::PackageSpec {
-                pkg_spec: PackageSpec::from_str("installed-font").unwrap(),
-            },
-            InstallResolveInput::PackageSpec {
-                pkg_spec: PackageSpec::from_str("example-font@1.0.0").unwrap(),
-            },
-            InstallResolveInput::PackageSpec {
-                pkg_spec: PackageSpec::from_str("example-font").unwrap(),
-            },
-        ];
-
-        testing::with_db(|cx, db| {
-            testing::mark_as_installed(db, &installed_pkg);
-
-            let options = test_options_with_registry(registry, false, true);
-            let targets = resolve_install_targets(cx, db, &targets, &options).unwrap();
-            assert_eq!(
-                targets,
-                vec![
-                    ResolvedInstallTarget::manifest(
-                        "manifest-font@0.1.0",
-                        "manifest-font.toml",
-                        true,
-                    ),
+                let options = test_options(false, true);
+                let target = resolve_spec_from_installed_packages(db, &spec, &options);
+                let ResolveState::Resolved(target) = target else {
+                    panic!("expected resolved target");
+                };
+                assert_eq!(
+                    target,
                     ResolvedInstallTarget::already_installed(
-                        "installed-font@1.0.0",
-                        "installed-font",
+                        "example-font@1.0.0",
+                        "example-font",
+                        true
+                    ),
+                );
+            });
+        }
+
+        #[test]
+        fn resolve_spec_from_installed_packages_returns_unresolved_when_matching_package_is_incomplete_install()
+         {
+            let spec = PackageSpec::from(PKG.id.name().clone());
+
+            testing::with_db(|_cx, db| {
+                testing::mark_as_incomplete_install(db, &PKG);
+
+                let options = test_options(false, true);
+                let target = resolve_spec_from_installed_packages(db, &spec, &options);
+                assert!(matches!(
+                    target,
+                    ResolveState::Unresolved { pkg_spec } if pkg_spec == spec
+                ));
+            });
+        }
+
+        #[test]
+        fn resolve_spec_from_installed_packages_returns_unresolved_when_no_packages_match() {
+            let installed_pkg = testing::make_package_definition("installed-font@1.0.0");
+            let missing_spec = PackageSpec::from_str("missing-font").unwrap();
+
+            testing::with_db(|_cx, db| {
+                testing::mark_as_installed(db, &installed_pkg);
+
+                let options = test_options(false, true);
+                let target = resolve_spec_from_installed_packages(db, &missing_spec, &options);
+                assert!(matches!(
+                    target,
+                    ResolveState::Unresolved { pkg_spec } if pkg_spec == missing_spec
+                ));
+            });
+        }
+
+        #[test]
+        fn resolve_spec_from_registry_resolves_name_to_latest_package() {
+            let old_pkg_id = PackageId::from_str("example-font@0.1.0").unwrap();
+            let new_pkg_id = PackageId::from_str("example-font@0.2.0").unwrap();
+
+            let (registry_dir, index) = testing::make_registry_index("test-registry");
+            testing::write_manifest(registry_dir.path(), &old_pkg_id);
+            testing::write_manifest(registry_dir.path(), &new_pkg_id);
+
+            testing::with_scoped_context(|cx| {
+                let spec = PackageSpec::from(old_pkg_id.name().clone());
+                let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index]);
+                let options = test_options(false, true);
+                let target = resolve_spec_from_registry(cx, &mut indexes, &spec, &options).unwrap();
+                assert_eq!(
+                    target,
+                    ResolvedInstallTarget::registry(
+                        "example-font@0.2.0",
+                        "test-registry",
+                        "example-font",
                         true,
                     ),
+                );
+            });
+        }
+
+        #[test]
+        fn resolve_spec_from_registry_skips_pre_release_by_default() {
+            let released_pkg_id = PackageId::from_str("example-font@1.0.0").unwrap();
+            let pre_release_pkg_id = PackageId::from_str("example-font@2.0.0-rc-1").unwrap();
+
+            let (registry_dir, index) = testing::make_registry_index("test-registry");
+            testing::write_manifest(registry_dir.path(), &released_pkg_id);
+            testing::write_manifest(registry_dir.path(), &pre_release_pkg_id);
+
+            testing::with_scoped_context(|cx| {
+                let spec = PackageSpec::from(released_pkg_id.name().clone());
+                let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index]);
+                let options = test_options(false, true);
+                let stable_target =
+                    resolve_spec_from_registry(cx, &mut indexes, &spec, &options).unwrap();
+                assert_eq!(
+                    stable_target,
                     ResolvedInstallTarget::registry(
                         "example-font@1.0.0",
                         "test-registry",
-                        "example-font@1.0.0",
+                        "example-font",
                         true,
                     ),
-                ],
-            );
-        });
-    }
+                );
+            });
+        }
 
-    #[test]
-    fn resolve_install_targets_reports_missing_registries_for_package_specs() {
-        let targets = vec![InstallResolveInput::PackageSpec {
-            pkg_spec: PackageSpec::from_str("example-font").unwrap(),
-        }];
+        #[test]
+        fn resolve_spec_from_registry_includes_pre_release_when_requested() {
+            let released_pkg_id = PackageId::from_str("example-font@1.0.0").unwrap();
+            let pre_release_pkg_id = PackageId::from_str("example-font@2.0.0-rc-1").unwrap();
 
-        testing::with_db(|cx, db| {
-            let options = test_options(false, true);
-            let err = resolve_install_targets(cx, db, &targets, &options).unwrap_err();
-            assert!(err.is_failed());
-        });
-    }
+            let (registry_dir, index) = testing::make_registry_index("test-registry");
+            testing::write_manifest(registry_dir.path(), &released_pkg_id);
+            testing::write_manifest(registry_dir.path(), &pre_release_pkg_id);
 
-    #[test]
-    fn resolve_install_targets_reports_fetch_failure_for_package_specs() {
-        let registry_dir = TempDir::new().unwrap();
-        let missing_registry_dir = registry_dir.path().join("missing");
+            testing::with_scoped_context(|cx| {
+                let spec = PackageSpec::from(released_pkg_id.name().clone());
+                let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index]);
+                let options = test_options(true, true);
+                let target = resolve_spec_from_registry(cx, &mut indexes, &spec, &options).unwrap();
+                assert_eq!(
+                    target,
+                    ResolvedInstallTarget::registry(
+                        "example-font@2.0.0-rc-1",
+                        "test-registry",
+                        "example-font",
+                        true,
+                    ),
+                );
+            });
+        }
 
-        let registry =
-            testing::make_registry_spec_at("test-registry", missing_registry_dir.as_path());
-        let targets = vec![InstallResolveInput::PackageSpec {
-            pkg_spec: PackageSpec::from_str("example-font").unwrap(),
-        }];
+        #[test]
+        fn resolve_spec_from_registry_allows_exact_pre_release_id_without_flag() {
+            let pre_release_pkg_id = PackageId::from_str("example-font@2.0.0-rc-1").unwrap();
+            let (registry_dir, index) = testing::make_registry_index("test-registry");
+            testing::write_manifest(registry_dir.path(), &pre_release_pkg_id);
 
-        testing::with_db(|cx, db| {
-            let options = test_options_with_registry(registry, false, true);
-            let err = resolve_install_targets(cx, db, &targets, &options).unwrap_err();
-            assert!(err.is_failed());
-        });
-    }
+            testing::with_scoped_context(|cx| {
+                let spec = PackageSpec::from(pre_release_pkg_id.clone());
+                let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index]);
+                let options = test_options(false, true);
+                let target = resolve_spec_from_registry(cx, &mut indexes, &spec, &options).unwrap();
+                assert_eq!(
+                    target,
+                    ResolvedInstallTarget::registry(
+                        "example-font@2.0.0-rc-1",
+                        "test-registry",
+                        "example-font@2.0.0-rc-1",
+                        true,
+                    ),
+                );
+            });
+        }
 
-    #[test]
-    fn resolve_install_targets_returns_manifest_target() {
-        let targets = vec![InstallResolveInput::Manifest {
-            path: PathBuf::from("example-font.toml"),
-            pkg: Arc::new(PKG.clone()),
-        }];
+        #[test]
+        fn resolve_spec_from_registry_reports_multiple_matching_packages_across_registries() {
+            let (registry_dir1, index1) = testing::make_registry_index("registry-a");
+            let (registry_dir2, index2) = testing::make_registry_index("registry-b");
+            testing::write_manifest(registry_dir1.path(), "example-font@0.2.0");
+            testing::write_manifest(registry_dir2.path(), "example-font@1.0.0");
 
-        testing::with_db(|cx, db| {
-            let options = test_options(false, true);
-            let targets = resolve_install_targets(cx, db, &targets, &options).unwrap();
+            testing::with_scoped_context(|cx| {
+                let spec: PackageSpec = "example-font".parse().unwrap();
+                let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index1, index2]);
+                let options = test_options(false, true);
+                let err =
+                    resolve_spec_from_registry(cx, &mut indexes, &spec, &options).unwrap_err();
+                assert!(err.is_failed());
+            });
+        }
 
-            assert_eq!(
-                targets,
-                vec![ResolvedInstallTarget::manifest(
-                    "example-font@1.0.0",
-                    "example-font.toml",
-                    true,
-                )],
-            );
-        });
-    }
+        #[test]
+        fn dedup_targets_collapses_identical_definitions_with_same_package_id() {
+            let mut targets = vec![
+                ResolvedInstallTarget::manifest("example-font@0.1.0", "manifest-a.toml", false),
+                ResolvedInstallTarget::manifest("example-font@0.1.0", "manifest-b.toml", false),
+            ];
 
-    #[test]
-    fn resolve_install_targets_reports_duplicated_package_ids() {
-        let manifest1 = testing::make_package_definition("example-font@0.1.0");
-        let mut manifest2 = manifest1.clone();
-        manifest2.description = Some("some description".to_owned());
-        let targets = vec![
-            InstallResolveInput::Manifest {
-                path: PathBuf::from("manifest-a.toml"),
-                pkg: Arc::new(manifest1),
-            },
-            InstallResolveInput::Manifest {
-                path: PathBuf::from("manifest-b.toml"),
-                pkg: Arc::new(manifest2),
-            },
-        ];
+            dedup_targets(&mut targets);
 
-        testing::with_db(|cx, db| {
-            let options = test_options(false, true);
-            let err = resolve_install_targets(cx, db, &targets, &options).unwrap_err();
-            assert!(err.is_failed());
-        });
-    }
-
-    #[test]
-    fn resolve_install_targets_dedups_identical_manifest_definitions() {
-        let manifest = testing::make_package_definition("example-font@0.1.0");
-        let targets = vec![
-            InstallResolveInput::Manifest {
-                path: PathBuf::from("manifest-a.toml"),
-                pkg: Arc::new(manifest.clone()),
-            },
-            InstallResolveInput::Manifest {
-                path: PathBuf::from("manifest-b.toml"),
-                pkg: Arc::new(manifest),
-            },
-        ];
-
-        testing::with_db(|cx, db| {
-            let options = test_options(false, false);
-            let targets = resolve_install_targets(cx, db, &targets, &options).unwrap();
             assert_eq!(
                 targets,
                 vec![ResolvedInstallTarget::manifest(
@@ -584,276 +604,311 @@ mod tests {
                     false,
                 )],
             );
-        });
-    }
+        }
 
-    #[test]
-    fn resolve_install_targets_reports_multiple_versions_with_activation() {
-        let targets = vec![
-            InstallResolveInput::Manifest {
-                path: PathBuf::from("manifest-a.toml"),
-                pkg: Arc::new(testing::make_package_definition("example-font@0.1.0")),
-            },
-            InstallResolveInput::Manifest {
-                path: PathBuf::from("manifest-b.toml"),
-                pkg: Arc::new(testing::make_package_definition("example-font@0.2.0")),
-            },
-        ];
+        #[test]
+        fn dedup_targets_collapses_duplicate_targets() {
+            let mut targets = vec![
+                ResolvedInstallTarget::already_installed(
+                    "example-font@0.1.0",
+                    "example-font@0.1.0",
+                    true,
+                ),
+                ResolvedInstallTarget::already_installed(
+                    "example-font@0.1.0",
+                    "example-font@0.1.0",
+                    true,
+                ),
+            ];
 
-        testing::with_db(|cx, db| {
-            let options = test_options(false, true);
-            let err = resolve_install_targets(cx, db, &targets, &options).unwrap_err();
-            assert!(err.is_failed());
-        });
-    }
+            dedup_targets(&mut targets);
 
-    #[test]
-    fn resolve_install_targets_allows_multiple_versions_without_activation() {
-        let targets = vec![
-            InstallResolveInput::Manifest {
-                path: PathBuf::from("manifest-a.toml"),
-                pkg: Arc::new(testing::make_package_definition("example-font@0.1.0")),
-            },
-            InstallResolveInput::Manifest {
-                path: PathBuf::from("manifest-b.toml"),
-                pkg: Arc::new(testing::make_package_definition("example-font@0.2.0")),
-            },
-        ];
-
-        testing::with_db(|cx, db| {
-            let options = test_options(false, false);
-            let targets = resolve_install_targets(cx, db, &targets, &options).unwrap();
             assert_eq!(
                 targets,
-                vec![
-                    ResolvedInstallTarget::manifest("example-font@0.1.0", "manifest-a.toml", false,),
-                    ResolvedInstallTarget::manifest("example-font@0.2.0", "manifest-b.toml", false,),
-                ],
+                vec![ResolvedInstallTarget::already_installed(
+                    "example-font@0.1.0",
+                    "example-font@0.1.0",
+                    true,
+                )],
             );
-        });
-    }
+        }
 
-    #[test]
-    fn resolve_spec_from_registry_resolves_name_to_latest_package() {
-        let old_pkg_id = PackageId::from_str("example-font@0.1.0").unwrap();
-        let new_pkg_id = PackageId::from_str("example-font@0.2.0").unwrap();
+        #[test]
+        fn check_conflicting_installs_reports_different_definitions_with_same_package_id() {
+            let manifest1 = testing::make_package_definition("example-font@0.1.0");
+            let mut manifest2 = manifest1.clone();
+            manifest2.description = Some("some description".to_owned());
+            let targets = vec![
+                ResolvedInstallTarget {
+                    kind: InstallTargetKind::Install {
+                        pkg: Arc::new(manifest1),
+                    },
+                    detail: InstallResolutionDetail::ManifestFile {
+                        path: PathBuf::from("manifest-a.toml"),
+                    },
+                    should_activate: true,
+                },
+                ResolvedInstallTarget {
+                    kind: InstallTargetKind::Install {
+                        pkg: Arc::new(manifest2),
+                    },
+                    detail: InstallResolutionDetail::ManifestFile {
+                        path: PathBuf::from("manifest-b.toml"),
+                    },
+                    should_activate: true,
+                },
+            ];
 
-        let (registry_dir, index) = testing::make_registry_index("test-registry");
-        testing::write_manifest(registry_dir.path(), &old_pkg_id);
-        testing::write_manifest(registry_dir.path(), &new_pkg_id);
+            testing::with_scoped_context(|cx| {
+                let err = check_conflicting_installs(cx, &targets).unwrap_err();
+                assert!(err.is_failed());
+            });
+        }
 
-        testing::with_scoped_context(|cx| {
-            let spec = PackageSpec::from(old_pkg_id.name().clone());
-            let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index]);
-            let options = test_options(false, true);
-            let target = resolve_spec_from_registry(cx, &mut indexes, &spec, &options).unwrap();
-            assert_eq!(
-                target,
-                ResolvedInstallTarget::registry(
+        #[test]
+        fn check_conflicting_activations_reports_multiple_versions_of_same_package() {
+            let targets = vec![
+                ResolvedInstallTarget::already_installed(
+                    "example-font@0.1.0",
+                    "example-font@0.1.0",
+                    true,
+                ),
+                ResolvedInstallTarget::already_installed(
                     "example-font@0.2.0",
-                    "test-registry",
-                    "example-font",
+                    "example-font@0.2.0",
                     true,
                 ),
-            );
-        });
-    }
+            ];
 
-    #[test]
-    fn resolve_spec_from_registry_skips_pre_release_by_default() {
-        let released_pkg_id = PackageId::from_str("example-font@1.0.0").unwrap();
-        let pre_release_pkg_id = PackageId::from_str("example-font@2.0.0-rc-1").unwrap();
+            testing::with_scoped_context(|cx| {
+                let err = check_conflicting_activations(cx, &targets).unwrap_err();
+                assert!(err.is_failed());
+            });
+        }
 
-        let (registry_dir, index) = testing::make_registry_index("test-registry");
-        testing::write_manifest(registry_dir.path(), &released_pkg_id);
-        testing::write_manifest(registry_dir.path(), &pre_release_pkg_id);
-
-        testing::with_scoped_context(|cx| {
-            let spec = PackageSpec::from(released_pkg_id.name().clone());
-            let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index]);
-            let options = test_options(false, true);
-            let stable_target =
-                resolve_spec_from_registry(cx, &mut indexes, &spec, &options).unwrap();
-            assert_eq!(
-                stable_target,
-                ResolvedInstallTarget::registry(
-                    "example-font@1.0.0",
-                    "test-registry",
-                    "example-font",
-                    true,
+        #[test]
+        fn check_conflicting_activations_allows_multiple_versions_without_activation() {
+            let targets = vec![
+                ResolvedInstallTarget::already_installed(
+                    "example-font@0.1.0",
+                    "example-font@0.1.0",
+                    false,
                 ),
-            );
-        });
-    }
-
-    #[test]
-    fn resolve_spec_from_registry_includes_pre_release_when_requested() {
-        let released_pkg_id = PackageId::from_str("example-font@1.0.0").unwrap();
-        let pre_release_pkg_id = PackageId::from_str("example-font@2.0.0-rc-1").unwrap();
-
-        let (registry_dir, index) = testing::make_registry_index("test-registry");
-        testing::write_manifest(registry_dir.path(), &released_pkg_id);
-        testing::write_manifest(registry_dir.path(), &pre_release_pkg_id);
-
-        testing::with_scoped_context(|cx| {
-            let spec = PackageSpec::from(released_pkg_id.name().clone());
-            let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index]);
-            let options = test_options(true, true);
-            let target = resolve_spec_from_registry(cx, &mut indexes, &spec, &options).unwrap();
-            assert_eq!(
-                target,
-                ResolvedInstallTarget::registry(
-                    "example-font@2.0.0-rc-1",
-                    "test-registry",
-                    "example-font",
-                    true,
+                ResolvedInstallTarget::already_installed(
+                    "example-font@0.2.0",
+                    "example-font@0.2.0",
+                    false,
                 ),
-            );
-        });
+            ];
+
+            testing::with_scoped_context(|cx| {
+                check_conflicting_activations(cx, &targets).unwrap();
+            });
+        }
     }
 
-    #[test]
-    fn resolve_spec_from_registry_allows_exact_pre_release_id_without_flag() {
-        let pre_release_pkg_id = PackageId::from_str("example-font@2.0.0-rc-1").unwrap();
-        let (registry_dir, index) = testing::make_registry_index("test-registry");
-        testing::write_manifest(registry_dir.path(), &pre_release_pkg_id);
+    mod resolve_install_targets_integration_tests {
+        use std::{path::PathBuf, str::FromStr as _};
 
-        testing::with_scoped_context(|cx| {
-            let spec = PackageSpec::from(pre_release_pkg_id.clone());
-            let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index]);
-            let options = test_options(false, true);
-            let target = resolve_spec_from_registry(cx, &mut indexes, &spec, &options).unwrap();
-            assert_eq!(
-                target,
-                ResolvedInstallTarget::registry(
-                    "example-font@2.0.0-rc-1",
-                    "test-registry",
-                    "example-font@2.0.0-rc-1",
-                    true,
-                ),
-            );
-        });
-    }
+        use tempfile::TempDir;
 
-    #[test]
-    fn resolve_spec_from_registry_reports_multiple_matching_packages_across_registries() {
-        let (registry_dir1, index1) = testing::make_registry_index("registry-a");
-        let (registry_dir2, index2) = testing::make_registry_index("registry-b");
-        testing::write_manifest(registry_dir1.path(), "example-font@0.2.0");
-        testing::write_manifest(registry_dir2.path(), "example-font@1.0.0");
+        use super::*;
 
-        testing::with_scoped_context(|cx| {
-            let spec: PackageSpec = "example-font".parse().unwrap();
-            let mut indexes = LazyRegistryIndexes::new_for_test(cx, vec![index1, index2]);
-            let options = test_options(false, true);
-            let err = resolve_spec_from_registry(cx, &mut indexes, &spec, &options).unwrap_err();
-            assert!(err.is_failed());
-        });
-    }
+        #[test]
+        fn supports_manifests_and_package_specs_together() {
+            let (registry_dir, registry) = testing::make_registry_spec("test-registry");
+            testing::write_manifest(registry_dir.path(), "example-font@1.0.0");
 
-    #[test]
-    fn check_conflicting_targets_reports_multiple_versions_of_same_package() {
-        let targets = vec![
-            ResolvedInstallTarget::already_installed(
-                "example-font@0.1.0",
-                "example-font@0.1.0",
-                true,
-            ),
-            ResolvedInstallTarget::already_installed(
-                "example-font@0.2.0",
-                "example-font@0.2.0",
-                true,
-            ),
-        ];
+            let installed_pkg = testing::make_package_definition("installed-font@1.0.0");
+            let manifest_pkg = testing::make_package_definition("manifest-font@0.1.0");
+            let targets = vec![
+                InstallResolveInput::Manifest {
+                    path: PathBuf::from("manifest-font.toml"),
+                    pkg: Arc::new(manifest_pkg),
+                },
+                InstallResolveInput::PackageSpec {
+                    pkg_spec: PackageSpec::from_str("installed-font").unwrap(),
+                },
+                InstallResolveInput::PackageSpec {
+                    pkg_spec: PackageSpec::from_str("example-font@1.0.0").unwrap(),
+                },
+                InstallResolveInput::PackageSpec {
+                    pkg_spec: PackageSpec::from_str("example-font").unwrap(),
+                },
+            ];
 
-        testing::with_scoped_context(|cx| {
-            let err = check_conflicting_targets(cx, &targets).unwrap_err();
-            assert!(err.is_failed());
-        });
-    }
+            testing::with_db(|cx, db| {
+                testing::mark_as_installed(db, &installed_pkg);
 
-    #[test]
-    fn check_conflicting_targets_allows_multiple_versions_without_activation() {
-        let targets = vec![
-            ResolvedInstallTarget::already_installed(
-                "example-font@0.1.0",
-                "example-font@0.1.0",
-                false,
-            ),
-            ResolvedInstallTarget::already_installed(
-                "example-font@0.2.0",
-                "example-font@0.2.0",
-                false,
-            ),
-        ];
+                let options = test_options_with_registry(registry, false, true);
+                let targets = resolve_install_targets(cx, db, &targets, &options).unwrap();
+                assert_eq!(
+                    targets,
+                    vec![
+                        ResolvedInstallTarget::manifest(
+                            "manifest-font@0.1.0",
+                            "manifest-font.toml",
+                            true,
+                        ),
+                        ResolvedInstallTarget::already_installed(
+                            "installed-font@1.0.0",
+                            "installed-font",
+                            true,
+                        ),
+                        ResolvedInstallTarget::registry(
+                            "example-font@1.0.0",
+                            "test-registry",
+                            "example-font@1.0.0",
+                            true,
+                        ),
+                    ],
+                );
+            });
+        }
 
-        testing::with_scoped_context(|cx| {
-            check_conflicting_targets(cx, &targets).unwrap();
-        });
-    }
+        #[test]
+        fn reports_missing_registries_for_package_specs() {
+            let targets = vec![InstallResolveInput::PackageSpec {
+                pkg_spec: PackageSpec::from_str("example-font").unwrap(),
+            }];
 
-    #[test]
-    fn resolve_install_targets_allows_multiple_registry_versions_without_activation() {
-        let (registry_dir, registry) = testing::make_registry_spec("test-registry");
-        testing::write_manifest(registry_dir.path(), "example-font@0.1.0");
-        testing::write_manifest(registry_dir.path(), "example-font@0.2.0");
+            testing::with_db(|cx, db| {
+                let options = test_options(false, true);
+                let err = resolve_install_targets(cx, db, &targets, &options).unwrap_err();
+                assert!(err.is_failed());
+            });
+        }
 
-        let targets = vec![
-            InstallResolveInput::PackageSpec {
-                pkg_spec: PackageSpec::from_str("example-font@0.1.0").unwrap(),
-            },
-            InstallResolveInput::PackageSpec {
-                pkg_spec: PackageSpec::from_str("example-font@0.2.0").unwrap(),
-            },
-        ];
+        #[test]
+        fn reports_fetch_failure_for_package_specs() {
+            let registry_dir = TempDir::new().unwrap();
+            let missing_registry_dir = registry_dir.path().join("missing");
 
-        testing::with_db(|cx, db| {
-            let options = test_options_with_registry(registry, false, false);
-            let targets = resolve_install_targets(cx, db, &targets, &options).unwrap();
-            assert_eq!(
-                targets,
-                vec![
-                    ResolvedInstallTarget::registry(
-                        "example-font@0.1.0",
-                        "test-registry",
-                        "example-font@0.1.0",
-                        false,
-                    ),
-                    ResolvedInstallTarget::registry(
-                        "example-font@0.2.0",
-                        "test-registry",
-                        "example-font@0.2.0",
-                        false,
-                    ),
-                ],
-            );
-        });
-    }
+            let registry =
+                testing::make_registry_spec_at("test-registry", missing_registry_dir.as_path());
+            let targets = vec![InstallResolveInput::PackageSpec {
+                pkg_spec: PackageSpec::from_str("example-font").unwrap(),
+            }];
 
-    #[test]
-    fn dedup_by_id_collapses_duplicate_targets() {
-        let mut targets = vec![
-            ResolvedInstallTarget::already_installed(
-                "example-font@0.1.0",
-                "example-font@0.1.0",
-                true,
-            ),
-            ResolvedInstallTarget::already_installed(
-                "example-font@0.1.0",
-                "example-font@0.1.0",
-                true,
-            ),
-        ];
+            testing::with_db(|cx, db| {
+                let options = test_options_with_registry(registry, false, true);
+                let err = resolve_install_targets(cx, db, &targets, &options).unwrap_err();
+                assert!(err.is_failed());
+            });
+        }
 
-        dedup_targets(&mut targets);
+        #[test]
+        fn returns_manifest_target() {
+            let targets = vec![InstallResolveInput::Manifest {
+                path: PathBuf::from("example-font.toml"),
+                pkg: Arc::new(PKG.clone()),
+            }];
 
-        assert_eq!(
-            targets,
-            vec![ResolvedInstallTarget::already_installed(
-                "example-font@0.1.0",
-                "example-font@0.1.0",
-                true,
-            )],
-        );
+            testing::with_db(|cx, db| {
+                let options = test_options(false, true);
+                let targets = resolve_install_targets(cx, db, &targets, &options).unwrap();
+
+                assert_eq!(
+                    targets,
+                    vec![ResolvedInstallTarget::manifest(
+                        "example-font@1.0.0",
+                        "example-font.toml",
+                        true,
+                    )],
+                );
+            });
+        }
+
+        #[test]
+        fn reports_multiple_versions_with_activation() {
+            let targets = vec![
+                InstallResolveInput::Manifest {
+                    path: PathBuf::from("manifest-a.toml"),
+                    pkg: Arc::new(testing::make_package_definition("example-font@0.1.0")),
+                },
+                InstallResolveInput::Manifest {
+                    path: PathBuf::from("manifest-b.toml"),
+                    pkg: Arc::new(testing::make_package_definition("example-font@0.2.0")),
+                },
+            ];
+
+            testing::with_db(|cx, db| {
+                let options = test_options(false, true);
+                let err = resolve_install_targets(cx, db, &targets, &options).unwrap_err();
+                assert!(err.is_failed());
+            });
+        }
+
+        #[test]
+        fn allows_multiple_versions_without_activation() {
+            let targets = vec![
+                InstallResolveInput::Manifest {
+                    path: PathBuf::from("manifest-a.toml"),
+                    pkg: Arc::new(testing::make_package_definition("example-font@0.1.0")),
+                },
+                InstallResolveInput::Manifest {
+                    path: PathBuf::from("manifest-b.toml"),
+                    pkg: Arc::new(testing::make_package_definition("example-font@0.2.0")),
+                },
+            ];
+
+            testing::with_db(|cx, db| {
+                let options = test_options(false, false);
+                let targets = resolve_install_targets(cx, db, &targets, &options).unwrap();
+                assert_eq!(
+                    targets,
+                    vec![
+                        ResolvedInstallTarget::manifest(
+                            "example-font@0.1.0",
+                            "manifest-a.toml",
+                            false,
+                        ),
+                        ResolvedInstallTarget::manifest(
+                            "example-font@0.2.0",
+                            "manifest-b.toml",
+                            false,
+                        ),
+                    ],
+                );
+            });
+        }
+
+        #[test]
+        fn allows_multiple_registry_versions_without_activation() {
+            let (registry_dir, registry) = testing::make_registry_spec("test-registry");
+            testing::write_manifest(registry_dir.path(), "example-font@0.1.0");
+            testing::write_manifest(registry_dir.path(), "example-font@0.2.0");
+
+            let targets = vec![
+                InstallResolveInput::PackageSpec {
+                    pkg_spec: PackageSpec::from_str("example-font@0.1.0").unwrap(),
+                },
+                InstallResolveInput::PackageSpec {
+                    pkg_spec: PackageSpec::from_str("example-font@0.2.0").unwrap(),
+                },
+            ];
+
+            testing::with_db(|cx, db| {
+                let options = test_options_with_registry(registry, false, false);
+                let targets = resolve_install_targets(cx, db, &targets, &options).unwrap();
+                assert_eq!(
+                    targets,
+                    vec![
+                        ResolvedInstallTarget::registry(
+                            "example-font@0.1.0",
+                            "test-registry",
+                            "example-font@0.1.0",
+                            false,
+                        ),
+                        ResolvedInstallTarget::registry(
+                            "example-font@0.2.0",
+                            "test-registry",
+                            "example-font@0.2.0",
+                            false,
+                        ),
+                    ],
+                );
+            });
+        }
     }
 }
