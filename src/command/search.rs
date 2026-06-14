@@ -76,6 +76,7 @@ pub(crate) fn search_packages(cx: &RootContext, args: &SearchArgs) -> Result<(),
     let cx = SearchScope::start(cx);
 
     let registries = engine::resolve_registries_by_id(&cx, registries.as_deref())?;
+    engine::ensure_non_empty_registries(&cx, &registries)?;
     let indexes = engine::fetch_registries(&cx, &registries)?;
 
     let matcher = TextMatcher::new(queries.clone());

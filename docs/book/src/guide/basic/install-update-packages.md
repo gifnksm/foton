@@ -46,8 +46,6 @@ foton install --manifest <manifest-path>
 ```
 
 You can specify `--manifest` multiple times.
-Do not combine `--manifest` with `--registry`, `--pre-release`, or package
-names.
 
 For more details, see
 [Writing a Package Manifest](../advanced/write-package-manifest.md).

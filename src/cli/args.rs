@@ -49,88 +49,41 @@ pub(crate) enum Command {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct InstallArgs {
-    #[clap(flatten)]
-    pub(crate) target: InstallTargetArgs,
-    /// Do not activate the installed packages.
-    #[clap(long)]
-    pub(crate) no_activate: bool,
-}
-
-#[derive(Debug, clap::Args)]
-pub(crate) struct InstallTargetArgs {
     /// Install packages defined in the given manifest files.
     ///
     /// This option can be specified multiple times.
-    /// It cannot be used together with `--registry`, `--pre-release` or `<PACKAGE>`.
-    #[clap(long = "manifest", value_name = "MANIFEST", conflicts_with_all = ["registries", "pkg_specs", "pre_release"])]
+    #[clap(
+        long = "manifest",
+        value_name = "MANIFEST",
+        required_unless_present_any = ["pkg_specs"],
+    )]
     pub(crate) manifests: Vec<PathBuf>,
     /// Package registry IDs to resolve packages from.
     ///
     /// Use a comma-separated list such as `--registry local,foton`.
-    /// This option is only available when installing by `<PACKAGE>`.
-    #[clap(
-        long = "registry",
-        value_name = "REGISTRY_ID",
-        value_delimiter = ',',
-        group = "by-spec",
-        requires = "pkg_specs"
-    )]
+    /// This option applies only to packages installed by `<PACKAGE>`.
+    #[clap(long = "registry", value_name = "REGISTRY_ID", value_delimiter = ',')]
     pub(crate) registries: Option<Vec<RegistryId>>,
     /// Package names, optionally with an exact version as `<package-name>@<version>`.
     ///
-    /// Required unless `--manifest` is specified.
-    /// This cannot be used together with `--manifest`.
+    /// At least one `<PACKAGE>` or `--manifest` is required.
     #[clap(value_name = "PACKAGE", required_unless_present_any = ["manifests"])]
     pub(crate) pkg_specs: Vec<PackageSpec>,
     /// Allow installing pre-release versions when resolving packages from registries.
     ///
     /// Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored
     /// unless an exact version is specified.
-    /// This cannot be used together with `--manifest`.
+    /// This option applies only to packages installed by `<PACKAGE>`.
     #[clap(long)]
     pub(crate) pre_release: bool,
+    /// Do not activate the installed packages.
+    #[clap(long)]
+    pub(crate) no_activate: bool,
 }
 
-#[derive(Debug)]
-pub(crate) enum InstallTargets {
-    Manifest {
-        manifests: Vec<PathBuf>,
-    },
-    PackageSpec {
-        registries: Option<Vec<RegistryId>>,
-        pkg_specs: Vec<PackageSpec>,
-        pre_release: bool,
-    },
-}
-
-impl InstallTargetArgs {
-    pub(crate) fn to_targets(&self) -> InstallTargets {
-        let InstallTargetArgs {
-            manifests,
-            registries,
-            pkg_specs,
-            pre_release,
-        } = self;
-        if pkg_specs.is_empty() {
-            InstallTargets::Manifest {
-                manifests: manifests.clone(),
-            }
-        } else {
-            InstallTargets::PackageSpec {
-                registries: registries.clone(),
-                pkg_specs: pkg_specs.clone(),
-                pre_release: *pre_release,
-            }
-        }
-    }
-}
-
-impl InstallTargets {
+impl InstallArgs {
     pub(crate) fn len(&self) -> usize {
-        match self {
-            InstallTargets::Manifest { manifests } => manifests.len(),
-            InstallTargets::PackageSpec { pkg_specs, .. } => pkg_specs.len(),
-        }
+        self.manifests.len() + self.pkg_specs.len()
     }
 }
 
@@ -255,65 +208,99 @@ mod tests {
     }
 
     #[test]
-    fn install_accepts_valid_argument_combinations() {
-        let cases = [
-            &["foton", "install", "package1", "package2"][..],
-            &["foton", "install", "--pre-release", "package1"][..],
-            &[
-                "foton",
-                "install",
-                "--registry",
-                "local,foton",
-                "package1",
-                "package2",
-            ][..],
-            &[
-                "foton",
-                "install",
-                "--manifest",
-                "fonts.toml",
-                "--manifest",
-                "extras.toml",
-            ],
+    fn install_accepts_supported_argument_combinations() {
+        let cases: [(&str, &[&str]); 6] = [
+            ("package-only", &["foton", "install", "package1"]),
+            (
+                "package-only with pre-release",
+                &["foton", "install", "--pre-release", "package1"],
+            ),
+            (
+                "manifest-only",
+                &["foton", "install", "--manifest", "fonts.toml"],
+            ),
+            (
+                "mixed manifest and package",
+                &["foton", "install", "--manifest", "fonts.toml", "package1"],
+            ),
+            (
+                "manifest-only with registry option",
+                &[
+                    "foton",
+                    "install",
+                    "--manifest",
+                    "fonts.toml",
+                    "--registry",
+                    "local",
+                ],
+            ),
+            (
+                "manifest-only with pre-release option",
+                &[
+                    "foton",
+                    "install",
+                    "--manifest",
+                    "fonts.toml",
+                    "--pre-release",
+                ],
+            ),
         ];
-        for case in cases {
-            parse_install(case).unwrap();
+
+        for (name, case) in cases {
+            parse_install(case).unwrap_or_else(|err| panic!("case `{name}` should parse: {err}"));
         }
     }
 
     #[test]
-    fn install_parses_no_activate_flag() {
-        let install_args =
-            parse_install(["foton", "install", "--no-activate", "package1"]).unwrap();
+    fn install_parses_mixed_input_and_install_options() {
+        let install_args = parse_install([
+            "foton",
+            "install",
+            "--manifest",
+            "fonts.toml",
+            "--manifest",
+            "extras.toml",
+            "--registry",
+            "local,foton",
+            "--pre-release",
+            "--no-activate",
+            "package1",
+            "package2",
+        ])
+        .unwrap();
 
+        assert_eq!(
+            install_args.manifests,
+            vec![PathBuf::from("fonts.toml"), PathBuf::from("extras.toml")],
+        );
+        assert_eq!(
+            install_args.registries,
+            Some(vec![RegistryId::new("local").unwrap(), RegistryId::foton()]),
+        );
+        assert_eq!(
+            install_args.pkg_specs,
+            vec!["package1".parse().unwrap(), "package2".parse().unwrap()],
+        );
+        assert!(install_args.pre_release);
         assert!(install_args.no_activate);
-        assert_eq!(install_args.target.pkg_specs.len(), 1);
+        assert_eq!(install_args.len(), 4);
     }
 
     #[test]
-    fn install_rejects_invalid_argument_combinations() {
-        let cases = [
-            &["foton", "install"][..],
-            &["foton", "install", "--manifest", "fonts.toml", "package"][..],
-            &[
-                "foton",
-                "install",
-                "--manifest",
-                "fonts.toml",
-                "--registry",
-                "local",
-            ],
-            &[
-                "foton",
-                "install",
-                "--manifest",
-                "fonts.toml",
-                "--pre-release",
-            ][..],
-            &["foton", "install", "--registry", "local"],
+    fn install_rejects_missing_or_incomplete_targets() {
+        let cases: [(&str, &[&str]); 2] = [
+            ("no target", &["foton", "install"]),
+            (
+                "registry without any install target",
+                &["foton", "install", "--registry", "local"],
+            ),
         ];
-        for case in cases {
-            parse_install(case).unwrap_err();
+
+        for (name, case) in cases {
+            assert!(
+                parse_install(case).is_err(),
+                "case `{name}` should fail to parse"
+            );
         }
     }
 }

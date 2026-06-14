@@ -94,10 +94,21 @@ where
             .map(|(id, registry)| RegistrySpec::new(id.clone(), registry.source.clone()))
             .collect(),
     };
+    Ok(registries)
+}
+
+pub(crate) fn ensure_non_empty_registries<S>(
+    cx: &ReportContext<S>,
+    registries: &[RegistrySpec],
+) -> Result<(), S::Error>
+where
+    S: ReportScope,
+{
+    let cx = RegistryScope::start(cx);
     if registries.is_empty() {
         return Err(NoEnabledRegistriesSnafu.build().report_error(&cx));
     }
-    Ok(registries)
+    Ok(())
 }
 
 pub(crate) fn fetch_registries<S>(
