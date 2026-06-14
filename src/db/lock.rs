@@ -1,6 +1,9 @@
-use std::{fs::File, io, path::PathBuf};
+use std::{
+    fs::{File, TryLockError},
+    io,
+    path::PathBuf,
+};
 
-use fd_lock::{RwLock, RwLockWriteGuard};
 use snafu::{IntoError as _, ResultExt as _, Snafu};
 
 use crate::util::{app_dirs::AppDirs, macros::concat_line, path::AbsolutePath};
@@ -8,12 +11,12 @@ use crate::util::{app_dirs::AppDirs, macros::concat_line, path::AbsolutePath};
 #[derive(Debug)]
 pub(crate) struct DbLockFile {
     path: AbsolutePath,
-    lock: RwLock<File>,
+    lock_file: File,
 }
 
 #[derive(Debug)]
 pub(crate) struct DbLockFileGuard<'a> {
-    _guard: RwLockWriteGuard<'a, File>,
+    lock: &'a DbLockFile,
 }
 
 #[derive(Debug, Snafu, derive_more::IsVariant)]
@@ -21,7 +24,7 @@ pub(crate) enum DbLockFileError {
     #[snafu(display("failed to open database lock file: {path}", path = path.display()))]
     Open { path: PathBuf, source: io::Error },
     #[snafu(display("failed to acquire database lock: {path}", path = path.display()))]
-    Acquire { path: PathBuf, source: io::Error },
+    Lock { path: PathBuf, source: io::Error },
     #[snafu(display(
         concat_line!(
             "database is already locked: {path}",
@@ -29,7 +32,7 @@ pub(crate) enum DbLockFileError {
         ),
         path = path.display()
     ))]
-    AlreadyLocked { path: PathBuf, source: io::Error },
+    AlreadyLocked { path: PathBuf },
 }
 
 impl DbLockFile {
@@ -45,21 +48,25 @@ impl DbLockFile {
 
         Ok(Self {
             path,
-            lock: RwLock::new(file),
+            lock_file: file,
         })
     }
 
-    pub(crate) fn try_acquire(&mut self) -> Result<DbLockFileGuard<'_>, DbLockFileError> {
-        match self.lock.try_write() {
-            Ok(guard) => Ok(DbLockFileGuard { _guard: guard }),
-            Err(source) => {
-                if source.kind() == io::ErrorKind::WouldBlock {
-                    Err(AlreadyLockedSnafu { path: &self.path }.into_error(source))
-                } else {
-                    Err(AcquireSnafu { path: &self.path }.into_error(source))
-                }
-            }
-        }
+    pub(crate) fn try_lock(&mut self) -> Result<DbLockFileGuard<'_>, DbLockFileError> {
+        self.lock_file.try_lock().map_err(|source| match source {
+            TryLockError::Error(source) => LockSnafu { path: &self.path }.into_error(source),
+            TryLockError::WouldBlock => AlreadyLockedSnafu { path: &self.path }.build(),
+        })?;
+        Ok(DbLockFileGuard { lock: self })
+    }
+}
+
+impl Drop for DbLockFileGuard<'_> {
+    fn drop(&mut self) {
+        // `Drop` cannot propagate errors, so unlocking is best-effort here.
+        // This guard is only created after a successful lock acquisition, and if
+        // unlocking still fails there is no meaningful recovery available.
+        let _ = self.lock.lock_file.unlock();
     }
 }
 
@@ -71,29 +78,29 @@ mod tests {
     use crate::util::testing;
 
     #[test]
-    fn try_acquire_returns_already_locked_when_lock_is_already_held() {
+    fn try_lock_returns_already_locked_when_lock_is_already_held() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut first = DbLockFile::open(&app_dirs).unwrap();
         let mut second = DbLockFile::open(&app_dirs).unwrap();
 
-        let _first_guard = first.try_acquire().unwrap();
-        let err = second.try_acquire().unwrap_err();
+        let _first_guard = first.try_lock().unwrap();
+        let err = second.try_lock().unwrap_err();
 
         assert_matches!(err, DbLockFileError::AlreadyLocked { .. });
     }
 
     #[test]
-    fn try_acquire_succeeds_after_previous_guard_is_dropped() {
+    fn try_lock_succeeds_after_previous_guard_is_dropped() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
         let mut first = DbLockFile::open(&app_dirs).unwrap();
         let mut second = DbLockFile::open(&app_dirs).unwrap();
 
         {
-            let _first_guard = first.try_acquire().unwrap();
-            let err = second.try_acquire().unwrap_err();
+            let _first_guard = first.try_lock().unwrap();
+            let err = second.try_lock().unwrap_err();
             assert_matches!(err, DbLockFileError::AlreadyLocked { .. });
         }
 
-        let _second_guard = second.try_acquire().unwrap();
+        let _second_guard = second.try_lock().unwrap();
     }
 }
