@@ -51,12 +51,15 @@ impl OperationError for ListError {
 }
 
 pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), ListError> {
-    let ListArgs { show_incomplete } = args;
+    let ListArgs {
+        show_incomplete,
+        exit_on_lock,
+    } = args;
 
     let cx = ListScope::start(cx);
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
-    let db = engine::load_database(&cx, &mut db_lock_file)?;
+    let db = engine::load_database(&cx, &mut db_lock_file, *exit_on_lock)?;
 
     let renderer = if *show_incomplete {
         (&AllEntryRender {}) as &dyn EntryRender

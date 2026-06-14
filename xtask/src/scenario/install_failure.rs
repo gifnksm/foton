@@ -16,6 +16,7 @@ pub(super) fn run(
             "install",
             "--no-confirm",
             "--warnings-as-errors",
+            "--exit-on-lock",
             "--manifest",
         ])
         .arg(fixture_dir.join("manifest.toml"));

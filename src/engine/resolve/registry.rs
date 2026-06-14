@@ -129,3 +129,18 @@ where
         })
         .collect::<Result<Vec<_>, _>>()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::testing;
+
+    #[test]
+    fn resolve_registries_by_id_reports_unknown_explicit_registry() {
+        testing::with_context(|cx| {
+            let err = resolve_registries_by_id(cx, Some(&[RegistryId::new("unknown").unwrap()]))
+                .unwrap_err();
+            assert!(err.is_failed());
+        });
+    }
+}

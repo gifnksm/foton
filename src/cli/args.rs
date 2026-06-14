@@ -79,6 +79,9 @@ pub(crate) struct InstallArgs {
     /// Do not activate the installed packages.
     #[clap(long)]
     pub(crate) no_activate: bool,
+    /// Exit immediately if the package database is locked by another operation.
+    #[clap(long)]
+    pub(crate) exit_on_lock: bool,
 }
 
 impl InstallArgs {
@@ -107,6 +110,9 @@ pub(crate) struct UpdateArgs {
     /// Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored.
     #[clap(long)]
     pub(crate) pre_release: bool,
+    /// Exit immediately if the package database is locked by another operation.
+    #[clap(long)]
+    pub(crate) exit_on_lock: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -114,6 +120,9 @@ pub(crate) struct UninstallArgs {
     /// Package names, optionally with an exact version as `<package-name>@<version>`.
     #[clap(value_name = "PACKAGE", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
+    /// Exit immediately if the package database is locked by another operation.
+    #[clap(long)]
+    pub(crate) exit_on_lock: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -123,6 +132,9 @@ pub(crate) struct RepairArgs {
     /// If not specified, every package that needs cleanup will be cleaned up.
     #[clap(value_name = "PACKAGE")]
     pub(crate) pkg_specs: Vec<PackageSpec>,
+    /// Exit immediately if the package database is locked by another operation.
+    #[clap(long)]
+    pub(crate) exit_on_lock: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -135,6 +147,9 @@ pub(crate) struct ListArgs {
     /// installed packages also include the activation state.
     #[clap(long)]
     pub(crate) show_incomplete: bool,
+    /// Exit immediately if the package database is locked by another operation.
+    #[clap(long)]
+    pub(crate) exit_on_lock: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -142,6 +157,9 @@ pub(crate) struct InfoArgs {
     /// Package names, optionally with an exact version as `<package-name>@<version>`.
     #[clap(value_name = "PACKAGE", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
+    /// Exit immediately if the package database is locked by another operation.
+    #[clap(long)]
+    pub(crate) exit_on_lock: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -264,6 +282,7 @@ mod tests {
             "local,foton",
             "--pre-release",
             "--no-activate",
+            "--exit-on-lock",
             "package1",
             "package2",
         ])
@@ -283,6 +302,7 @@ mod tests {
         );
         assert!(install_args.pre_release);
         assert!(install_args.no_activate);
+        assert!(install_args.exit_on_lock);
         assert_eq!(install_args.len(), 4);
     }
 

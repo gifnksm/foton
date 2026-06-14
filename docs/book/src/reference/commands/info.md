@@ -20,6 +20,10 @@ Package names, optionally with an exact version as `<package-name>@<version>`.
 
 Skip interactive confirmation prompts.
 
+### `--exit-on-lock`
+
+Exit immediately if the package database is locked by another operation.
+
 ### `--warnings-as-errors`
 
 Treat warnings as errors, causing the command to fail if any warning is emitted.

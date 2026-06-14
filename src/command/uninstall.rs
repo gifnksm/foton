@@ -43,7 +43,10 @@ pub(crate) async fn uninstall_package(
     cx: &RootContext,
     args: &UninstallArgs,
 ) -> Result<(), UninstallError> {
-    let UninstallArgs { pkg_specs } = args;
+    let UninstallArgs {
+        pkg_specs,
+        exit_on_lock,
+    } = args;
 
     let cx = UninstallScope::start_with_report(
         cx,
@@ -51,7 +54,7 @@ pub(crate) async fn uninstall_package(
     );
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
-    let mut db = engine::load_database(&cx, &mut db_lock_file)?;
+    let mut db = engine::load_database(&cx, &mut db_lock_file, *exit_on_lock)?;
 
     let targets = engine::resolve_uninstall_targets(&cx, &db, pkg_specs)?;
     let plan = engine::plan_uninstall(&targets);
