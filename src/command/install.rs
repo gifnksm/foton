@@ -1,4 +1,4 @@
-use std::iter;
+use std::{iter, path::PathBuf};
 
 use snafu::Snafu;
 
@@ -11,7 +11,7 @@ use crate::{
         },
     },
     engine::{self, InstallResolveInput, InstallResolveOptions},
-    registry::RegistrySpec,
+    package::PackageSpec,
 };
 
 #[derive(Debug, Default)]
@@ -48,23 +48,32 @@ pub(crate) async fn install_package(
     cx: &RootContext,
     args: &InstallArgs,
 ) -> Result<(), InstallError> {
-    let should_activate = !args.no_activate;
+    let InstallArgs {
+        manifests,
+        registries,
+        pkg_specs,
+        pre_release,
+        no_activate,
+        exit_on_lock,
+    } = args;
+    let include_pre_release = *pre_release;
+    let should_activate = !*no_activate;
 
     let cx = InstallScope::start_with_report(
         cx,
         format_args!("Installing {} package(s)...", args.len()),
     );
 
-    let targets = resolve_target_inputs(&cx, args)?;
-    let registries = resolve_install_registries(&cx, args)?;
+    let targets = resolve_target_inputs(&cx, manifests, pkg_specs)?;
+    let registries = engine::resolve_registries_by_id(&cx, registries.as_deref())?;
     let options = InstallResolveOptions {
         registries,
-        include_pre_release: args.pre_release,
+        include_pre_release,
         should_activate,
     };
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
-    let mut db = engine::load_database(&cx, &mut db_lock_file)?;
+    let mut db = engine::load_database(&cx, &mut db_lock_file, *exit_on_lock)?;
 
     let targets = engine::resolve_install_targets(&cx, &db, &targets, &options)?;
     let plan = engine::plan_install(&db, &targets);
@@ -85,20 +94,21 @@ pub(crate) async fn install_package(
 
 fn resolve_target_inputs<S>(
     cx: &ReportContext<S>,
-    args: &InstallArgs,
+    manifests: &[PathBuf],
+    pkg_specs: &[PackageSpec],
 ) -> Result<Vec<InstallResolveInput>, S::Error>
 where
     S: ReportScope,
 {
     iter::chain(
-        args.manifests.iter().map(|path| {
+        manifests.iter().map(|path| {
             let pkg = engine::resolve_manifest(cx, path)?;
             Ok(InstallResolveInput::Manifest {
                 path: path.clone(),
                 pkg,
             })
         }),
-        args.pkg_specs
+        pkg_specs
             .iter()
             .cloned()
             .map(|pkg_spec| Ok(InstallResolveInput::PackageSpec { pkg_spec })),
@@ -106,24 +116,14 @@ where
     .collect_to_end()
 }
 
-fn resolve_install_registries<S>(
-    cx: &ReportContext<S>,
-    args: &InstallArgs,
-) -> Result<Vec<RegistrySpec>, S::Error>
-where
-    S: ReportScope,
-{
-    engine::resolve_registries_by_id(cx, args.registries.as_deref())
-}
-
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf, str::FromStr as _};
+    use std::{fs, slice, str::FromStr as _};
 
     use tempfile::TempDir;
 
     use super::*;
-    use crate::{package::PackageSpec, registry::RegistryId, util::testing};
+    use crate::{package::PackageSpec, util::testing};
 
     #[test]
     fn resolve_target_inputs_resolves_manifests_and_package_specs() {
@@ -134,16 +134,14 @@ mod tests {
             testing::make_manifest_str("manifest-font@0.1.0"),
         )
         .unwrap();
-        let args = InstallArgs {
-            manifests: vec![manifest_path.clone()],
-            registries: None,
-            pkg_specs: vec![PackageSpec::from_str("registry-font").unwrap()],
-            pre_release: false,
-            no_activate: false,
-        };
 
         testing::with_context(|cx| {
-            let targets = resolve_target_inputs(cx, &args).unwrap();
+            let targets = resolve_target_inputs(
+                cx,
+                slice::from_ref(&manifest_path),
+                &[PackageSpec::from_str("registry-font").unwrap()],
+            )
+            .unwrap();
             assert_eq!(targets.len(), 2);
 
             let InstallResolveInput::Manifest { path, pkg } = &targets[0] else {
@@ -156,22 +154,6 @@ mod tests {
                 panic!("expected package spec target, got {:?}", targets[1]);
             };
             assert_eq!(pkg_spec, &PackageSpec::from_str("registry-font").unwrap());
-        });
-    }
-
-    #[test]
-    fn resolve_install_registries_reports_unknown_explicit_registry_without_package_specs() {
-        let args = InstallArgs {
-            manifests: vec![PathBuf::from("manifest.toml")],
-            registries: Some(vec![RegistryId::new("unknown").unwrap()]),
-            pkg_specs: vec![],
-            pre_release: false,
-            no_activate: false,
-        };
-
-        testing::with_context(|cx| {
-            let err = resolve_install_registries(cx, &args).unwrap_err();
-            assert!(err.is_failed());
         });
     }
 }

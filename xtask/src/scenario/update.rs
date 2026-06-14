@@ -9,29 +9,29 @@ pub(super) fn run(
     exec_results: &mut Vec<ExecResult>,
 ) -> eyre::Result<()> {
     super::exec_foton(params, exec_results, |cmd| {
-        cmd.args(["list"]);
+        cmd.args(["list", "--exit-on-lock"]);
     })?
     .ensure_success()?
     .ensure_stdout(str::is_empty)?;
 
     super::exec_foton(params, exec_results, |cmd| {
-        cmd.args(["install", PKG_SPEC_OLD, "--no-confirm"]);
+        cmd.args(["install", "--no-confirm", "--exit-on-lock", PKG_SPEC_OLD]);
     })?
     .ensure_success()?;
 
     super::exec_foton(params, exec_results, |cmd| {
-        cmd.args(["list"]);
+        cmd.args(["list", "--exit-on-lock"]);
     })?
     .ensure_success()?
     .ensure_stdout(|stdout| stdout.lines().any(|line| line.starts_with("hackgen@2.9.1")))?;
 
     super::exec_foton(params, exec_results, |cmd| {
-        cmd.args(["update", "--no-confirm"]);
+        cmd.args(["update", "--no-confirm", "--exit-on-lock"]);
     })?
     .ensure_success()?;
 
     let res = super::exec_foton(params, exec_results, |cmd| {
-        cmd.args(["list"]);
+        cmd.args(["list", "--exit-on-lock"]);
     })?
     .ensure_success()?;
 
@@ -55,7 +55,7 @@ pub(super) fn run(
     assert_eq!(inactive_version, "2.9.1");
 
     super::exec_foton(params, exec_results, |cmd| {
-        cmd.args(["uninstall", "--no-confirm"]);
+        cmd.args(["uninstall", "--no-confirm", "--exit-on-lock"]);
         cmd.args([
             format!("hackgen@{active_version}"),
             format!("hackgen@{inactive_version}"),

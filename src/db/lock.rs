@@ -59,6 +59,24 @@ impl DbLockFile {
         })?;
         Ok(DbLockFileGuard { lock: self })
     }
+
+    pub(crate) fn lock<F>(&mut self, on_wait: F) -> Result<DbLockFileGuard<'_>, DbLockFileError>
+    where
+        F: FnOnce(),
+    {
+        match self.lock_file.try_lock() {
+            Ok(()) => return Ok(DbLockFileGuard { lock: self }),
+            Err(TryLockError::Error(source)) => {
+                return Err(LockSnafu { path: &self.path }.into_error(source));
+            }
+            Err(TryLockError::WouldBlock) => {}
+        }
+        on_wait();
+        self.lock_file
+            .lock()
+            .context(LockSnafu { path: &self.path })?;
+        Ok(DbLockFileGuard { lock: self })
+    }
 }
 
 impl Drop for DbLockFileGuard<'_> {

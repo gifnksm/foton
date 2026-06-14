@@ -330,7 +330,8 @@ where
     F: FnOnce(&mut PackageDatabase<'_>) -> T,
 {
     let mut lock_file = engine::open_db_lock_file(cx).unwrap();
-    let mut db = engine::load_database(cx, &mut lock_file).unwrap();
+    let exit_on_lock = true;
+    let mut db = engine::load_database(cx, &mut lock_file, exit_on_lock).unwrap();
     f(&mut db)
 }
 

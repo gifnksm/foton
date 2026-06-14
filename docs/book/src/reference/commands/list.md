@@ -23,6 +23,10 @@ packages also include the activation state.
 
 Skip interactive confirmation prompts.
 
+### `--exit-on-lock`
+
+Exit immediately if the package database is locked by another operation.
+
 ### `--warnings-as-errors`
 
 Treat warnings as errors, causing the command to fail if any warning is emitted.
