@@ -50,7 +50,7 @@ futures-util = "0.3.32"
 git2 = { version = "0.21.0", default-features = false, features = ["https", "vendored-libgit2"] }
 glob = "0.3.3"
 indicatif = "0.18.4"
-regex = "1.12.3"
+regex = "1.12.4"
 reqwest = { version = "0.13.4", default-features = false, features = ["charset", "http2", "native-tls", "stream", "system-proxy"] }
 serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde_json = { version = "1.0.150", features = ["raw_value"] }
