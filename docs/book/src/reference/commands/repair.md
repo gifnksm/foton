@@ -1,9 +1,10 @@
 # repair
 
 Clean up packages in the local package database that were left by incomplete
-installs, uninstalls, or updates.
+installs, uninstalls, updates, activations, or deactivations.
 
-Installed packages are not changed by `repair`. `repair` only performs cleanup; it does not resume an interrupted install or update.
+`repair` only performs cleanup; it does not resume an interrupted install,
+update, activation, or deactivation.
 
 ## Usage
 
@@ -49,7 +50,8 @@ foton repair <package-name>@<version>
 
 ## Notes
 
-- Installed packages are not changed by `repair`.
+- `repair` may reset incomplete activation or deactivation state, or remove
+  packages left by incomplete installs, uninstalls, or updates.
 - If a selected package is already in a consistent state, `foton` reports that
   there is nothing to do.
 - If cleanup cannot be completed, the package may remain in the local package

@@ -1,7 +1,10 @@
 pub(crate) use self::{
-    install::*, manifest::*, registry::*, repair::*, target::*, uninstall::*, update::*,
+    activate::*, deactivate::*, install::*, manifest::*, registry::*, repair::*, target::*,
+    uninstall::*, update::*,
 };
 
+mod activate;
+mod deactivate;
 mod install;
 mod manifest;
 mod registry;

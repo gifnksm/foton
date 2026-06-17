@@ -4,7 +4,7 @@ use crate::engine::{
 };
 
 pub(crate) fn plan_uninstall(targets: &[ResolvedUninstallTarget]) -> ExecutionPlan {
-    let mut ops = vec![];
+    let mut steps = vec![];
     for target in targets {
         match target {
             ResolvedUninstallTarget::Uninstall {
@@ -18,24 +18,24 @@ pub(crate) fn plan_uninstall(targets: &[ResolvedUninstallTarget]) -> ExecutionPl
                         reason: DeactivateReason::RequestedByUser,
                     });
                     let step_id = step.step_id;
-                    ops.push(step);
+                    steps.push(step);
                     conditions.push(StepCondition::AfterSuccess(step_id));
                 }
                 let uninstall_op = UninstallOp {
                     pkg_id: pkg_id.clone(),
                     reason: UninstallReason::RequestedByUser,
                 };
-                ops.push(PlanStep::with_conditions(uninstall_op, conditions));
+                steps.push(PlanStep::with_conditions(uninstall_op, conditions));
             }
             ResolvedUninstallTarget::AlreadyUninstalled { pkg_spec } => {
-                ops.push(PlanStep::new(SkipOp {
+                steps.push(PlanStep::new(SkipOp {
                     pkg_spec: pkg_spec.clone(),
                     reason: SkipReason::AlreadyUninstalled,
                 }));
             }
         }
     }
-    ExecutionPlan { steps: ops }
+    ExecutionPlan { steps }
 }
 
 #[cfg(test)]

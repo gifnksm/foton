@@ -18,7 +18,7 @@ Run `foton --help` to see the complete command-line help.
 
 Skip interactive confirmation prompts.
 This is most useful with commands that change installed packages, such as
-`install`, `update`, and `uninstall`.
+`install`, `update`, `uninstall`, `activate`, and `deactivate`.
 
 ### `--warnings-as-errors`
 
@@ -29,6 +29,8 @@ Treat warnings as errors, causing the command to fail if any warning is emitted.
 - [`install`](install.md)
 - [`update`](update.md)
 - [`uninstall`](uninstall.md)
+- [`activate`](activate.md)
+- [`deactivate`](deactivate.md)
 - [`repair`](repair.md)
 - [`list`](list.md)
 - [`info`](info.md)

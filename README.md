@@ -10,13 +10,14 @@
 [![Codecov](https://img.shields.io/codecov/c/github/gifnksm/foton.svg?label=codecov&logo=codecov&style=flat-square&component=foton)](https://codecov.io/gh/gifnksm/foton)
 <!-- cargo-sync-rdme ]] -->
 
-`foton` is a font manager for Windows that lets you install, update, and uninstall fonts for the current user without administrator privileges.
+`foton` is a font package manager for Windows that works without administrator privileges.
 
 ## Features
 
-* Install, update, and uninstall fonts for the current user
+* Install, update, and uninstall font packages
+* Keep font packages installed while choosing whether their fonts are registered with Windows
 * No administrator privileges required
-* Install fonts from the default package registry or your own custom registries
+* Install packages from the default package registry or your own custom registries
 * Use simple TOML manifests to define font packages from existing online distributions; see [`foton-registry`] for examples
 
 [`foton-registry`]: https://github.com/gifnksm/foton-registry

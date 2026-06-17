@@ -29,12 +29,15 @@ pub(crate) enum Command {
     Update(UpdateArgs),
     /// Uninstall packages recorded in the local package database.
     Uninstall(UninstallArgs),
+    /// Activate installed packages.
+    Activate(ActivateArgs),
+    /// Deactivate installed packages.
+    Deactivate(DeactivateArgs),
     /// Clean up packages in the local package database that were left by
-    /// incomplete installs, uninstalls, or updates.
+    /// incomplete installs, uninstalls, updates, activations, or deactivations.
     ///
-    /// Installed packages are not changed by `repair`.
     /// `repair` only performs cleanup; it does not resume an interrupted
-    /// install or update.
+    /// install, update, activation, or deactivation.
     Repair(RepairArgs),
     /// List installed packages.
     List(ListArgs),
@@ -117,6 +120,26 @@ pub(crate) struct UpdateArgs {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct UninstallArgs {
+    /// Package names, optionally with an exact version as `<package-name>@<version>`.
+    #[clap(value_name = "PACKAGE", required = true)]
+    pub(crate) pkg_specs: Vec<PackageSpec>,
+    /// Exit immediately if the package database is locked by another operation.
+    #[clap(long)]
+    pub(crate) exit_on_lock: bool,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct ActivateArgs {
+    /// Package names, optionally with an exact version as `<package-name>@<version>`.
+    #[clap(value_name = "PACKAGE", required = true)]
+    pub(crate) pkg_specs: Vec<PackageSpec>,
+    /// Exit immediately if the package database is locked by another operation.
+    #[clap(long)]
+    pub(crate) exit_on_lock: bool,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct DeactivateArgs {
     /// Package names, optionally with an exact version as `<package-name>@<version>`.
     #[clap(value_name = "PACKAGE", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
@@ -225,6 +248,30 @@ mod tests {
         Ok(install_args)
     }
 
+    fn parse_activate<I, T>(args: I) -> Result<ActivateArgs, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        let args = Args::try_parse_from(args)?;
+        let Command::Activate(activate_args) = args.command else {
+            unreachable!("test helper only parses activate commands");
+        };
+        Ok(activate_args)
+    }
+
+    fn parse_deactivate<I, T>(args: I) -> Result<DeactivateArgs, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        let args = Args::try_parse_from(args)?;
+        let Command::Deactivate(deactivate_args) = args.command else {
+            unreachable!("test helper only parses deactivate commands");
+        };
+        Ok(deactivate_args)
+    }
+
     #[test]
     fn install_accepts_supported_argument_combinations() {
         let cases: [(&str, &[&str]); 6] = [
@@ -322,5 +369,57 @@ mod tests {
                 "case `{name}` should fail to parse"
             );
         }
+    }
+
+    #[test]
+    fn activate_parses_package_specs_and_exit_on_lock() {
+        let activate_args = parse_activate([
+            "foton",
+            "activate",
+            "--exit-on-lock",
+            "package1",
+            "package2@1.2.3",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            activate_args.pkg_specs,
+            vec![
+                "package1".parse().unwrap(),
+                "package2@1.2.3".parse().unwrap()
+            ],
+        );
+        assert!(activate_args.exit_on_lock);
+    }
+
+    #[test]
+    fn activate_rejects_missing_package_specs() {
+        parse_activate(["foton", "activate"]).unwrap_err();
+    }
+
+    #[test]
+    fn deactivate_parses_package_specs_and_exit_on_lock() {
+        let deactivate_args = parse_deactivate([
+            "foton",
+            "deactivate",
+            "--exit-on-lock",
+            "package1",
+            "package2@1.2.3",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            deactivate_args.pkg_specs,
+            vec![
+                "package1".parse().unwrap(),
+                "package2@1.2.3".parse().unwrap()
+            ],
+        );
+        assert!(deactivate_args.exit_on_lock);
+    }
+
+    #[test]
+    fn deactivate_rejects_missing_package_specs() {
+        parse_deactivate(["foton", "deactivate"]).unwrap_err();
     }
 }

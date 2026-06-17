@@ -25,6 +25,8 @@
   - [install](reference/commands/install.md)
   - [update](reference/commands/update.md)
   - [uninstall](reference/commands/uninstall.md)
+  - [activate](reference/commands/activate.md)
+  - [deactivate](reference/commands/deactivate.md)
   - [repair](reference/commands/repair.md)
   - [list](reference/commands/list.md)
   - [info](reference/commands/info.md)

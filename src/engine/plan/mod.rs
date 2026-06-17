@@ -5,8 +5,10 @@ use std::sync::{
 
 use crate::package::{PackageDefinition, PackageId, PackageSpec};
 
-pub(crate) use self::{install::*, repair::*, uninstall::*};
+pub(crate) use self::{activate::*, deactivate::*, install::*, repair::*, uninstall::*};
 
+mod activate;
+mod deactivate;
 mod install;
 mod repair;
 #[cfg(test)]
@@ -32,12 +34,12 @@ impl ExecutionPlan {
     }
 
     #[cfg(test)]
-    pub(in crate::engine) fn new_for_test<I>(ops: I) -> Self
+    pub(in crate::engine) fn new_for_test<I>(steps: I) -> Self
     where
         I: IntoIterator<Item = PlanStep>,
     {
         Self {
-            steps: ops.into_iter().collect(),
+            steps: steps.into_iter().collect(),
         }
     }
 }
@@ -206,6 +208,8 @@ pub(in crate::engine) enum SkipReason {
     AlreadyUninstalled,
     #[display("already active")]
     AlreadyActive,
+    #[display("already inactive")]
+    AlreadyInactive,
     #[display("not broken")]
     NotBroken,
     #[display("nothing to repair")]

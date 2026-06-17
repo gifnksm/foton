@@ -4,10 +4,10 @@ use crate::engine::{
 };
 
 pub(crate) fn plan_repair(targets: &[ResolvedRepairTarget]) -> ExecutionPlan {
-    let mut ops = vec![];
+    let mut steps = vec![];
     for target in targets {
         match target {
-            ResolvedRepairTarget::NotBroken { pkg_spec } => ops.push(PlanStep::new(SkipOp {
+            ResolvedRepairTarget::NotBroken { pkg_spec } => steps.push(PlanStep::new(SkipOp {
                 pkg_spec: pkg_spec.clone(),
                 reason: SkipReason::NotBroken,
             })),
@@ -20,7 +20,7 @@ pub(crate) fn plan_repair(targets: &[ResolvedRepairTarget]) -> ExecutionPlan {
                         DeactivateReason::RepairIncompleteDeactivation
                     }
                 };
-                ops.push(PlanStep::new(DeactivateOp {
+                steps.push(PlanStep::new(DeactivateOp {
                     pkg_id: pkg_id.clone(),
                     reason,
                 }));
@@ -34,20 +34,20 @@ pub(crate) fn plan_repair(targets: &[ResolvedRepairTarget]) -> ExecutionPlan {
                         UninstallReason::RepairIncompleteUninstall
                     }
                 };
-                ops.push(PlanStep::new(UninstallOp {
+                steps.push(PlanStep::new(UninstallOp {
                     pkg_id: pkg_id.clone(),
                     reason,
                 }));
             }
             ResolvedRepairTarget::AlreadyUninstalled { pkg_spec } => {
-                ops.push(PlanStep::new(SkipOp {
+                steps.push(PlanStep::new(SkipOp {
                     pkg_spec: pkg_spec.clone(),
                     reason: SkipReason::NothingToRepair,
                 }));
             }
         }
     }
-    ExecutionPlan { steps: ops }
+    ExecutionPlan { steps }
 }
 
 #[cfg(test)]

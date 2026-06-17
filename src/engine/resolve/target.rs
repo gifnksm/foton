@@ -112,3 +112,14 @@ pub(crate) enum ResolvedUninstallTarget {
         pkg_spec: PackageSpec,
     },
 }
+
+#[derive(Debug, Clone)]
+pub(crate) struct ResolvedActivateTarget {
+    pub(crate) pkg_id: PackageId,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ResolvedDeactivateTarget {
+    Deactivate { pkg_id: PackageId },
+    AlreadyInactive { pkg_spec: PackageSpec },
+}

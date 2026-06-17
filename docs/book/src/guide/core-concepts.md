@@ -23,6 +23,8 @@ version.
 Use `<package-name>` when you want `foton` to choose an appropriate version
 for the command you are running.
 Use `<package-name>@<version>` when you want to select an exact version.
+Some commands, such as `activate`, `deactivate`, and `uninstall`, may require
+an exact version when multiple installed versions share the same package name.
 
 ## Package registries
 
@@ -57,6 +59,29 @@ Manifest files become important when you want to:
 
 See [Writing a Package Manifest](advanced/write-package-manifest.md) for a step-by-step guide
 and [Package Manifest Reference](../reference/package-manifest.md) for a field-by-field reference.
+
+## Activation state
+
+An installed package can be either `active` or `inactive`.
+
+`Installed` means the package files are stored under `foton`'s local package
+storage and the package is recorded in the local package database.
+`Active` means that package's fonts are registered in the Windows registry and
+available for normal use by applications.
+`Inactive` packages remain installed, but their fonts are not registered for
+use until you activate them.
+
+These states are separate so that you can keep packages installed without
+keeping all of them active at the same time.
+For example, you may want to activate only the fonts you currently need for
+day-to-day use, while leaving other installed packages inactive until needed.
+
+Keeping installation and activation separate also lets you keep multiple
+installed versions of the same package and choose which version is active.
+
+By default, `foton install` activates newly installed packages.
+If you install with `--no-activate`, you can activate the package later with
+`foton activate` and deactivate it again with `foton deactivate`.
 
 ## Where to go next
 

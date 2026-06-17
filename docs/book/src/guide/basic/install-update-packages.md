@@ -28,13 +28,23 @@ foton install <package-name>@<version>
 
 By default, `foton` resolves packages from the package registries enabled in
 your configuration.
-When resolving a package by name, it does not consider pre-release versions
-unless you pass `--pre-release`.
 To resolve packages only from specific package registries, pass `--registry`.
 
 ```console
 foton install --registry <registry-id-1>,<registry-id-2> <package-name>
 ```
+
+## Install without activating immediately
+
+By default, `install` activates the selected packages after they are installed.
+If you only want to download and record the package first, pass
+`--no-activate`.
+
+```console
+foton install --no-activate <package-name>
+```
+
+You can activate the package later with `foton activate`.
 
 ## Install packages from manifest files
 
@@ -73,10 +83,8 @@ foton update <package-name>@<version>
 
 Without an exact version, `update` selects the latest installed version for
 that package name.
-When you specify an exact version, `update` selects that installed package
-first, then looks for a newer version of the same package name.
-By default, `update` does not look for pre-release versions.
-Use `--pre-release` if you want pre-release updates to be considered.
+If you want to control exactly which installed version is updated, specify an
+exact version.
 Updating a package installs the newer version without automatically removing
 older installed versions.
 
@@ -109,8 +117,8 @@ foton --no-confirm update
   selected packages are already up to date.
 - If an install or update does not complete cleanly, use `foton repair` to
   clean up any packages left behind.
-- Package installation and update operate on package definitions, not on
-  individual font files.
+- See the command reference for details such as pre-release handling and more
+  specific resolution rules.
 
 ## Related pages
 
