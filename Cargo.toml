@@ -1,6 +1,3 @@
-[workspace]
-members = [ "xtask" ]
-
 [package]
 name = "foton"
 version = "0.1.0"
@@ -10,11 +7,14 @@ description = "A font package manager for Windows that works without administrat
 readme = "README.md"
 repository = "https://github.com/gifnksm/foton"
 license = "MIT OR Apache-2.0"
-keywords = ["font", "windows", "font-manager", "font-installer", "package-manager"]
+keywords = [
+  "font",
+  "font-installer",
+  "font-manager",
+  "package-manager",
+  "windows"
+]
 categories = ["command-line-utilities"]
-
-[lints]
-workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [package.metadata.cargo-sync-rdme.badge]
@@ -33,54 +33,10 @@ pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ targe
 bin-dir = "{ bin }{ binary-ext }"
 pkg-fmt = "tgz"
 
-[dependencies]
-async-trait = "0.1.89"
-bytes = "1.11.1"
-clap = { version = "4.6", features = ["derive"] }
-clap_complete = "4.6"
-clap_complete_nushell = "4.6"
-clap_mangen = "0.3"
-config = { version = "0.15.23", default-features = false, features = ["toml"] }
-console = "0.16.3"
-derive_more = { version = "2.1.1", features = ["display", "from", "is_variant"] }
-dialoguer = { version = "0.12.0", default-features = false }
-directories = "6.0.0"
-futures-core = "0.3.32"
-futures-util = "0.3.32"
-git2 = { version = "0.21.0", default-features = false, features = ["https", "vendored-libgit2"] }
-glob = "0.3.3"
-indicatif = "0.18.4"
-regex = "1.12.4"
-reqwest = { version = "0.13.4", default-features = false, features = ["charset", "http2", "native-tls", "stream", "system-proxy"] }
-serde = { version = "1.0.228", features = ["derive", "rc"] }
-serde_json = { version = "1.0.150", features = ["raw_value"] }
-sha2 = "0.11.0"
-snafu = "0.9.1"
-spdx = "0.13.4"
-tempfile = "3.27.0"
-tokio = { version = "1.52.3", features = ["fs", "rt-multi-thread", "signal"] }
-tokio-util = "0.7.18"
-toml = "1.1.2"
-url = { version = "2.5.8", features = ["serde"] }
-windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Graphics_DirectWrite", "Win32_Graphics_Gdi", "Win32_Storage_EnhancedStorage", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_WindowsAndMessaging"] }
-windows-core = "0.62.2"
-windows-registry = "0.6.1"
-windows-result = "0.4.1"
-zip = "8.6.0"
-
-[profile.release]
-strip = "symbols"
-lto = "thin"
-codegen-units = 1
-
-[badges]
-maintenance = { status = "actively-developed" }
-
-[dev-dependencies]
-tokio = { version = "1.52.3", features = ["macros"] }
+[workspace]
+members = ["xtask"]
 
 [workspace.lints.clippy]
-pedantic = { level = "warn", priority = -1 }
 # Restriction group
 allow_attributes = "warn"
 assertions_on_result_states = "warn"
@@ -92,6 +48,7 @@ get_unwrap = "warn"
 if_then_some_else_none = "warn"
 impl_trait_in_params = "warn"
 map_err_ignore = "warn"
+pedantic = { level = "warn", priority = -1 }
 undocumented_unsafe_blocks = "warn"
 unnecessary_self_imports = "warn"
 unused_trait_names = "warn"
@@ -110,3 +67,76 @@ unused-import-braces = "warn"
 unused-lifetimes = "warn"
 unused-macro-rules = "warn"
 unused-qualifications = "warn"
+
+[dependencies]
+async-trait = "0.1.89"
+bytes = "1.11.1"
+clap = { version = "4.6", features = ["derive"] }
+clap_complete = "4.6"
+clap_complete_nushell = "4.6"
+clap_mangen = "0.3"
+config = { version = "0.15.23", default-features = false, features = ["toml"] }
+console = "0.16.3"
+derive_more = {
+  version = "2.1.1",
+  features = ["display", "from", "is_variant"]
+}
+dialoguer = { version = "0.12.0", default-features = false }
+directories = "6.0.0"
+futures-core = "0.3.32"
+futures-util = "0.3.32"
+git2 = {
+  version = "0.21.0",
+  default-features = false,
+  features = ["https", "vendored-libgit2"]
+}
+glob = "0.3.3"
+indicatif = "0.18.4"
+regex = "1.12.4"
+reqwest = {
+  version = "0.13.4",
+  default-features = false,
+  features = ["charset", "http2", "native-tls", "stream", "system-proxy"]
+}
+serde = { version = "1.0.228", features = ["derive", "rc"] }
+serde_json = { version = "1.0.150", features = ["raw_value"] }
+sha2 = "0.11.0"
+snafu = "0.9.1"
+spdx = "0.13.4"
+tempfile = "3.27.0"
+tokio = { version = "1.52.3", features = ["fs", "rt-multi-thread", "signal"] }
+tokio-util = "0.7.18"
+toml = "1.1.2"
+url = { version = "2.5.8", features = ["serde"] }
+windows = {
+  version = "0.62.2",
+  features = [
+    "Win32_Foundation",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_EnhancedStorage",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_UI_WindowsAndMessaging"
+  ]
+}
+windows-core = "0.62.2"
+windows-registry = "0.6.1"
+windows-result = "0.4.1"
+zip = "8.6.0"
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["macros"] }
+
+[badges]
+maintenance = { status = "actively-developed" }
+
+[lints]
+workspace = true
+
+[profile.release]
+strip = "symbols"
+lto = "thin"
+codegen-units = 1

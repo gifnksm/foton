@@ -74,6 +74,18 @@ typos *args:
 markdownlint *args:
     npx markdownlint-cli {{ args }} .
 
+# Format TOML files.
+tombi *args:
+    uvx tombi format {{ args }}
+
+# Lint TOML files.
+tombi-lint *args:
+    uvx tombi lint {{ args }}
+
+# Check EditorConfig compliance.
+editorconfig *args:
+    editorconfig-checker {{ args }}
+
 # Build guide with mdbook.
 build-guide *args:
     mdbook build ./docs/book {{ args }}
@@ -83,7 +95,7 @@ test-guide *args:
     mdbook test ./docs/book {{ args }}
 
 # Run lint and static checks used for day-to-day local verification.
-ci-lint: ci-rustfmt ci-check ci-clippy ci-machete ci-actionlint ci-typos ci-markdownlint
+ci-lint: ci-rustfmt ci-tombi ci-tombi-lint ci-check ci-clippy ci-machete ci-actionlint ci-typos ci-markdownlint ci-editorconfig
 
 # Run all CI-equivalent checks.
 ci: ci-lint ci-rustdoc ci-sync-rdme ci-test ci-coverage ci-build-guide ci-test-guide
@@ -91,6 +103,14 @@ ci: ci-lint ci-rustdoc ci-sync-rdme ci-test ci-coverage ci-build-guide ci-test-g
 # CI: formatting must be clean.
 ci-rustfmt:
     just fmt --check
+
+# CI: TOML formatting must be clean.
+ci-tombi:
+    just tombi --check
+
+# CI: TOML lint must be clean.
+ci-tombi-lint:
+    just tombi-lint --error-on-warnings
 
 # CI: compile checks.
 ci-check:
@@ -124,6 +144,10 @@ ci-typos:
 # CI: lint markdown files.
 ci-markdownlint:
     just markdownlint
+
+# CI: check EditorConfig compliance.
+ci-editorconfig *args:
+    just editorconfig {{ args }}
 
 # CI: test suite.
 ci-test:
