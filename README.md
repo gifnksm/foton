@@ -15,7 +15,7 @@
 ## Features
 
 * Install, update, and uninstall font packages
-* Keep font packages installed while choosing whether their fonts are registered with Windows
+* Font activation and deactivation on demand, without uninstalling font packages
 * No administrator privileges required
 * Install packages from the default package registry or your own custom registries
 * Use simple TOML manifests to define font packages from existing online distributions; see [`foton-registry`] for examples
