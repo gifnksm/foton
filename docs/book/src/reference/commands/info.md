@@ -56,6 +56,8 @@ This can include packages left by incomplete operations.
 - `info` reads the local package database and does not search package registries.
 - If no package recorded in the local package database matches the specified
   package name, the command fails.
+- Use `activate` or `deactivate` when you want to change a package's
+  activation state.
 - Use `repair` when you want to clean up packages left by incomplete
   operations.
 - Use `search` when you want to inspect packages that are available in a
@@ -64,6 +66,8 @@ This can include packages left by incomplete operations.
 ## Related pages
 
 - [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
+- [activate command reference](activate.md)
+- [deactivate command reference](deactivate.md)
 - [list command reference](list.md)
 - [repair command reference](repair.md)
 - [search command reference](search.md)

@@ -18,29 +18,29 @@ pub(crate) fn plan_install(
     targets: &[ResolvedInstallTarget],
 ) -> ExecutionPlan {
     let mut db = db.simulated_state();
-    let mut ops = vec![];
+    let mut steps = vec![];
     for target in targets {
         let ResolvedInstallTarget {
             kind,
             detail: _,
             should_activate,
         } = target;
-        let install_step_id = plan_install_op(&mut db, kind, &mut ops);
+        let install_step_id = plan_install_op(&mut db, kind, &mut steps);
         if *should_activate {
-            plan_activate_op(&mut db, kind.pkg_id(), install_step_id, &mut ops);
+            plan_activate_op(&mut db, kind.pkg_id(), install_step_id, &mut steps);
         }
     }
-    ExecutionPlan { steps: ops }
+    ExecutionPlan { steps }
 }
 
 fn plan_install_op(
     db: &mut SimulatedPackageDbState,
     kind: &InstallTargetKind,
-    ops: &mut Vec<PlanStep>,
+    steps: &mut Vec<PlanStep>,
 ) -> Option<StepId> {
     match kind {
         InstallTargetKind::AlreadyInstalled { pkg_id, .. } => {
-            ops.push(PlanStep::new(SkipOp {
+            steps.push(PlanStep::new(SkipOp {
                 pkg_spec: pkg_id.clone().into(),
                 reason: SkipReason::AlreadyInstalled,
             }));
@@ -48,7 +48,7 @@ fn plan_install_op(
         }
         InstallTargetKind::Install { pkg, .. } => {
             let result = db.install(pkg);
-            emit_install_steps(pkg, result, ops)
+            emit_install_steps(pkg, result, steps)
         }
     }
 }
@@ -57,16 +57,16 @@ fn plan_activate_op(
     db: &mut SimulatedPackageDbState,
     target_id: &PackageId,
     dependency: Option<StepId>,
-    ops: &mut Vec<PlanStep>,
+    steps: &mut Vec<PlanStep>,
 ) {
     let result = db.activate(target_id);
-    emit_activation_steps(target_id, dependency, result, ops);
+    emit_activation_steps(target_id, dependency, result, steps);
 }
 
 fn emit_install_steps(
     pkg: &Arc<PackageDefinition>,
     result: SimulatedInstallationResult,
-    ops: &mut Vec<PlanStep>,
+    steps: &mut Vec<PlanStep>,
 ) -> Option<StepId> {
     match result {
         SimulatedInstallationResult::Installed | SimulatedInstallationResult::Reinstalled => {
@@ -75,11 +75,11 @@ fn emit_install_steps(
                 reason: InstallReason::RequestedByUser,
             });
             let step_id = step.step_id;
-            ops.push(step);
+            steps.push(step);
             Some(step_id)
         }
         SimulatedInstallationResult::AlreadyInstalled => {
-            ops.push(PlanStep::new(SkipOp {
+            steps.push(PlanStep::new(SkipOp {
                 pkg_spec: pkg.id.clone().into(),
                 reason: SkipReason::AlreadyInstalled,
             }));
@@ -92,7 +92,7 @@ fn emit_activation_steps(
     target_id: &PackageId,
     dependency: Option<StepId>,
     result: SimulatedActivationResult,
-    ops: &mut Vec<PlanStep>,
+    steps: &mut Vec<PlanStep>,
 ) {
     match result {
         SimulatedActivationResult::Activated { deactivated } => {
@@ -108,7 +108,7 @@ fn emit_activation_steps(
                 conditions,
             );
             let activate_step_id = activate_op.step_id;
-            ops.push(activate_op);
+            steps.push(activate_op);
             let mut deactivate_ops = vec![];
             for (pkg_id, conflict) in deactivated {
                 let reason = match conflict {
@@ -130,13 +130,13 @@ fn emit_activation_steps(
                 ));
             }
             deactivate_ops.sort_by(|(a, _), (b, _)| a.pkg_id.cmp(&b.pkg_id));
-            ops.extend(
+            steps.extend(
                 deactivate_ops
                     .into_iter()
                     .map(|(op, conditions)| PlanStep::with_conditions(op, conditions)),
             );
         }
-        SimulatedActivationResult::AlreadyActive => ops.push(PlanStep::new(SkipOp {
+        SimulatedActivationResult::AlreadyActive => steps.push(PlanStep::new(SkipOp {
             pkg_spec: target_id.clone().into(),
             reason: SkipReason::AlreadyActive,
         })),
@@ -187,15 +187,15 @@ mod tests {
                 })]),
             ),
         ] {
-            let mut ops = vec![];
-            let step_id = emit_install_steps(&pkg, result, &mut ops);
+            let mut steps = vec![];
+            let step_id = emit_install_steps(&pkg, result, &mut steps);
 
-            assert_eq!(ops.len(), expected_step_count);
+            assert_eq!(steps.len(), expected_step_count);
             assert_eq!(step_id.is_some(), expected_step_id_present);
             if let Some(step_id) = step_id {
-                assert_eq!(step_id, ops[0].step_id());
+                assert_eq!(step_id, steps[0].step_id());
             }
-            plan::testing::assert_plan_eq(&ExecutionPlan { steps: ops }, &expected_plan);
+            plan::testing::assert_plan_eq(&ExecutionPlan { steps }, &expected_plan);
         }
     }
 
@@ -210,7 +210,7 @@ mod tests {
         let incomplete_activation_pkg = testing::make_package_definition("example-font@0.1.0");
         let incomplete_deactivation_pkg = testing::make_package_definition("example-font@0.2.0");
         let active_pkg = testing::make_package_definition("example-font@0.3.0");
-        let mut ops = vec![install_step.clone()];
+        let mut steps = vec![install_step.clone()];
 
         emit_activation_steps(
             &target_pkg.id,
@@ -231,7 +231,7 @@ mod tests {
                     ),
                 ],
             },
-            &mut ops,
+            &mut steps,
         );
 
         let activate_step = PlanStep::with_conditions(
@@ -244,7 +244,7 @@ mod tests {
         let activate_step_id = activate_step.step_id();
 
         plan::testing::assert_plan_eq(
-            &ExecutionPlan { steps: ops },
+            &ExecutionPlan { steps },
             &ExecutionPlan::new_for_test([
                 install_step,
                 activate_step,
@@ -278,17 +278,17 @@ mod tests {
     #[test]
     fn emit_activation_steps_emits_skip_for_already_active_result() {
         let pkg = testing::make_package_definition("example-font@0.1.0");
-        let mut ops = vec![];
+        let mut steps = vec![];
 
         emit_activation_steps(
             &pkg.id,
             None,
             SimulatedActivationResult::AlreadyActive,
-            &mut ops,
+            &mut steps,
         );
 
         plan::testing::assert_plan_eq(
-            &ExecutionPlan { steps: ops },
+            &ExecutionPlan { steps },
             &ExecutionPlan::new_for_test([PlanStep::new(SkipOp {
                 pkg_spec: pkg.id.clone().into(),
                 reason: SkipReason::AlreadyActive,

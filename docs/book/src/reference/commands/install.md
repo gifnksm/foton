@@ -54,6 +54,7 @@ This option applies only to packages installed by `<PACKAGE>`.
 ### `--no-activate`
 
 Do not activate the installed packages.
+Use `foton activate` later if you want to make them active manually.
 
 ## Examples
 
@@ -90,5 +91,6 @@ foton install --manifest <manifest-path>
 ## Related pages
 
 - [Installing and Updating Packages](../../guide/basic/install-update-packages.md)
+- [activate command reference](activate.md)
 - [repair command reference](repair.md)
 - [Writing a Package Manifest](../../guide/advanced/write-package-manifest.md)

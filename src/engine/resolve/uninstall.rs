@@ -37,13 +37,13 @@ impl<S> SubReportScope<S> for UninstallResolveScope<S> where S: ReportScope {}
 #[derive(Debug, Snafu)]
 enum UninstallResolveErrorReport {
     #[snafu(display(
-    concat_line!(
-        "multiple packages match the specified package `{pkg_spec}`:",
-        "{pkg_ids}",
-    ),
-    pkg_spec = pkg_spec,
-    pkg_ids = BulletList(pkg_ids),
-))]
+        concat_line!(
+            "multiple packages match the specified package `{pkg_spec}`:",
+            "{pkg_ids}",
+        ),
+        pkg_spec = pkg_spec,
+        pkg_ids = BulletList(pkg_ids),
+    ))]
     MultipleMatchingPackages {
         pkg_spec: PackageSpec,
         pkg_ids: Vec<PackageId>,

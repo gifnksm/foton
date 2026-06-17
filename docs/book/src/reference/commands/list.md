@@ -72,5 +72,7 @@ another-font@0.1.0 (incomplete-install)
 ## Related pages
 
 - [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
+- [activate command reference](activate.md)
+- [deactivate command reference](deactivate.md)
 - [info command reference](info.md)
 - [repair command reference](repair.md)
