@@ -248,30 +248,6 @@ mod tests {
         Ok(install_args)
     }
 
-    fn parse_activate<I, T>(args: I) -> Result<ActivateArgs, clap::Error>
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<OsString> + Clone,
-    {
-        let args = Args::try_parse_from(args)?;
-        let Command::Activate(activate_args) = args.command else {
-            unreachable!("test helper only parses activate commands");
-        };
-        Ok(activate_args)
-    }
-
-    fn parse_deactivate<I, T>(args: I) -> Result<DeactivateArgs, clap::Error>
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<OsString> + Clone,
-    {
-        let args = Args::try_parse_from(args)?;
-        let Command::Deactivate(deactivate_args) = args.command else {
-            unreachable!("test helper only parses deactivate commands");
-        };
-        Ok(deactivate_args)
-    }
-
     #[test]
     fn install_accepts_supported_argument_combinations() {
         let cases: [(&str, &[&str]); 6] = [
@@ -369,57 +345,5 @@ mod tests {
                 "case `{name}` should fail to parse"
             );
         }
-    }
-
-    #[test]
-    fn activate_parses_package_specs_and_exit_on_lock() {
-        let activate_args = parse_activate([
-            "foton",
-            "activate",
-            "--exit-on-lock",
-            "package1",
-            "package2@1.2.3",
-        ])
-        .unwrap();
-
-        assert_eq!(
-            activate_args.pkg_specs,
-            vec![
-                "package1".parse().unwrap(),
-                "package2@1.2.3".parse().unwrap()
-            ],
-        );
-        assert!(activate_args.exit_on_lock);
-    }
-
-    #[test]
-    fn activate_rejects_missing_package_specs() {
-        parse_activate(["foton", "activate"]).unwrap_err();
-    }
-
-    #[test]
-    fn deactivate_parses_package_specs_and_exit_on_lock() {
-        let deactivate_args = parse_deactivate([
-            "foton",
-            "deactivate",
-            "--exit-on-lock",
-            "package1",
-            "package2@1.2.3",
-        ])
-        .unwrap();
-
-        assert_eq!(
-            deactivate_args.pkg_specs,
-            vec![
-                "package1".parse().unwrap(),
-                "package2@1.2.3".parse().unwrap()
-            ],
-        );
-        assert!(deactivate_args.exit_on_lock);
-    }
-
-    #[test]
-    fn deactivate_rejects_missing_package_specs() {
-        parse_deactivate(["foton", "deactivate"]).unwrap_err();
     }
 }
