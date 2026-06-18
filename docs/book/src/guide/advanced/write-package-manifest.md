@@ -37,7 +37,7 @@ license = "OFL-1.1"
 [[sources]]
 url = "https://example.com/downloads/example-font-1.2.3.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-include = [
+files = [
   "example-font-1.2.3/ExampleFont-Regular.ttf",
   "example-font-1.2.3/ExampleFont-Bold.ttf",
   "example-font-1.2.3/ExampleFontUI-Regular.ttf",
@@ -121,28 +121,28 @@ missing.
 
 ## Choosing files from a source
 
-Each `sources[]` entry can define `sources[].include` and `sources[].exclude`
-patterns.
+Each `sources[]` entry can define `sources[].files` and `sources[].ignore`
+rules.
 Use them to control which files from the downloaded archive or file are treated
 as installable fonts.
 See [Package Manifest Reference](../../reference/package-manifest.md) for the exact
-behavior of `sources`, `sources[].include`, and `sources[].exclude`.
+behavior of `sources`, `sources[].files`, and `sources[].ignore`.
 
-If you omit `sources[].include`, `foton` uses these default patterns:
+If you omit `sources[].files`, `foton` uses these default glob rules:
 
 - `**/*.ttf`
 - `**/*.otf`
 - `**/*.ttc`
 
-Prefer `sources[].include` entries that list each font file path explicitly.
-Avoid wildcard patterns when possible.
+Prefer `sources[].files` entries that list each font file path explicitly.
+Avoid `glob` rules when possible.
 This makes it clear from the manifest exactly which files belong to the
 package, and it reduces the chance of unintentionally picking up extra or
 unexpected files from the source archive.
 
 If the source archive contains other font-like files such as `*.ttf`, `*.otf`,
 or `*.ttc` that you do not want to install, prefer listing those paths in
-`sources[].exclude` explicitly.
+`sources[].ignore` explicitly.
 That makes the omission visible in the manifest and shows that the files were
 left out intentionally.
 
@@ -161,9 +161,9 @@ It can also warn about issues such as:
 
 - missing `display-name`, `description`, or `license`
 - duplicated display names or face names
-- wildcard `include` patterns that are broader than necessary
-- `include` or `exclude` patterns that match nothing
-- font-like files that match neither `include` nor `exclude`
+- `glob` entries in `files`
+- `files` or `ignore` rules that match nothing
+- font-like files that match neither `files` nor `ignore`
 
 If you want warnings to fail the command, use the global
 `--warnings-as-errors` option.

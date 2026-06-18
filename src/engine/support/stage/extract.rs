@@ -15,10 +15,8 @@ use crate::{
         context::ReportContext,
         reporter::{NeverReport, ReportScope, ScopeResultErrorExt as _, SubReportScope},
     },
-    util::{
-        glob::PathPattern,
-        path::{AbsolutePath, FileName},
-    },
+    package::{FileRule, IgnoreRule},
+    util::path::{AbsolutePath, FileName},
 };
 
 #[derive(Debug, Default)]
@@ -87,8 +85,8 @@ pub(crate) struct ExtractDetail {
 pub(super) fn extract_archive<S>(
     cx: &ReportContext<S>,
     file: File,
-    include: &[PathPattern],
-    exclude: &[PathPattern],
+    files: &[FileRule],
+    ignore: &[IgnoreRule],
     fonts_dir: &AbsolutePath,
 ) -> Result<(Vec<FileName>, ExtractDetail), S::Error>
 where
@@ -98,13 +96,13 @@ where
         cx,
         format_args!("Extracting archive to {}...", fonts_dir.display()),
     );
-    extract_archive_impl(file, include, exclude, fonts_dir, cx.config()).report_error(&cx)
+    extract_archive_impl(file, files, ignore, fonts_dir, cx.config()).report_error(&cx)
 }
 
 fn extract_archive_impl(
     file: File,
-    include: &[PathPattern],
-    exclude: &[PathPattern],
+    files: &[FileRule],
+    ignore: &[IgnoreRule],
     fonts_dir: &AbsolutePath,
     config: &FotonConfig,
 ) -> Result<(Vec<FileName>, ExtractDetail), ExtractErrorReport> {
@@ -123,16 +121,12 @@ fn extract_archive_impl(
         let Some(path_in_archive) = archive_file.enclosed_name() else {
             continue;
         };
-        let is_excluded = exclude
-            .iter()
-            .any(|pattern| pattern.matches(&path_in_archive));
+        let is_excluded = ignore.iter().any(|rule| rule.matches(&path_in_archive));
         if is_excluded {
             excluded.push(ExtractEntry { path_in_archive });
             continue;
         }
-        let is_included = include
-            .iter()
-            .any(|pattern| pattern.matches(&path_in_archive));
+        let is_included = files.iter().any(|rule| rule.matches(&path_in_archive));
         if !is_included {
             if let Some(ext) = path_in_archive.extension()
                 && (ext.eq_ignore_ascii_case("ttf")
@@ -206,7 +200,7 @@ mod tests {
     use zip::{ZipWriter, write::SimpleFileOptions};
 
     use super::*;
-    use crate::cli::config::InstallConfig;
+    use crate::{cli::config::InstallConfig, util::glob::PathGlob};
 
     fn build_zip(entries: &[(&str, &[u8])]) -> File {
         let mut file = tempfile::tempfile().unwrap();
@@ -222,52 +216,52 @@ mod tests {
         file
     }
 
-    fn default_include() -> Vec<PathPattern> {
+    fn default_files() -> Vec<FileRule> {
         vec![
-            PathPattern::new("**/*.ttf").unwrap(),
-            PathPattern::new("**/*.ttc").unwrap(),
-            PathPattern::new("**/*.otf").unwrap(),
+            FileRule::glob(PathGlob::new("**/*.ttf").unwrap()),
+            FileRule::glob(PathGlob::new("**/*.ttc").unwrap()),
+            FileRule::glob(PathGlob::new("**/*.otf").unwrap()),
         ]
     }
 
-    fn default_exclude() -> Vec<PathPattern> {
+    fn default_ignore() -> Vec<IgnoreRule> {
         vec![]
     }
 
     fn extract_to_tempdir(
         archive: File,
-        include: &[PathPattern],
-        exclude: &[PathPattern],
+        files: &[FileRule],
+        ignore: &[IgnoreRule],
         config: &FotonConfig,
     ) -> Result<(TempDir, Vec<FileName>), Box<ExtractErrorReport>> {
         let tempdir = tempfile::tempdir().unwrap();
         let fonts_dir = AbsolutePath::new(tempdir.path()).unwrap();
         let (file_names, _extract_detail) =
-            extract_archive_impl(archive, include, exclude, &fonts_dir, config)?;
+            extract_archive_impl(archive, files, ignore, &fonts_dir, config)?;
         Ok((tempdir, file_names))
     }
 
     fn extract_detail_to_tempdir(
         archive: File,
-        include: &[PathPattern],
-        exclude: &[PathPattern],
+        files: &[FileRule],
+        ignore: &[IgnoreRule],
         config: &FotonConfig,
     ) -> Result<(TempDir, ExtractDetail), Box<ExtractErrorReport>> {
         let tempdir = tempfile::tempdir().unwrap();
         let fonts_dir = AbsolutePath::new(tempdir.path()).unwrap();
         let (_file_names, extract_detail) =
-            extract_archive_impl(archive, include, exclude, &fonts_dir, config)?;
+            extract_archive_impl(archive, files, ignore, &fonts_dir, config)?;
         Ok((tempdir, extract_detail))
     }
 
     #[test]
     fn extract_archive_does_not_match_plain_globs_across_directories() {
         let archive = build_zip(&[("a/font.ttf", b"font")]);
-        let include = [PathPattern::new("*.ttf").unwrap()];
-        let exclude = [];
+        let files = [FileRule::glob(PathGlob::new("*.ttf").unwrap())];
+        let ignore = [];
 
         let (_tempdir, files) =
-            extract_to_tempdir(archive, &include, &exclude, &FotonConfig::default()).unwrap();
+            extract_to_tempdir(archive, &files, &ignore, &FotonConfig::default()).unwrap();
 
         assert!(files.is_empty());
     }
@@ -275,11 +269,11 @@ mod tests {
     #[test]
     fn extract_archive_matches_single_directory_globs_against_nested_paths() {
         let archive = build_zip(&[("a/font.ttf", b"font")]);
-        let include = [PathPattern::new("*/*.ttf").unwrap()];
-        let exclude = [];
+        let files = [FileRule::glob(PathGlob::new("*/*.ttf").unwrap())];
+        let ignore = [];
 
         let (_tempdir, files) =
-            extract_to_tempdir(archive, &include, &exclude, &FotonConfig::default()).unwrap();
+            extract_to_tempdir(archive, &files, &ignore, &FotonConfig::default()).unwrap();
 
         assert_eq!(files, vec!["font.ttf"]);
     }
@@ -287,11 +281,11 @@ mod tests {
     #[test]
     fn extract_archive_matches_recursive_globs_against_nested_paths() {
         let archive = build_zip(&[("a/b/font.ttf", b"font")]);
-        let include = [PathPattern::new("**/*.ttf").unwrap()];
-        let exclude = [];
+        let files = [FileRule::glob(PathGlob::new("**/*.ttf").unwrap())];
+        let ignore = [];
 
         let (_tempdir, files) =
-            extract_to_tempdir(archive, &include, &exclude, &FotonConfig::default()).unwrap();
+            extract_to_tempdir(archive, &files, &ignore, &FotonConfig::default()).unwrap();
 
         assert_eq!(files, vec!["font.ttf"]);
     }
@@ -299,11 +293,11 @@ mod tests {
     #[test]
     fn extract_archive_skips_files_matching_exclude_patterns() {
         let archive = build_zip(&[("fonts/keep.ttf", b"keep"), ("fonts/skip.ttf", b"skip")]);
-        let include = [PathPattern::new("fonts/*.ttf").unwrap()];
-        let exclude = [PathPattern::new("fonts/skip.ttf").unwrap()];
+        let files = [FileRule::glob(PathGlob::new("fonts/*.ttf").unwrap())];
+        let ignore = [IgnoreRule::path("fonts/skip.ttf").unwrap()];
 
         let (_tempdir, files) =
-            extract_to_tempdir(archive, &include, &exclude, &FotonConfig::default()).unwrap();
+            extract_to_tempdir(archive, &files, &ignore, &FotonConfig::default()).unwrap();
 
         assert_eq!(files, vec!["keep.ttf"]);
     }
@@ -311,11 +305,11 @@ mod tests {
     #[test]
     fn extract_archive_exclude_takes_precedence_over_include() {
         let archive = build_zip(&[("fonts/font.ttf", b"font")]);
-        let include = [PathPattern::new("fonts/font.ttf").unwrap()];
-        let exclude = [PathPattern::new("fonts/font.ttf").unwrap()];
+        let files = [FileRule::path("fonts/font.ttf").unwrap()];
+        let ignore = [IgnoreRule::path("fonts/font.ttf").unwrap()];
 
         let (_tempdir, files) =
-            extract_to_tempdir(archive, &include, &exclude, &FotonConfig::default()).unwrap();
+            extract_to_tempdir(archive, &files, &ignore, &FotonConfig::default()).unwrap();
 
         assert!(files.is_empty());
     }
@@ -326,8 +320,8 @@ mod tests {
 
         let err = extract_to_tempdir(
             archive,
-            &default_include(),
-            &default_exclude(),
+            &default_files(),
+            &default_ignore(),
             &FotonConfig::default(),
         )
         .unwrap_err();
@@ -346,8 +340,8 @@ mod tests {
 
         let (_tempdir, files) = extract_to_tempdir(
             archive,
-            &default_include(),
-            &default_exclude(),
+            &default_files(),
+            &default_ignore(),
             &FotonConfig::default(),
         )
         .unwrap();
@@ -366,8 +360,8 @@ mod tests {
             ..FotonConfig::default()
         };
 
-        let err = extract_to_tempdir(archive, &default_include(), &default_exclude(), &config)
-            .unwrap_err();
+        let err =
+            extract_to_tempdir(archive, &default_files(), &default_ignore(), &config).unwrap_err();
         assert_matches!(*err, ExtractErrorReport::TooManyExtractableFiles { .. });
     }
 
@@ -382,20 +376,19 @@ mod tests {
             ..FotonConfig::default()
         };
 
-        let err = extract_to_tempdir(archive, &default_include(), &default_exclude(), &config)
-            .unwrap_err();
+        let err =
+            extract_to_tempdir(archive, &default_files(), &default_ignore(), &config).unwrap_err();
         assert_matches!(*err, ExtractErrorReport::ExtractedFileExceedsMaxSize { .. });
     }
 
     #[test]
     fn extract_archive_records_suspicious_skips_for_font_like_paths_case_insensitively() {
         let archive = build_zip(&[("fonts/SKIP.TTF", b"font"), ("fonts/readme.txt", b"readme")]);
-        let include = [PathPattern::new("fonts/include.ttf").unwrap()];
-        let exclude = [];
+        let files = [FileRule::path("fonts/include.ttf").unwrap()];
+        let ignore = [];
 
         let (_tempdir, extract_detail) =
-            extract_detail_to_tempdir(archive, &include, &exclude, &FotonConfig::default())
-                .unwrap();
+            extract_detail_to_tempdir(archive, &files, &ignore, &FotonConfig::default()).unwrap();
 
         assert_eq!(
             extract_detail
@@ -410,12 +403,11 @@ mod tests {
     #[test]
     fn extract_archive_does_not_record_suspicious_skips_for_excluded_font_like_paths() {
         let archive = build_zip(&[("fonts/skip.ttf", b"font")]);
-        let include = [];
-        let exclude = [PathPattern::new("fonts/skip.ttf").unwrap()];
+        let files = [];
+        let ignore = [IgnoreRule::path("fonts/skip.ttf").unwrap()];
 
         let (_tempdir, extract_detail) =
-            extract_detail_to_tempdir(archive, &include, &exclude, &FotonConfig::default())
-                .unwrap();
+            extract_detail_to_tempdir(archive, &files, &ignore, &FotonConfig::default()).unwrap();
 
         assert!(extract_detail.suspicious_skips.is_empty());
         assert_eq!(

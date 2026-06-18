@@ -5,6 +5,7 @@ pub(crate) mod glob;
 pub(crate) mod hash;
 pub(crate) mod macros;
 pub(crate) mod path;
+pub(crate) mod path_matcher;
 pub(crate) mod text;
 
 #[cfg(test)]

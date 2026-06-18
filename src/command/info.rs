@@ -136,21 +136,21 @@ where
         let PackageSource {
             url,
             hash,
-            include,
-            exclude,
+            files,
+            ignore,
         } = source;
         writeln!(writer, "  - URL: {url}")?;
         writeln!(writer, "  - Hash: {hash}")?;
-        if !include.is_empty() {
-            writeln!(writer, "  - Includes:")?;
-            for pattern in include {
-                writeln!(writer, "    - {pattern}")?;
+        if !files.is_empty() {
+            writeln!(writer, "  - Files:")?;
+            for rule in files {
+                writeln!(writer, "    - {rule}")?;
             }
         }
-        if !exclude.is_empty() {
-            writeln!(writer, "  - Excludes:")?;
-            for pattern in exclude {
-                writeln!(writer, "    - {pattern}")?;
+        if !ignore.is_empty() {
+            writeln!(writer, "  - Ignore:")?;
+            for rule in ignore {
+                writeln!(writer, "    - {rule}")?;
             }
         }
     }
@@ -187,7 +187,7 @@ mod tests {
                 "Sources[0]:",
                 "  - URL: https://example.com/example-font-0.1.0.zip",
                 "  - Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-                "  - Includes:",
+                "  - Files:",
                 "    - **/*.ttf",
                 "    - **/*.otf",
                 "    - **/*.ttc",
@@ -214,8 +214,8 @@ license = "OFL-1.1"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-include = ["fonts/*.ttf"]
-exclude = ["fonts/exclude.ttf"]
+files = [{ glob = "fonts/*.ttf" }]
+ignore = ["fonts/exclude.ttf"]
 "#,
         );
 
@@ -250,9 +250,9 @@ exclude = ["fonts/exclude.ttf"]
                 "Sources[0]:",
                 "  - URL: https://example.com/example-font-0.1.0.zip",
                 "  - Hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-                "  - Includes:",
+                "  - Files:",
                 "    - fonts/*.ttf",
-                "  - Excludes:",
+                "  - Ignore:",
                 "    - fonts/exclude.ttf",
                 "",
                 "",

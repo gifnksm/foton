@@ -1,5 +1,5 @@
 pub(crate) use self::{
-    definition::*, dirs::*, id::*, manifest::*, name::*, spec::*, state::*, version::*,
+    definition::*, dirs::*, id::*, manifest::*, name::*, rule::*, spec::*, state::*, version::*,
 };
 use crate::util::path::FileName;
 
@@ -8,6 +8,7 @@ mod dirs;
 mod id;
 mod manifest;
 mod name;
+mod rule;
 mod spec;
 mod state;
 mod version;

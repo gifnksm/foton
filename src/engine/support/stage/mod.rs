@@ -62,13 +62,8 @@ where
             .run_until_cancelled(download::download_archive(&cx, &pkg.id, source))
             .await
             .unwrap_or(Err(S::Error::cancelled()))?;
-        let (source_file_names, extract_detail) = extract_archive(
-            &cx,
-            file,
-            &source.include,
-            &source.exclude,
-            package_fonts_dir,
-        )?;
+        let (source_file_names, extract_detail) =
+            extract_archive(&cx, file, &source.files, &source.ignore, package_fonts_dir)?;
         file_names.extend(source_file_names);
         extract_details.push(extract_detail);
     }

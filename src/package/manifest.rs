@@ -8,8 +8,11 @@ use serde::{Deserialize, Serialize};
 use snafu::{IntoError as _, ResultExt as _, Snafu};
 
 use crate::{
-    package::{PackageDefinition, PackageId, PackageName, PackageSource, PackageVersion},
-    util::{glob::PathPattern, hash::GenericDigest},
+    package::{
+        FileRule, IgnoreRule, PackageDefinition, PackageId, PackageName, PackageSource,
+        PackageVersion,
+    },
+    util::{glob::PathGlob, hash::GenericDigest},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,18 +112,18 @@ pub(crate) struct PackageManifestSource {
     pub(crate) url: Url,
     /// Expected digest of the downloaded source used to verify integrity.
     pub(crate) hash: GenericDigest,
-    /// Glob patterns selecting which font files to install from the downloaded source.
+    /// Rules selecting which font files to install from the downloaded source.
     ///
     /// When omitted, common font file extensions are included by default. If a path matches both
-    /// `include` and `exclude`, `exclude` takes precedence.
+    /// `files` and `ignore`, `ignore` takes precedence.
     #[serde(
-        default = "default_include",
+        default = "default_files",
         deserialize_with = "non_empty_vec::deserialize"
     )]
-    pub(crate) include: Vec<PathPattern>,
-    /// Glob patterns excluding files from installation even if they are matched by `include`.
+    pub(crate) files: Vec<FileRule>,
+    /// Rules excluding files from installation even if they are matched by `files`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) exclude: Vec<PathPattern>,
+    pub(crate) ignore: Vec<IgnoreRule>,
 }
 
 impl From<PackageManifest> for PackageDefinition {
@@ -156,14 +159,14 @@ impl From<PackageManifestSource> for PackageSource {
         let PackageManifestSource {
             url,
             hash,
-            include,
-            exclude,
+            files,
+            ignore,
         } = source;
         Self {
             url,
             hash,
-            include,
-            exclude,
+            files,
+            ignore,
         }
     }
 }
@@ -174,11 +177,11 @@ impl PackageManifest {
     }
 }
 
-fn default_include() -> Vec<PathPattern> {
+fn default_files() -> Vec<FileRule> {
     vec![
-        PathPattern::new("**/*.ttf").unwrap(),
-        PathPattern::new("**/*.otf").unwrap(),
-        PathPattern::new("**/*.ttc").unwrap(),
+        FileRule::glob(PathGlob::new("**/*.ttf").unwrap()),
+        FileRule::glob(PathGlob::new("**/*.otf").unwrap()),
+        FileRule::glob(PathGlob::new("**/*.ttc").unwrap()),
     ]
 }
 
@@ -355,14 +358,14 @@ mod tests {
 
     fn minimal_manifest_toml() -> &'static str {
         r#"
-name = "example-font"
-version = "0.1.0"
+    name = "example-font"
+    version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-include = ["*/*.ttf"]
-"#
+    [[sources]]
+    url = "https://example.com/example-font-0.1.0.zip"
+    hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    files = [{ glob = "*/*.ttf" }]
+    "#
     }
 
     #[test]
@@ -389,13 +392,13 @@ include = ["*/*.ttf"]
         );
         assert_eq!(
             manifest.sources[0]
-                .include
+                .files
                 .iter()
-                .map(PathPattern::as_str)
+                .map(ToString::to_string)
                 .collect::<Vec<_>>(),
             ["*/*.ttf"]
         );
-        assert!(manifest.sources[0].exclude.is_empty());
+        assert!(manifest.sources[0].ignore.is_empty());
     }
 
     #[test]
@@ -415,7 +418,7 @@ license = "OFL-1.1"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-include = ["*/*.ttf"]
+files = [{ glob = "*/*.ttf" }]
 "#,
         );
 
@@ -459,9 +462,9 @@ include = ["*/*.ttf"]
         );
         assert_eq!(
             manifest.sources[0]
-                .include
+                .files
                 .iter()
-                .map(PathPattern::as_str)
+                .map(ToString::to_string)
                 .collect::<Vec<_>>(),
             ["*/*.ttf"]
         );
@@ -501,7 +504,7 @@ version = "0.1.0"
     }
 
     #[test]
-    fn package_manifest_rejects_empty_include() {
+    fn package_manifest_rejects_empty_files() {
         let err = testing::try_parse_manifest(
             r#"
 name = "example-font"
@@ -510,7 +513,7 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-include = []
+files = []
 "#,
         )
         .unwrap_err();
@@ -659,7 +662,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     }
 
     #[test]
-    fn package_manifest_uses_default_include_when_omitted() {
+    fn package_manifest_uses_default_files_when_omitted() {
         let manifest = testing::parse_manifest(
             r#"
 name = "example-font"
@@ -673,17 +676,17 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
         assert_eq!(
             manifest.sources[0]
-                .include
+                .files
                 .iter()
-                .map(PathPattern::as_str)
+                .map(ToString::to_string)
                 .collect::<Vec<_>>(),
             ["**/*.ttf", "**/*.otf", "**/*.ttc"]
         );
-        assert!(manifest.sources[0].exclude.is_empty());
+        assert!(manifest.sources[0].ignore.is_empty());
     }
 
     #[test]
-    fn package_manifest_deserializes_exclude_patterns() {
+    fn package_manifest_deserializes_ignore_rules() {
         let manifest = testing::parse_manifest(
             r#"
 name = "example-font"
@@ -692,16 +695,16 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-include = ["fonts/*.ttf"]
-exclude = ["fonts/exclude.ttf", "fonts/legacy/*.ttf"]
+files = [{ glob = "fonts/*.ttf" }]
+ignore = ["fonts/exclude.ttf", { glob = "fonts/legacy/*.ttf" }]
 "#,
         );
 
         assert_eq!(
             manifest.sources[0]
-                .exclude
+                .ignore
                 .iter()
-                .map(PathPattern::as_str)
+                .map(ToString::to_string)
                 .collect::<Vec<_>>(),
             ["fonts/exclude.ttf", "fonts/legacy/*.ttf"]
         );

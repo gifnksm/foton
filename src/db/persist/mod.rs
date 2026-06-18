@@ -16,6 +16,7 @@ use crate::package::{
 pub(in crate::db) use self::latest::types::*;
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Envelope {
     schema_version: u32,
     payload: Box<RawValue>,
@@ -293,13 +294,13 @@ impl PartialEq<PackageSource> for PersistedPackageSource {
         let Self {
             url,
             hash,
-            include,
-            exclude,
+            files,
+            ignore,
         } = self;
         *url == source.url
             && *hash == source.hash
-            && *include == source.include
-            && *exclude == source.exclude
+            && *files == source.files
+            && *ignore == source.ignore
     }
 }
 
@@ -308,8 +309,8 @@ impl From<&PackageSource> for PersistedPackageSource {
         Self {
             url: value.url.clone(),
             hash: value.hash.clone(),
-            include: value.include.clone(),
-            exclude: value.exclude.clone(),
+            files: value.files.clone(),
+            ignore: value.ignore.clone(),
         }
     }
 }
@@ -319,8 +320,8 @@ impl From<&PersistedPackageSource> for PackageSource {
         Self {
             url: value.url.clone(),
             hash: value.hash.clone(),
-            include: value.include.clone(),
-            exclude: value.exclude.clone(),
+            files: value.files.clone(),
+            ignore: value.ignore.clone(),
         }
     }
 }

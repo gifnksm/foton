@@ -29,21 +29,24 @@ pub(in crate::db::persist) mod types {
     use url::Url;
 
     use crate::{
-        package::{PackageName, PackageVersion},
-        util::{glob::PathPattern, hash::GenericDigest, path::FileName},
+        package::{FileRule, IgnoreRule, PackageName, PackageVersion},
+        util::{hash::GenericDigest, path::FileName},
     };
 
     #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
     pub(in crate::db) struct PersistedPackageDb {
         pub(in crate::db::persist) packages: BTreeMap<PackageName, PersistedPackageVersionMap>,
     }
 
     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
     pub(in crate::db::persist) struct PersistedPackageVersionMap {
         pub(in crate::db::persist) versions: BTreeMap<PackageVersion, PersistedPackageEntry>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
     pub(in crate::db) struct PersistedPackageEntry {
         pub(in crate::db::persist) installation_state: PersistedInstallationState,
         pub(in crate::db::persist) activation_state: PersistedActivationState,
@@ -69,6 +72,7 @@ pub(in crate::db::persist) mod types {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
     pub(in crate::db::persist) struct PersistedPackageDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub(in crate::db::persist) display_name: Option<String>,
@@ -88,16 +92,18 @@ pub(in crate::db::persist) mod types {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
     pub(in crate::db::persist) struct PersistedPackageSource {
         pub(in crate::db::persist) url: Url,
         pub(in crate::db::persist) hash: GenericDigest,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        pub(in crate::db::persist) include: Vec<PathPattern>,
+        pub(in crate::db::persist) files: Vec<FileRule>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        pub(in crate::db::persist) exclude: Vec<PathPattern>,
+        pub(in crate::db::persist) ignore: Vec<IgnoreRule>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
     pub(in crate::db::persist) struct PersistedFontEntry {
         pub(in crate::db::persist) title: String,
         pub(in crate::db::persist) file_name: FileName,

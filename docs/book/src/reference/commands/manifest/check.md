@@ -44,10 +44,10 @@ Warnings can include:
 - missing `description`
 - missing `license`
 - duplicate display names or face names after normalization
-- `include` patterns that match nothing
-- `exclude` patterns that match nothing
-- wildcard `include` patterns that are broader than necessary
-- font-like files that are neither included nor excluded
+- `files` rules that match nothing
+- `ignore` rules that match nothing
+- `glob` entries in `files`
+- font-like files that match neither `files` nor `ignore`
 
 ## Examples
 
