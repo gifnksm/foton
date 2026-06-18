@@ -45,7 +45,7 @@ foton info <package-name>@<version>
 - package name and display name
 - version, installation state, and activation state
 - description, aliases, faces, homepage, repository, and license
-- source URLs, hashes, and include or exclude patterns
+- source URLs, hashes, and `files` or `ignore` rules
 
 If a package name matches multiple packages recorded in the local package
 database, `info` prints all of them.

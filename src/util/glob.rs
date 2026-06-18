@@ -13,23 +13,24 @@ const GLOB_MATCH_OPTIONS: MatchOptions = MatchOptions {
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct PathPattern {
+pub(crate) struct PathGlob {
     pattern: Pattern,
 }
 
-impl PathPattern {
+impl PathGlob {
     pub(crate) fn new(pattern: &str) -> Result<Self, PatternError> {
         Ok(Self {
             pattern: Pattern::new(pattern)?,
         })
     }
 
-    pub(crate) fn as_str(&self) -> &str {
-        self.pattern.as_str()
+    pub(crate) fn escape(path: &str) -> Self {
+        Self::new(&Pattern::escape(path)).unwrap()
     }
 
-    pub(crate) fn contains_wildcard(&self) -> bool {
-        self.as_str().contains(['*', '?', '['])
+    #[cfg(test)]
+    pub(crate) fn as_str(&self) -> &str {
+        self.pattern.as_str()
     }
 
     pub(crate) fn matches<P>(&self, path: P) -> bool
@@ -41,13 +42,13 @@ impl PathPattern {
     }
 }
 
-impl Display for PathPattern {
+impl Display for PathGlob {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.pattern, f)
     }
 }
 
-impl Serialize for PathPattern {
+impl Serialize for PathGlob {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -56,7 +57,7 @@ impl Serialize for PathPattern {
     }
 }
 
-impl<'de> Deserialize<'de> for PathPattern {
+impl<'de> Deserialize<'de> for PathGlob {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -69,5 +70,40 @@ impl<'de> Deserialize<'de> for PathPattern {
             ));
         }
         Self::new(&pattern).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn escape_preserves_backslashes() {
+        assert_eq!(PathGlob::escape(r"fonts\A.ttf").as_str(), r"fonts\A.ttf");
+    }
+
+    #[test]
+    fn escape_matches_original_backslash_path() {
+        let glob = PathGlob::escape(r"fonts\A.ttf");
+
+        assert!(glob.matches(Path::new(r"fonts\A.ttf")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn escape_follows_windows_separator_matching() {
+        let glob = PathGlob::escape(r"fonts\A.ttf");
+
+        assert!(glob.matches(Path::new("fonts/A.ttf")));
+    }
+
+    #[test]
+    fn escape_escapes_glob_metacharacters() {
+        assert_eq!(
+            PathGlob::escape("fonts/[wght].ttf").as_str(),
+            "fonts/[[]wght[]].ttf"
+        );
     }
 }

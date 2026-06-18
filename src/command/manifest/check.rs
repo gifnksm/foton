@@ -18,11 +18,11 @@ use crate::{
     },
     engine::{self, ExtractDetail},
     package::{
-        self, FontEntry, PackageDefinition, PackageDirs, PackageId, PackageManifest,
-        PackageManifestError,
+        self, FileRule, FontEntry, IgnoreRule, PackageDefinition, PackageDirs, PackageId,
+        PackageManifest, PackageManifestError,
     },
     util::{
-        fs::FsError, glob::PathPattern, macros::concat_line, path::AbsolutePath,
+        fs::FsError, glob::PathGlob, macros::concat_line, path::AbsolutePath,
         text::NormalizedString,
     },
 };
@@ -85,64 +85,76 @@ enum CheckManifestWarnReport {
     UnlistedFace { face: String },
     #[snafu(display(
         concat_line!(
-            "`sources[{source_index}].include` contains wildcard pattern: {pattern}",
-            "this pattern matches the following paths:",
+            "`sources[{source_index}].files` contains `glob` rule: {glob}",
+            "this glob matches the following paths:",
             "{extracted}",
-            "consider replacing them with fixed strings to avoid unexpected matches",
+            "prefer explicit `path` entries when the intended files are known",
         ),
         source_index = source_index,
-        pattern = pattern,
+        glob = glob,
         extracted = BulletList(&extracted.iter().map(|path| path.display()).collect::<Vec<_>>()),
     ))]
-    WildcardPattern {
+    FilesGlob {
         source_index: usize,
-        pattern: PathPattern,
+        glob: PathGlob,
         extracted: BTreeSet<PathBuf>,
     },
     #[snafu(display(
         concat_line!(
-            "`{pattern}` in `sources[{source_index}].include` does not match any paths",
-            "consider removing it or replacing it with a pattern that matches the intended paths",
+            "`{rule}` in `sources[{source_index}].files` does not match any paths",
+            "consider removing it or replacing it with a `path` or `glob` that matches the intended files",
         ),
         source_index = source_index,
-        pattern = pattern,
+        rule = rule,
     ))]
-    IncludePatternMatchesNothing {
+    FilesRuleMatchesNothing { source_index: usize, rule: FileRule },
+    #[snafu(display(
+        concat_line!(
+            "`{rule}` in `sources[{source_index}].files` matches only paths that are also ignored",
+            "{ignored}",
+            "consider removing the redundant `files` rule or adjusting `files` / `ignore` so the intended files are selected",
+        ),
+        source_index = source_index,
+        rule = rule,
+        ignored = BulletList(&ignored.iter().map(|path| path.display()).collect::<Vec<_>>()),
+    ))]
+    FilesRuleMatchesOnlyIgnoredPaths {
         source_index: usize,
-        pattern: PathPattern,
+        rule: FileRule,
+        ignored: BTreeSet<PathBuf>,
     },
     #[snafu(display(
         concat_line!(
-            "`sources[{source_index}].include` contains multiple patterns that match the same path: {path}",
-            "{patterns}",
-            "consider removing redundant patterns",
+            "`sources[{source_index}].files` contains multiple rules that match the same path: {path}",
+            "{rules}",
+            "consider removing redundant rules",
         ),
         source_index = source_index,
         path = path.display(),
-        patterns = BulletList(patterns),
+        rules = BulletList(rules),
     ))]
-    MultipleIncludePatternsMatchSamePath {
+    MultipleFilesRulesMatchSamePath {
         source_index: usize,
         path: PathBuf,
-        patterns: Vec<PathPattern>,
+        rules: Vec<FileRule>,
     },
     #[snafu(display(
         concat_line!(
-            "`{pattern}` in `sources[{source_index}].exclude` does not match any paths",
-            "consider removing it or replacing it with a pattern that matches the intended paths",
+            "`{rule}` in `sources[{source_index}].ignore` does not match any paths",
+            "consider removing it or replacing it with a `path` or `glob` that matches the intended files",
         ),
         source_index = source_index,
-        pattern = pattern,
+        rule = rule,
     ))]
-    ExcludePatternMatchesNothing {
+    IgnoreRuleMatchesNothing {
         source_index: usize,
-        pattern: PathPattern,
+        rule: IgnoreRule,
     },
     #[snafu(display(
         concat_line!(
-            "`sources[{source_index}]` contains font-like paths that match neither `include` nor `exclude`",
+            "`sources[{source_index}]` contains font-like paths that match neither `files` nor `ignore`",
             "{skipped}",
-            "consider adding them to `include` or `exclude` explicitly, depending on the intended behavior",
+            "consider adding them to `files` or `ignore` explicitly, depending on the intended behavior",
         ),
         source_index = source_index,
         skipped = BulletList(&skipped.iter().map(|path| path.display()).collect::<Vec<_>>()),
@@ -238,8 +250,8 @@ fn check_fields(
     check_display_name_duplication(pkg, &mut reports);
     check_face_duplication(pkg, &mut reports);
     check_face_completeness(pkg, font_entries, &mut reports);
-    check_include_extraction(pkg, extract_details, &mut reports);
-    check_exclude_extraction(pkg, extract_details, &mut reports);
+    check_files_extraction(pkg, extract_details, &mut reports);
+    check_ignore_extraction(pkg, extract_details, &mut reports);
     check_suspicious_skips(extract_details, &mut reports);
 
     let mut err = None;
@@ -342,31 +354,40 @@ fn check_face_completeness(
     }
 }
 
-fn collect_included_paths(
-    extract_detail: &ExtractDetail,
-    pattern: &PathPattern,
-) -> BTreeSet<PathBuf> {
+fn collect_file_rule_matches(extract_detail: &ExtractDetail, rule: &FileRule) -> BTreeSet<PathBuf> {
     extract_detail
         .included
         .iter()
-        .filter(|entry| pattern.matches(&entry.path_in_archive))
+        .filter(|entry| rule.matches(&entry.path_in_archive))
         .map(|entry| entry.path_in_archive.clone())
         .collect()
 }
 
-fn collect_excluded_paths(
+fn collect_ignored_file_rule_matches(
     extract_detail: &ExtractDetail,
-    pattern: &PathPattern,
+    rule: &FileRule,
 ) -> BTreeSet<PathBuf> {
     extract_detail
         .excluded
         .iter()
-        .filter(|entry| pattern.matches(&entry.path_in_archive))
+        .filter(|entry| rule.matches(&entry.path_in_archive))
         .map(|entry| entry.path_in_archive.clone())
         .collect()
 }
 
-fn check_include_extraction(
+fn collect_ignore_rule_matches(
+    extract_detail: &ExtractDetail,
+    rule: &IgnoreRule,
+) -> BTreeSet<PathBuf> {
+    extract_detail
+        .excluded
+        .iter()
+        .filter(|entry| rule.matches(&entry.path_in_archive))
+        .map(|entry| entry.path_in_archive.clone())
+        .collect()
+}
+
+fn check_files_extraction(
     pkg: &PackageDefinition,
     extract_details: &[ExtractDetail],
     reports: &mut Vec<CheckManifestWarnReport>,
@@ -375,41 +396,53 @@ fn check_include_extraction(
     for (source_index, (source, extract_detail)) in
         iter::zip(&pkg.sources, extract_details).enumerate()
     {
-        let mut source_patterns: BTreeMap<PathBuf, Vec<_>> = BTreeMap::new();
-        for pattern in &source.include {
-            let extracted = collect_included_paths(extract_detail, pattern);
+        let mut source_rules: BTreeMap<PathBuf, Vec<_>> = BTreeMap::new();
+        for rule in &source.files {
+            let extracted = collect_file_rule_matches(extract_detail, rule);
+            let ignored = collect_ignored_file_rule_matches(extract_detail, rule);
             for path in &extracted {
-                source_patterns
+                source_rules
                     .entry(path.clone())
                     .or_default()
-                    .push(pattern.clone());
+                    .push(rule.clone());
             }
             if extracted.is_empty() {
+                if ignored.is_empty() {
+                    reports.push(
+                        FilesRuleMatchesNothingSnafu {
+                            source_index,
+                            rule: rule.clone(),
+                        }
+                        .build(),
+                    );
+                } else {
+                    reports.push(
+                        FilesRuleMatchesOnlyIgnoredPathsSnafu {
+                            source_index,
+                            rule: rule.clone(),
+                            ignored,
+                        }
+                        .build(),
+                    );
+                }
+            } else if let Some(glob) = rule.matcher().as_glob() {
                 reports.push(
-                    IncludePatternMatchesNothingSnafu {
+                    FilesGlobSnafu {
                         source_index,
-                        pattern: pattern.clone(),
-                    }
-                    .build(),
-                );
-            } else if pattern.contains_wildcard() {
-                reports.push(
-                    WildcardPatternSnafu {
-                        source_index,
-                        pattern: pattern.clone(),
+                        glob: glob.clone(),
                         extracted,
                     }
                     .build(),
                 );
             }
         }
-        for (path, patterns) in source_patterns {
-            if patterns.len() > 1 {
+        for (path, rules) in source_rules {
+            if rules.len() > 1 {
                 reports.push(
-                    MultipleIncludePatternsMatchSamePathSnafu {
+                    MultipleFilesRulesMatchSamePathSnafu {
                         source_index,
                         path,
-                        patterns,
+                        rules,
                     }
                     .build(),
                 );
@@ -418,7 +451,7 @@ fn check_include_extraction(
     }
 }
 
-fn check_exclude_extraction(
+fn check_ignore_extraction(
     pkg: &PackageDefinition,
     extract_details: &[ExtractDetail],
     reports: &mut Vec<CheckManifestWarnReport>,
@@ -427,13 +460,13 @@ fn check_exclude_extraction(
     for (source_index, (source, extract_detail)) in
         iter::zip(&pkg.sources, extract_details).enumerate()
     {
-        for pattern in &source.exclude {
-            let extracted = collect_excluded_paths(extract_detail, pattern);
+        for rule in &source.ignore {
+            let extracted = collect_ignore_rule_matches(extract_detail, rule);
             if extracted.is_empty() {
                 reports.push(
-                    ExcludePatternMatchesNothingSnafu {
+                    IgnoreRuleMatchesNothingSnafu {
                         source_index,
-                        pattern: pattern.clone(),
+                        rule: rule.clone(),
                     }
                     .build(),
                 );
@@ -629,7 +662,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     }
 
     #[test]
-    fn check_include_extraction_reports_patterns_matching_no_font_paths() {
+    fn check_files_extraction_reports_rules_matching_no_paths() {
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
@@ -638,23 +671,23 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-include = ["fonts/missing.ttf"]
+files = ["fonts/missing.ttf"]
 "#,
         );
         let extract_details = [make_extract_detail(&["fonts/actual.ttf"], &[], &[])];
         let mut reports = vec![];
 
-        check_include_extraction(&pkg, &extract_details, &mut reports);
+        check_files_extraction(&pkg, &extract_details, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
-            [CheckManifestWarnReport::IncludePatternMatchesNothing { source_index, pattern }]
-                if *source_index == 0 && pattern.as_str() == "fonts/missing.ttf"
+            [CheckManifestWarnReport::FilesRuleMatchesNothing { source_index, rule }]
+                if *source_index == 0 && rule.to_string() == "fonts/missing.ttf"
         );
     }
 
     #[test]
-    fn check_include_extraction_reports_wildcard_patterns_with_matching_font_paths() {
+    fn check_files_extraction_reports_rules_matching_only_ignored_paths() {
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
@@ -663,140 +696,8 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-include = ["fonts/*.ttf"]
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-include = ["fonts/c.ttf"]
-"#,
-        );
-        let extract_details = [
-            make_extract_detail(&["fonts/a.ttf", "fonts/b.ttf"], &[], &[]),
-            make_extract_detail(&["fonts/c.ttf"], &[], &[]),
-        ];
-        let mut reports = vec![];
-
-        check_include_extraction(&pkg, &extract_details, &mut reports);
-
-        assert_matches!(
-            reports.as_slice(),
-            [CheckManifestWarnReport::WildcardPattern { source_index, pattern, extracted }]
-                if *source_index == 0
-                    && pattern.as_str() == "fonts/*.ttf"
-                    && extracted
-                        == &BTreeSet::from([PathBuf::from("fonts/a.ttf"), PathBuf::from("fonts/b.ttf")])
-        );
-    }
-
-    #[test]
-    fn check_include_extraction_reports_multiple_patterns_matching_same_path() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-include = ["fonts/a.ttf", "fonts/a.ttf"]
-"#,
-        );
-        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[], &[])];
-        let mut reports = vec![];
-
-        check_include_extraction(&pkg, &extract_details, &mut reports);
-
-        assert_matches!(
-            reports.as_slice(),
-            [CheckManifestWarnReport::MultipleIncludePatternsMatchSamePath {
-                source_index,
-                path,
-                patterns,
-            }] if *source_index == 0
-                && path == &PathBuf::from("fonts/a.ttf")
-                && patterns.iter().map(PathPattern::as_str).collect::<Vec<_>>()
-                    == vec!["fonts/a.ttf", "fonts/a.ttf"]
-        );
-    }
-
-    #[test]
-    fn check_include_extraction_reports_wildcard_and_duplicate_match_independently() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-include = ["fonts/*.ttf", "fonts/a.ttf"]
-"#,
-        );
-        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[], &[])];
-        let mut reports = vec![];
-
-        check_include_extraction(&pkg, &extract_details, &mut reports);
-
-        assert!(reports.iter().any(|report| matches!(
-            report,
-            CheckManifestWarnReport::WildcardPattern {
-                source_index,
-                pattern,
-                extracted,
-            } if *source_index == 0
-                && pattern.as_str() == "fonts/*.ttf"
-                && extracted == &BTreeSet::from([PathBuf::from("fonts/a.ttf")])
-        )));
-        assert!(reports.iter().any(|report| matches!(
-            report,
-            CheckManifestWarnReport::MultipleIncludePatternsMatchSamePath {
-                source_index,
-                path,
-                patterns,
-            } if *source_index == 0
-                && path == &PathBuf::from("fonts/a.ttf")
-                && patterns.iter().map(PathPattern::as_str).collect::<Vec<_>>()
-                    == vec!["fonts/*.ttf", "fonts/a.ttf"]
-        )));
-    }
-
-    #[test]
-    fn check_exclude_extraction_reports_patterns_matching_no_paths() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-exclude = ["fonts/missing.ttf"]
-"#,
-        );
-        let extract_details = [make_extract_detail(&["fonts/actual.ttf"], &[], &[])];
-        let mut reports = vec![];
-
-        check_exclude_extraction(&pkg, &extract_details, &mut reports);
-
-        assert_matches!(
-            reports.as_slice(),
-            [CheckManifestWarnReport::ExcludePatternMatchesNothing { source_index, pattern }]
-                if *source_index == 0 && pattern.as_str() == "fonts/missing.ttf"
-        );
-    }
-
-    #[test]
-    fn check_exclude_extraction_does_not_report_when_pattern_matches_paths() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-exclude = ["fonts/skip.ttf"]
+files = ["fonts/skip.ttf"]
+ignore = ["fonts/skip.ttf"]
 "#,
         );
         let extract_details = [make_extract_detail(
@@ -806,13 +707,171 @@ exclude = ["fonts/skip.ttf"]
         )];
         let mut reports = vec![];
 
-        check_exclude_extraction(&pkg, &extract_details, &mut reports);
+        check_files_extraction(&pkg, &extract_details, &mut reports);
+
+        assert_matches!(
+            reports.as_slice(),
+            [CheckManifestWarnReport::FilesRuleMatchesOnlyIgnoredPaths {
+                source_index,
+                rule,
+                ignored,
+            }] if *source_index == 0
+                && rule.to_string() == "fonts/skip.ttf"
+                && ignored == &BTreeSet::from([PathBuf::from("fonts/skip.ttf")])
+        );
+    }
+
+    #[test]
+    fn check_files_extraction_reports_glob_rules() {
+        let pkg = testing::parse_manifest_to_definition(
+            r#"
+name = "example-font"
+version = "0.1.0"
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+files = [{ glob = "fonts/a.ttf" }]
+"#,
+        );
+        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[], &[])];
+        let mut reports = vec![];
+
+        check_files_extraction(&pkg, &extract_details, &mut reports);
+
+        assert_matches!(
+            reports.as_slice(),
+            [CheckManifestWarnReport::FilesGlob { source_index, glob, extracted }]
+                if *source_index == 0
+                    && glob.as_str() == "fonts/a.ttf"
+                    && extracted == &BTreeSet::from([PathBuf::from("fonts/a.ttf")])
+        );
+    }
+
+    #[test]
+    fn check_files_extraction_reports_multiple_rules_matching_same_path() {
+        let pkg = testing::parse_manifest_to_definition(
+            r#"
+name = "example-font"
+version = "0.1.0"
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+files = ["fonts/a.ttf", { path = "fonts/a.ttf" }]
+"#,
+        );
+        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[], &[])];
+        let mut reports = vec![];
+
+        check_files_extraction(&pkg, &extract_details, &mut reports);
+
+        assert_matches!(
+            reports.as_slice(),
+            [CheckManifestWarnReport::MultipleFilesRulesMatchSamePath {
+                source_index,
+                path,
+                rules,
+            }] if *source_index == 0
+                && path == &PathBuf::from("fonts/a.ttf")
+                && rules.iter().map(ToString::to_string).collect::<Vec<_>>()
+                    == vec!["fonts/a.ttf", "fonts/a.ttf"]
+        );
+    }
+
+    #[test]
+    fn check_files_extraction_reports_glob_rule_and_duplicate_match_independently() {
+        let pkg = testing::parse_manifest_to_definition(
+            r#"
+name = "example-font"
+version = "0.1.0"
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+files = [{ glob = "fonts/*.ttf" }, "fonts/a.ttf"]
+"#,
+        );
+        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[], &[])];
+        let mut reports = vec![];
+
+        check_files_extraction(&pkg, &extract_details, &mut reports);
+
+        assert!(reports.iter().any(|report| matches!(
+            report,
+            CheckManifestWarnReport::FilesGlob {
+                source_index,
+                glob,
+                extracted,
+            } if *source_index == 0
+                && glob.as_str() == "fonts/*.ttf"
+                && extracted == &BTreeSet::from([PathBuf::from("fonts/a.ttf")])
+        )));
+        assert!(reports.iter().any(|report| matches!(
+            report,
+            CheckManifestWarnReport::MultipleFilesRulesMatchSamePath {
+                source_index,
+                path,
+                rules,
+            } if *source_index == 0
+                && path == &PathBuf::from("fonts/a.ttf")
+                && rules.iter().map(ToString::to_string).collect::<Vec<_>>()
+                    == vec!["fonts/*.ttf", "fonts/a.ttf"]
+        )));
+    }
+
+    #[test]
+    fn check_ignore_extraction_reports_rules_matching_no_paths() {
+        let pkg = testing::parse_manifest_to_definition(
+            r#"
+name = "example-font"
+version = "0.1.0"
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+ignore = ["fonts/missing.ttf"]
+"#,
+        );
+        let extract_details = [make_extract_detail(&["fonts/actual.ttf"], &[], &[])];
+        let mut reports = vec![];
+
+        check_ignore_extraction(&pkg, &extract_details, &mut reports);
+
+        assert_matches!(
+            reports.as_slice(),
+            [CheckManifestWarnReport::IgnoreRuleMatchesNothing { source_index, rule }]
+                if *source_index == 0 && rule.to_string() == "fonts/missing.ttf"
+        );
+    }
+
+    #[test]
+    fn check_ignore_extraction_does_not_report_when_rule_matches_paths() {
+        let pkg = testing::parse_manifest_to_definition(
+            r#"
+name = "example-font"
+version = "0.1.0"
+
+[[sources]]
+url = "https://example.com/example-font-0.1.0.zip"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+ignore = ["fonts/skip.ttf"]
+"#,
+        );
+        let extract_details = [make_extract_detail(
+            &["fonts/actual.ttf"],
+            &["fonts/skip.ttf"],
+            &[],
+        )];
+        let mut reports = vec![];
+
+        check_ignore_extraction(&pkg, &extract_details, &mut reports);
 
         assert!(reports.is_empty());
     }
 
     #[test]
-    fn check_suspicious_skips_reports_font_like_paths_not_covered_by_include_or_exclude() {
+    fn check_suspicious_skips_reports_font_like_paths_not_covered_by_files_or_ignore() {
         let extract_details = [make_extract_detail(
             &["fonts/actual.ttf"],
             &[],

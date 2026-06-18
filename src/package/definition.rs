@@ -1,9 +1,8 @@
 use url::Url;
 
 use crate::{
-    package::PackageId,
+    package::{FileRule, IgnoreRule, PackageId},
     util::{
-        glob::PathPattern,
         hash::GenericDigest,
         text::{MatchForm, MatchKind, TextMatcher},
     },
@@ -26,8 +25,8 @@ pub(crate) struct PackageDefinition {
 pub(crate) struct PackageSource {
     pub(crate) url: Url,
     pub(crate) hash: GenericDigest,
-    pub(crate) include: Vec<PathPattern>,
-    pub(crate) exclude: Vec<PathPattern>,
+    pub(crate) files: Vec<FileRule>,
+    pub(crate) ignore: Vec<IgnoreRule>,
 }
 
 impl PackageDefinition {

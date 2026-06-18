@@ -36,7 +36,7 @@ license = "OFL-1.1"
 [[sources]]
 url = "https://example.com/downloads/example-font-1.2.3.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-include = [
+files = [
   "example-font-1.2.3/ExampleFont-Regular.ttf",
   "example-font-1.2.3/ExampleFont-Bold.ttf",
 ]
@@ -51,9 +51,9 @@ For example, it can report:
 - missing recommended fields such as `display-name`, `description`, or
   `license`
 - duplicate display names or face names after normalization
-- `include` or `exclude` patterns that match nothing
-- wildcard `include` patterns that are broader than necessary
-- font-like files in a source that are neither included nor excluded
+- `files` or `ignore` rules that match nothing
+- `glob` entries in `files`
+- font-like files in a source that match neither `files` nor `ignore`
 
 ## Package version format and ordering
 
@@ -336,38 +336,46 @@ The expected digest used to verify source integrity.
   hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
   ```
 
-### `sources[].include` (optional, recommended)
+### `sources[].files` (optional, recommended)
 
-Glob patterns that select font files from the downloaded source.
-If omitted, `foton` uses the default font-file patterns.
+Rules that select font files from the downloaded source.
+Each entry may be written as a string or `{ path = ... }` for an exact path, or
+as `{ glob = ... }` for a glob rule.
+If omitted, `foton` uses the default font-file glob rules.
 
-- **Type**: array of glob patterns
-- **Constraints**: must be non-empty if present
-- **Default**: `**/*.ttf`, `**/*.otf`, and `**/*.ttc`
+- **Type**: non-empty array of file rules
+- **Constraints**: each entry must be a non-empty `path` string or a valid
+  non-empty `glob` string
+- **Default**: `{ glob = "**/*.ttf" }`, `{ glob = "**/*.otf" }`, and
+  `{ glob = "**/*.ttc" }`
 - **Recommended because**: it makes the package contents explicit and reduces
   unintended matches from the source archive
-- **Example**:
+- **Examples**:
 
   ```toml
   [[sources]]
-  include = [
+  files = [
     "fonts/ExampleFont-Regular.ttf",
-    "fonts/ExampleFont-Bold.ttf",
+    { path = "fonts/ExampleFont-Bold.ttf" },
+    { glob = "fonts/ExampleFontUI-*.ttf" },
   ]
   ```
 
-### `sources[].exclude` (optional)
+### `sources[].ignore` (optional)
 
-Glob patterns that exclude files even if they match `include`.
-If a path matches both `include` and `exclude`, `exclude` takes precedence.
+Rules that exclude files even if they match `files`.
+Each entry may be written as a string or `{ path = ... }` for an exact path, or
+as `{ glob = ... }` for a glob rule.
+If a path matches both `files` and `ignore`, `ignore` takes precedence.
 
-- **Type**: array of glob patterns
+- **Type**: array of ignore rules
 - **Example**:
 
   ```toml
   [[sources]]
-  exclude = [
+  ignore = [
     "fonts/Extra.ttf",
+    { glob = "fonts/legacy/*.ttf" },
   ]
   ```
 
