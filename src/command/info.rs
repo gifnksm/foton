@@ -99,7 +99,6 @@ where
         display_name,
         description,
         aliases,
-        faces,
         homepage,
         repository,
         license,
@@ -120,12 +119,6 @@ where
         writeln!(writer, "Aliases ({}):", aliases.len())?;
         for alias in aliases {
             writeln!(writer, "  - {alias}")?;
-        }
-    }
-    if !faces.is_empty() {
-        writeln!(writer, "Faces ({}):", faces.len())?;
-        for font_name in faces {
-            writeln!(writer, "  - {font_name}")?;
         }
     }
     if let Some(homepage) = homepage {
@@ -197,7 +190,6 @@ display-name = "Example Font"
 version = "0.1.0"
 description = "Example font family for UI and coding"
 aliases = ["Example Font UI"]
-faces = ["Example Font Regular", "Example Font Bold"]
 homepage = "https://example.com/example-font"
 repository = "https://github.com/example/example-font"
 license = "OFL-1.1"
@@ -232,9 +224,6 @@ ignore = ["fonts/exclude.ttf"]
                     "Description: Example font family for UI and coding",
                     "Aliases (1):",
                     "  - Example Font UI",
-                    "Faces (2):",
-                    "  - Example Font Regular",
-                    "  - Example Font Bold",
                     "Homepage: https://example.com/example-font",
                     "Repository: https://github.com/example/example-font",
                     "License: OFL-1.1",
@@ -263,7 +252,6 @@ display-name = "Example Font"
 version = "0.1.0"
 description = "Example font family for UI and coding"
 aliases = ["Example Font UI"]
-faces = ["Example Font Regular", "Example Font Bold"]
 homepage = "https://example.com/example-font"
 repository = "https://github.com/example/example-font"
 license = "OFL-1.1"
@@ -293,9 +281,6 @@ ignore = ["fonts/exclude.ttf"]
             "Description: Example font family for UI and coding",
             "Aliases (1):",
             "  - Example Font UI",
-            "Faces (2):",
-            "  - Example Font Regular",
-            "  - Example Font Bold",
             "Homepage: https://example.com/example-font",
             "Repository: https://github.com/example/example-font",
             "License: OFL-1.1",

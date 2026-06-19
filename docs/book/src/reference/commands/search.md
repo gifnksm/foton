@@ -73,8 +73,8 @@ example-font@1.2.3 [example]
 - By default, `search` looks at the latest version of each package in each
   selected package registry without considering pre-release versions.
   Use `--pre-release` if you want pre-release versions to be included.
-- Search can match package names, display names, aliases, faces, and
-  descriptions.
+- Search can match package names, display names, aliases, individual font
+  titles, and descriptions.
 - If no matching packages are found, the command fails.
 
 ## Related pages

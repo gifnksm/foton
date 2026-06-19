@@ -240,7 +240,6 @@ impl From<&PackageDefinition> for PersistedPackageDefinition {
             display_name: value.display_name.clone(),
             description: value.description.clone(),
             aliases: value.aliases.clone(),
-            faces: value.faces.clone(),
             homepage: value.homepage.clone(),
             repository: value.repository.clone(),
             license: value.license.clone(),
@@ -256,7 +255,6 @@ impl PersistedPackageDefinition {
             display_name: self.display_name.clone(),
             description: self.description.clone(),
             aliases: self.aliases.clone(),
-            faces: self.faces.clone(),
             homepage: self.homepage.clone(),
             repository: self.repository.clone(),
             license: self.license.clone(),
@@ -271,7 +269,6 @@ impl PartialEq<PackageDefinition> for PersistedPackageDefinition {
             display_name,
             description,
             aliases,
-            faces,
             homepage,
             repository,
             license,
@@ -281,7 +278,6 @@ impl PartialEq<PackageDefinition> for PersistedPackageDefinition {
         *display_name == pkg.display_name
             && *description == pkg.description
             && *aliases == pkg.aliases
-            && *faces == pkg.faces
             && *homepage == pkg.homepage
             && *repository == pkg.repository
             && *license == pkg.license

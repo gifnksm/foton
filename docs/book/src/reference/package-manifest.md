@@ -23,12 +23,6 @@ aliases = [
   "Example Font UI",
   "Example Font Console",
 ]
-faces = [
-  "Example Font Regular",
-  "Example Font Bold",
-  "Example Font UI Regular",
-  "Example Font UI Bold",
-]
 homepage = "https://example.com/example-font"
 repository = "https://github.com/example/example-font"
 license = "OFL-1.1"
@@ -37,8 +31,8 @@ license = "OFL-1.1"
 url = "https://example.com/downloads/example-font-1.2.3.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 files = [
-  "example-font-1.2.3/ExampleFont-Regular.ttf",
-  "example-font-1.2.3/ExampleFont-Bold.ttf",
+  { path = "example-font-1.2.3/ExampleFont-Regular.ttf", title = "Example Font Regular" },
+  { path = "example-font-1.2.3/ExampleFont-Bold.ttf", title = "Example Font Bold" },
 ]
 ```
 
@@ -50,7 +44,8 @@ For example, it can report:
 
 - missing recommended fields such as `display-name`, `description`, or
   `license`
-- duplicate display names or face names after normalization
+- duplicate display names after normalization
+- exact `path` entries in `files` without `title`
 - `files` or `ignore` rules that match nothing
 - `glob` entries in `files`
 - font-like files in a source that match neither `files` nor `ignore`
@@ -142,10 +137,10 @@ Versions are compared in this order:
 Field headings indicate whether a field is required or optional.
 Fields marked recommended are optional, but strongly recommended because they
 help users discover and understand the fonts provided by the package.
-Metadata fields such as `display-name`, `description`, `aliases`, `faces`,
-`homepage`, `repository`, and `license` describe the fonts provided by the
-package. Packaging fields such as `name`, `version`, and `sources` describe how
-`foton` identifies and installs the package.
+Metadata fields such as `display-name`, `description`, `aliases`, `homepage`,
+`repository`, and `license` describe the fonts provided by the package.
+Packaging fields such as `name`, `version`, and `sources` describe how `foton`
+identifies and installs the package.
 
 ### `name` (required)
 
@@ -224,22 +219,6 @@ spellings.
 
   ```toml
   aliases = ["Example Font UI", "Example Font Console"]
-  ```
-
-### `faces` (optional, recommended)
-
-Human-friendly names for the individual font faces included in the package.
-Use this for entries such as Regular, Bold, or other specific face names.
-
-- **Type**: array of strings
-- **Constraints**: each entry must be non-empty and must not have leading or
-  trailing whitespace
-- **Recommended because**: it helps users find the package by included face
-  names
-- **Example**:
-
-  ```toml
-  faces = ["Example Font Regular", "Example Font Bold"]
   ```
 
 ### `homepage` (optional, recommended)
@@ -339,24 +318,41 @@ The expected digest used to verify source integrity.
 ### `sources[].files` (optional, recommended)
 
 Rules that select font files from the downloaded source.
-Each entry may be written as a string or `{ path = ... }` for an exact path, or
-as `{ glob = ... }` for a glob rule.
+Each entry is either:
+
+- a string, which is shorthand for an exact `path`
+- an object that specifies exactly one of `path` or `glob`
+
+If an entry uses `path`, it may also specify `title`.
+If an entry uses `glob`, it must not specify `title`.
 If omitted, `foton` uses the default font-file glob rules.
 
 - **Type**: non-empty array of file rules
-- **Constraints**: each entry must be a non-empty `path` string or a valid
-  non-empty `glob` string
+- **Constraints**:
+  - each exact `path` must be non-empty
+  - each `glob` must be valid and non-empty
+  - `title` may be specified only together with `path`
+  - when present, `title` must be non-empty and must not have leading or
+    trailing whitespace
 - **Default**: `{ glob = "**/*.ttf" }`, `{ glob = "**/*.otf" }`, and
   `{ glob = "**/*.ttc" }`
 - **Recommended because**: it makes the package contents explicit and reduces
   unintended matches from the source archive
+- **Notes**:
+  - `title` is the name `foton` uses for that font file when registering it on
+    Windows; other applications can also refer to the font by that name
+  - `title` is also used when matching search queries
+  - if an exact `path` entry omits `title`, `foton` detects the name from the
+    font file instead of taking it from the manifest
+  - `glob` entries cannot declare `title`; for files matched by `glob`,
+    `foton` detects each name from the font file
 - **Examples**:
 
   ```toml
   [[sources]]
   files = [
-    "fonts/ExampleFont-Regular.ttf",
-    { path = "fonts/ExampleFont-Bold.ttf" },
+    { path = "fonts/ExampleFont-Regular.ttf", title = "Example Font Regular" },
+    { path = "fonts/ExampleFont-Bold.ttf", title = "Example Font Bold" },
     { glob = "fonts/ExampleFontUI-*.ttf" },
   ]
   ```

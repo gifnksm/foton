@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 use snafu::{OptionExt as _, ResultExt as _, Snafu};
 
 use crate::{
+    engine::ExtractedFile,
     package::FontEntry,
     platform::windows::primitives::font_inspector::{FontInspector, FontInspectorError},
-    util::{macros::concat_line, path::FileName},
+    util::macros::concat_line,
 };
 
 #[derive(Debug, Snafu)]
@@ -51,13 +52,13 @@ impl FontValidator {
     pub(crate) fn validate_font<P>(
         &self,
         fonts_dir: P,
-        file_name: &FileName,
+        file: &ExtractedFile<'_>,
     ) -> Result<Option<FontEntry>, FontValidatorError>
     where
         P: AsRef<Path>,
     {
         let fonts_dir = fonts_dir.as_ref();
-        let path = fonts_dir.join(file_name);
+        let path = fonts_dir.join(file.file_name());
         let supported = self
             .inspector
             .is_supported_font_file(&path)
@@ -67,16 +68,31 @@ impl FontValidator {
             return Ok(None);
         }
 
+        let title = file
+            .rule()
+            .title()
+            .map(ToOwned::to_owned)
+            .map_or_else(|| self.get_font_title(&path, file), Ok)?;
+
+        Ok(Some(FontEntry::new(title, file.file_name())))
+    }
+
+    fn get_font_title(
+        &self,
+        path: &Path,
+        file: &ExtractedFile<'_>,
+    ) -> Result<String, FontValidatorError> {
         let title = self
             .inspector
-            .get_font_title(&path)
-            .context(GetFontTitleSnafu { path: &path })?
-            .unwrap_or_else(|| file_name.to_os_string());
+            .get_font_title(path)
+            .context(GetFontTitleSnafu { path })?
+            .unwrap_or_else(|| file.file_name().to_os_string());
 
         let title = title
-            .to_str()
-            .context(ConvertFontTitleToStringSnafu { path: &path })?;
+            .into_string()
+            .ok()
+            .context(ConvertFontTitleToStringSnafu { path })?;
 
-        Ok(Some(FontEntry::new(title, file_name)))
+        Ok(title)
     }
 }

@@ -21,7 +21,7 @@ foton search <query-word-1> <query-word-2>
 
 Each query term must match within the same package metadata field.
 In practice, this means `foton` can match package names, display names,
-aliases, face names, and descriptions.
+aliases, individual font titles, and descriptions.
 
 ## Restrict the search to specific registries
 

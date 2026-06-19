@@ -14,7 +14,6 @@ pub(crate) struct PackageDefinition {
     pub(crate) display_name: Option<String>,
     pub(crate) description: Option<String>,
     pub(crate) aliases: Vec<String>,
-    pub(crate) faces: Vec<String>,
     pub(crate) homepage: Option<String>,
     pub(crate) repository: Option<String>,
     pub(crate) license: Option<String>,
@@ -67,14 +66,19 @@ impl PackageDefinition {
             max_res = Option::max(max_res, res);
         }
 
-        for face in &self.faces {
-            let Some(res) = matcher.match_text(face.as_str()) else {
+        let titles = self
+            .sources
+            .iter()
+            .flat_map(|source| &source.files)
+            .filter_map(|file| file.title());
+        for title in titles {
+            let Some(res) = matcher.match_text(title) else {
                 continue;
             };
             let res = Some(PackageMatchResult {
                 form: res.form,
                 kind: res.kind,
-                field: PackageDefinitionField::Faces,
+                field: PackageDefinitionField::Title,
             });
             max_res = Option::max(max_res, res);
         }
@@ -99,7 +103,7 @@ impl PackageDefinition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum PackageDefinitionField {
     Description,
-    Faces,
+    Title,
     Aliases,
     DisplayName,
     Name,

@@ -10,6 +10,7 @@ use crate::{
             ScopeResultWarnExt as _, SubReportScope,
         },
     },
+    engine::ExtractedFile,
     package::FontEntry,
     platform::windows::services::font::{FontValidator, FontValidatorError},
     util::{
@@ -69,7 +70,7 @@ enum ValidationErrorReport {
 pub(super) fn validate_and_prune_fonts<S>(
     cx: &ReportContext<S>,
     fonts_dir: &AbsolutePath,
-    file_names: &[FileName],
+    extracted: &[ExtractedFile<'_>],
 ) -> Result<Vec<FontEntry>, S::Error>
 where
     S: ReportScope,
@@ -82,13 +83,15 @@ where
         .context(CreateValidatorSnafu)
         .report_error(&cx)?;
 
-    for file_name in file_names {
+    for file in extracted {
         let Some(entry) = validator
-            .validate_font(fonts_dir, file_name)
-            .context(ValidateFontSnafu { file_name })
+            .validate_font(fonts_dir, file)
+            .context(ValidateFontSnafu {
+                file_name: file.file_name(),
+            })
             .report_error(&cx)?
         else {
-            let path = fonts_dir.join(file_name);
+            let path = fonts_dir.join(file.file_name());
             UnsupportedFontFileSnafu { path: &path }
                 .build()
                 .report_warn(&cx)?;

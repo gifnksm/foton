@@ -5,7 +5,7 @@ use std::{
 
 use crate::util::glob::PathGlob;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::IsVariant)]
 pub(crate) enum PathMatcher {
     Path(LiteralPathMatcher),
     Glob(PathGlob),
@@ -37,6 +37,13 @@ impl PathMatcher {
         }
     }
 
+    pub(crate) fn as_path(&self) -> Option<&LiteralPathMatcher> {
+        match self {
+            Self::Path(path_matcher) => Some(path_matcher),
+            Self::Glob(_) => None,
+        }
+    }
+
     pub(crate) fn as_glob(&self) -> Option<&PathGlob> {
         match self {
             Self::Glob(glob) => Some(glob),
@@ -48,7 +55,7 @@ impl PathMatcher {
 impl Display for PathMatcher {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Path(path_matcher) => Display::fmt(path_matcher, f),
+            Self::Path(path) => Display::fmt(path, f),
             Self::Glob(glob) => Display::fmt(glob, f),
         }
     }
@@ -73,6 +80,14 @@ impl LiteralPathMatcher {
         P: AsRef<Path>,
     {
         self.glob.matches(path)
+    }
+
+    pub(crate) fn original(&self) -> &str {
+        &self.original
+    }
+
+    pub(crate) fn into_original(self) -> String {
+        self.original
     }
 }
 
