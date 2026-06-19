@@ -24,12 +24,6 @@ aliases = [
   "Example Font UI",
   "Example Font Console",
 ]
-faces = [
-  "Example Font Regular",
-  "Example Font Bold",
-  "Example Font UI Regular",
-  "Example Font UI Bold",
-]
 homepage = "https://example.com/example-font"
 repository = "https://github.com/example/example-font"
 license = "OFL-1.1"
@@ -38,10 +32,10 @@ license = "OFL-1.1"
 url = "https://example.com/downloads/example-font-1.2.3.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 files = [
-  "example-font-1.2.3/ExampleFont-Regular.ttf",
-  "example-font-1.2.3/ExampleFont-Bold.ttf",
-  "example-font-1.2.3/ExampleFontUI-Regular.ttf",
-  "example-font-1.2.3/ExampleFontUI-Bold.ttf",
+  { path = "example-font-1.2.3/ExampleFont-Regular.ttf", title = "Example Font Regular" },
+  { path = "example-font-1.2.3/ExampleFont-Bold.ttf", title = "Example Font Bold" },
+  { path = "example-font-1.2.3/ExampleFontUI-Regular.ttf", title = "Example Font UI Regular" },
+  { path = "example-font-1.2.3/ExampleFontUI-Bold.ttf", title = "Example Font UI Bold" },
 ]
 ```
 
@@ -104,7 +98,6 @@ These fields are recommended:
 - `description`
 - `license`
 - `aliases`
-- `faces`
 - `homepage`
 - `repository`
 
@@ -135,6 +128,12 @@ If you omit `sources[].files`, `foton` uses these default glob rules:
 - `**/*.ttc`
 
 Prefer `sources[].files` entries that list each font file path explicitly.
+When you know the font title in advance, prefer `{ path = ..., title = ... }`
+entries.
+The `title` is the name `foton` uses when registering that font file on
+Windows. Other applications can also see and refer to the font by that
+name. If you specify it, `foton` uses that name instead of detecting one
+from the font file.
 Avoid `glob` rules when possible.
 This makes it clear from the manifest exactly which files belong to the
 package, and it reduces the chance of unintentionally picking up extra or
@@ -160,7 +159,8 @@ that installation would succeed.
 It can also warn about issues such as:
 
 - missing `display-name`, `description`, or `license`
-- duplicated display names or face names
+- duplicated display names
+- exact `path` entries in `files` without `title`
 - `glob` entries in `files`
 - `files` or `ignore` rules that match nothing
 - font-like files that match neither `files` nor `ignore`

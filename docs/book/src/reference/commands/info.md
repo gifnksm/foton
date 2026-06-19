@@ -44,8 +44,8 @@ foton info <package-name>@<version>
 
 - package ID and display name
 - installation state and activation state
-- description, aliases, faces, homepage, repository, and license
-- for packages in the `installed` state, the fonts directory and the recorded installed font files
+- description, aliases, homepage, repository, and license
+- for packages in the `installed` state, the fonts directory and the recorded installed font files with their titles
 
 If a package name matches multiple packages recorded in the local package
 database, `info` prints all of them.

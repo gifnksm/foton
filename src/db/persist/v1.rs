@@ -80,8 +80,6 @@ pub(in crate::db::persist) mod types {
         pub(in crate::db::persist) description: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pub(in crate::db::persist) aliases: Vec<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        pub(in crate::db::persist) faces: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub(in crate::db::persist) homepage: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

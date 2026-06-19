@@ -43,7 +43,8 @@ Warnings can include:
 - missing `display-name`
 - missing `description`
 - missing `license`
-- duplicate display names or face names after normalization
+- duplicate display names after normalization
+- exact `path` entries in `files` without `title`
 - `files` rules that match nothing
 - `ignore` rules that match nothing
 - `glob` entries in `files`

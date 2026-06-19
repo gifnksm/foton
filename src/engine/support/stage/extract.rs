@@ -71,6 +71,22 @@ enum ExtractErrorReport {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct ExtractedFile<'r> {
+    file_name: FileName,
+    rule: &'r FileRule,
+}
+
+impl<'r> ExtractedFile<'r> {
+    pub(crate) fn file_name(&self) -> &FileName {
+        &self.file_name
+    }
+
+    pub(crate) fn rule(&self) -> &'r FileRule {
+        self.rule
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct ExtractEntry {
     pub(crate) path_in_archive: PathBuf,
 }
@@ -82,13 +98,13 @@ pub(crate) struct ExtractDetail {
     pub(crate) suspicious_skips: Vec<ExtractEntry>,
 }
 
-pub(super) fn extract_archive<S>(
+pub(super) fn extract_archive<'r, S>(
     cx: &ReportContext<S>,
     file: File,
-    files: &[FileRule],
+    files: &'r [FileRule],
     ignore: &[IgnoreRule],
     fonts_dir: &AbsolutePath,
-) -> Result<(Vec<FileName>, ExtractDetail), S::Error>
+) -> Result<(Vec<ExtractedFile<'r>>, ExtractDetail), S::Error>
 where
     S: ReportScope,
 {
@@ -99,14 +115,14 @@ where
     extract_archive_impl(file, files, ignore, fonts_dir, cx.config()).report_error(&cx)
 }
 
-fn extract_archive_impl(
+fn extract_archive_impl<'r>(
     file: File,
-    files: &[FileRule],
+    files: &'r [FileRule],
     ignore: &[IgnoreRule],
     fonts_dir: &AbsolutePath,
     config: &FotonConfig,
-) -> Result<(Vec<FileName>, ExtractDetail), ExtractErrorReport> {
-    let mut file_names = vec![];
+) -> Result<(Vec<ExtractedFile<'r>>, ExtractDetail), ExtractErrorReport> {
+    let mut extracted = vec![];
     let mut included = vec![];
     let mut excluded = vec![];
     let mut suspicious_skips = vec![];
@@ -126,8 +142,7 @@ fn extract_archive_impl(
             excluded.push(ExtractEntry { path_in_archive });
             continue;
         }
-        let is_included = files.iter().any(|rule| rule.matches(&path_in_archive));
-        if !is_included {
+        let Some(include_rule) = files.iter().find(|rule| rule.matches(&path_in_archive)) else {
             if let Some(ext) = path_in_archive.extension()
                 && (ext.eq_ignore_ascii_case("ttf")
                     || ext.eq_ignore_ascii_case("otf")
@@ -136,7 +151,7 @@ fn extract_archive_impl(
                 suspicious_skips.push(ExtractEntry { path_in_archive });
             }
             continue;
-        }
+        };
         snafu::ensure!(
             archive_file.size() <= config.install.max_extracted_file_size_bytes,
             ExtractedFileExceedsMaxSizeSnafu {
@@ -179,11 +194,14 @@ fn extract_archive_impl(
         file.flush()
             .context(FlushExtractedFileSnafu { path: &fs_path })?;
 
-        file_names.push(file_name);
+        extracted.push(ExtractedFile {
+            file_name,
+            rule: include_rule,
+        });
         included.push(ExtractEntry { path_in_archive });
     }
     Ok((
-        file_names,
+        extracted,
         ExtractDetail {
             included,
             excluded,
@@ -236,9 +254,13 @@ mod tests {
     ) -> Result<(TempDir, Vec<FileName>), Box<ExtractErrorReport>> {
         let tempdir = tempfile::tempdir().unwrap();
         let fonts_dir = AbsolutePath::new(tempdir.path()).unwrap();
-        let (file_names, _extract_detail) =
+        let (extracted, _extract_detail) =
             extract_archive_impl(archive, files, ignore, &fonts_dir, config)?;
-        Ok((tempdir, file_names))
+        let files = extracted
+            .into_iter()
+            .map(|e| e.file_name)
+            .collect::<Vec<_>>();
+        Ok((tempdir, files))
     }
 
     fn extract_detail_to_tempdir(
@@ -274,8 +296,7 @@ mod tests {
 
         let (_tempdir, files) =
             extract_to_tempdir(archive, &files, &ignore, &FotonConfig::default()).unwrap();
-
-        assert_eq!(files, vec!["font.ttf"]);
+        assert_eq!(files, ["font.ttf"]);
     }
 
     #[test]

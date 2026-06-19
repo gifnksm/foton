@@ -18,8 +18,8 @@ use crate::{
     },
     engine::{self, ExtractDetail},
     package::{
-        self, FileRule, FontEntry, IgnoreRule, PackageDefinition, PackageDirs, PackageId,
-        PackageManifest, PackageManifestError,
+        self, FileRule, IgnoreRule, PackageDefinition, PackageDirs, PackageId, PackageManifest,
+        PackageManifestError,
     },
     util::{
         fs::FsError, glob::PathGlob, macros::concat_line, path::AbsolutePath,
@@ -70,19 +70,18 @@ enum CheckManifestWarnReport {
     },
     #[snafu(display(
         concat_line!(
-            "following fields have the same normalized font face: {normalized}",
-            "{values}",
-            "consider removing one of the values to avoid duplication",
+            "`sources[{source_index}].files[{file_index}]` specifies exact `path` without `title`: {path}",
+            "prefer adding `title` so the font title used for search, recording, and registration is declared explicitly in the manifest",
         ),
-        normalized = normalized,
-        values = BulletList(values),
+        source_index = source_index,
+        file_index = file_index,
+        path = path.display(),
     ))]
-    DuplicatedFace {
-        normalized: String,
-        values: Vec<ValueWithSource>,
+    FilePathMissingTitle {
+        source_index: usize,
+        file_index: usize,
+        path: PathBuf,
     },
-    #[snafu(display("`faces` does not list the included font face: {face}"))]
-    UnlistedFace { face: String },
     #[snafu(display(
         concat_line!(
             "`sources[{source_index}].files` contains `glob` rule: {glob}",
@@ -231,8 +230,8 @@ pub(crate) async fn check_manifest(
         .context(CreatePackageDirsSnafu { pkg_id })
         .report_error(&cx)?;
 
-    let (font_entries, extract_details) = engine::stage_package(&cx, &pkg_dirs, &pkg).await?;
-    check_fields(&cx, &pkg, &font_entries, &extract_details)?;
+    let (_font_entries, extract_details) = engine::stage_package(&cx, &pkg_dirs, &pkg).await?;
+    check_fields(&cx, &pkg, &extract_details)?;
 
     Ok(())
 }
@@ -240,7 +239,6 @@ pub(crate) async fn check_manifest(
 fn check_fields(
     cx: &ReportContext<CheckManifestScope>,
     pkg: &PackageDefinition,
-    font_entries: &[FontEntry],
     extract_details: &[ExtractDetail],
 ) -> Result<(), CheckManifestError> {
     let mut reports = vec![];
@@ -248,8 +246,7 @@ fn check_fields(
     check_missing_fields(pkg, &mut reports);
     check_homepage_and_repository_url(pkg, &mut reports);
     check_display_name_duplication(pkg, &mut reports);
-    check_face_duplication(pkg, &mut reports);
-    check_face_completeness(pkg, font_entries, &mut reports);
+    check_file_path_missing_title(pkg, &mut reports);
     check_files_extraction(pkg, extract_details, &mut reports);
     check_ignore_extraction(pkg, extract_details, &mut reports);
     check_suspicious_skips(extract_details, &mut reports);
@@ -321,35 +318,24 @@ fn check_display_name_duplication(
     }
 }
 
-fn check_face_duplication(pkg: &PackageDefinition, reports: &mut Vec<CheckManifestWarnReport>) {
-    let mut faces: BTreeMap<String, Vec<_>> = BTreeMap::new();
-    for face in &pkg.faces {
-        let normalized = NormalizedString::new(face).into_compact();
-        faces.entry(normalized).or_default().push(ValueWithSource {
-            value: face.clone(),
-            source_field: "faces",
-        });
-    }
-    for (normalized, values) in faces {
-        if values.len() > 1 {
-            reports.push(DuplicatedFaceSnafu { normalized, values }.build());
-        }
-    }
-}
-
-fn check_face_completeness(
+fn check_file_path_missing_title(
     pkg: &PackageDefinition,
-    font_entries: &[FontEntry],
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
-    for entry in font_entries {
-        if !pkg.faces.iter().any(|face| entry.title() == face) {
-            reports.push(
-                UnlistedFaceSnafu {
-                    face: entry.title(),
-                }
-                .build(),
-            );
+    for (source_index, source) in pkg.sources.iter().enumerate() {
+        for (file_index, file_rule) in source.files.iter().enumerate() {
+            if let Some(path) = file_rule.matcher().as_path()
+                && file_rule.title().is_none()
+            {
+                reports.push(
+                    FilePathMissingTitleSnafu {
+                        source_index,
+                        file_index,
+                        path: path.original(),
+                    }
+                    .build(),
+                );
+            }
         }
     }
 }
@@ -502,19 +488,7 @@ mod tests {
     use std::assert_matches;
 
     use super::*;
-    use crate::{
-        engine::ExtractEntry,
-        package::FontEntry,
-        util::{path::FileName, testing},
-    };
-
-    fn make_font_entries(entries: &[(&str, &str)]) -> Vec<FontEntry> {
-        entries
-            .iter()
-            .copied()
-            .map(|(title, file_name)| FontEntry::new(title, FileName::new(file_name).unwrap()))
-            .collect()
-    }
+    use crate::{engine::ExtractEntry, util::testing};
 
     fn to_extract_entries(paths: &[&str]) -> Vec<ExtractEntry> {
         paths
@@ -614,50 +588,26 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     }
 
     #[test]
-    fn check_face_duplication_reports_compact_duplicates() {
+    fn check_file_path_missing_title_reports_file_rules_with_exact_path_and_no_title() {
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
 version = "0.1.0"
-faces = ["HackGen Regular", "HackGenRegular"]
 
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+files = ["fonts/actual.ttf"]
 "#,
         );
         let mut reports = vec![];
 
-        check_face_duplication(&pkg, &mut reports);
+        check_file_path_missing_title(&pkg, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
-            [CheckManifestWarnReport::DuplicatedFace { normalized, values }]
-                if normalized == "hackgenregular" && values.len() == 2
-        );
-    }
-
-    #[test]
-    fn check_face_completeness_reports_unlisted_faces() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
-faces = ["Listed Face"]
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-"#,
-        );
-        let font_entries = make_font_entries(&[("Actual Face", "actual.ttf")]);
-        let mut reports = vec![];
-
-        check_face_completeness(&pkg, &font_entries, &mut reports);
-
-        assert_matches!(
-            reports.as_slice(),
-            [CheckManifestWarnReport::UnlistedFace { face }] if face == "Actual Face"
+            [CheckManifestWarnReport::FilePathMissingTitle { source_index, file_index, path }]
+                if *source_index == 0 && *file_index == 0 && path == "fonts/actual.ttf"
         );
     }
 

@@ -55,28 +55,12 @@ pub(crate) struct PackageManifest {
     /// Use this for other names by which users may look for the fonts provided by the package,
     /// such as common alternate spellings, abbreviations, or additional family names included in
     /// a multi-family package.
-    ///
-    /// Do not use this for names of individual font faces; use `faces` for those.
     #[serde(
         default,
         deserialize_with = "vec_nonempty_strings_without_surrounding_whitespaces::deserialize",
         skip_serializing_if = "Vec::is_empty"
     )]
     pub(crate) aliases: Vec<String>,
-    /// Human-friendly entries describing the individual font faces included in the package.
-    ///
-    /// Use this for face-level entries that distinguish specific variants such as Regular, Bold,
-    /// Italic, or similar styles, rather than for package-level or family-level names.
-    ///
-    /// Each entry is currently written as a face name string, such as `Hackgen Regular` or
-    /// `Hackgen Bold`, which helps users find a package by the names shown in font pickers or
-    /// Windows shell UI.
-    #[serde(
-        default,
-        deserialize_with = "vec_nonempty_strings_without_surrounding_whitespaces::deserialize",
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub(crate) faces: Vec<String>,
     /// Upstream homepage for the font project or distribution represented by the package.
     #[serde(
         default,
@@ -134,7 +118,6 @@ impl From<PackageManifest> for PackageDefinition {
             version,
             description,
             aliases,
-            faces,
             homepage,
             repository,
             license,
@@ -145,7 +128,6 @@ impl From<PackageManifest> for PackageDefinition {
             display_name,
             description,
             aliases,
-            faces,
             homepage: homepage.map(|url| url.to_string()),
             repository: repository.map(|url| url.to_string()),
             license: license.map(|expr| expr.to_string()),
@@ -185,7 +167,9 @@ fn default_files() -> Vec<FileRule> {
     ]
 }
 
-fn validate_nonempty_string_without_surrounding_whitespaces<E>(s: String) -> Result<String, E>
+pub(crate) fn validate_nonempty_string_without_surrounding_whitespaces<E>(
+    s: String,
+) -> Result<String, E>
 where
     E: serde::de::Error,
 {
@@ -199,10 +183,10 @@ where
     Ok(s)
 }
 
-mod option_nonempty_string_without_surrounding_whitespaces {
+pub(crate) mod option_nonempty_string_without_surrounding_whitespaces {
     use serde::Deserialize as _;
 
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
@@ -377,7 +361,6 @@ mod tests {
         assert_eq!(manifest.version, "0.1.0".parse().unwrap());
         assert_eq!(manifest.description, None);
         assert!(manifest.aliases.is_empty());
-        assert!(manifest.faces.is_empty());
         assert_eq!(manifest.homepage, None);
         assert_eq!(manifest.repository, None);
         assert_eq!(manifest.license, None);
@@ -410,7 +393,6 @@ display-name = "Example Font"
 version = "0.1.0"
 description = "Example font family for UI and coding"
 aliases = ["Example Font UI"]
-faces = ["Example Font Regular", "Example Font Bold", "Example Font UI Regular", "Example Font UI Bold"]
 homepage = "https://example.com/example-font"
 repository = "https://github.com/example/example-font"
 license = "OFL-1.1"
@@ -430,15 +412,6 @@ files = [{ glob = "*/*.ttf" }]
             Some("Example font family for UI and coding")
         );
         assert_eq!(manifest.aliases, ["Example Font UI"]);
-        assert_eq!(
-            manifest.faces,
-            [
-                "Example Font Regular",
-                "Example Font Bold",
-                "Example Font UI Regular",
-                "Example Font UI Bold"
-            ]
-        );
         assert_eq!(
             manifest.homepage.as_ref().map(Url::as_str),
             Some("https://example.com/example-font")
@@ -591,27 +564,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 name = "example-font"
 version = "0.1.0"
 aliases = [" Example Font "]
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-"#,
-        )
-        .unwrap_err();
-
-        assert!(
-            err.to_string()
-                .contains("a non-empty string without leading or trailing whitespace")
-        );
-    }
-
-    #[test]
-    fn package_manifest_rejects_empty_faces() {
-        let err = testing::try_parse_manifest(
-            r#"
-name = "example-font"
-version = "0.1.0"
-faces = [""]
 
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
