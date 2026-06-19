@@ -45,11 +45,13 @@ foton info <package-name>
 foton info <package-name>@<version>
 ```
 
-`info` prints the package name, version, installation state, activation state,
-metadata, and source information for matching packages recorded in the local
-package database.
+`info` prints the package ID, recorded states, and package metadata for
+matching packages recorded in the local package database.
+For packages in the `installed` state, it also shows the fonts directory and
+the recorded installed font files.
 This can include packages left by incomplete operations.
-Use this command when you want to confirm exactly what is recorded in the local package database.
+Use this command when you want to confirm exactly what is recorded in the local
+package database.
 
 ## Change whether an installed package is active
 
