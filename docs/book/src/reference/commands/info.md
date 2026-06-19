@@ -40,12 +40,12 @@ foton info <package-name>@<version>
 
 ## Output
 
-`info` prints detailed metadata for matching packages recorded in the local package database, including:
+`info` prints detailed information for matching packages recorded in the local package database, including:
 
-- package name and display name
-- version, installation state, and activation state
+- package ID and display name
+- installation state and activation state
 - description, aliases, faces, homepage, repository, and license
-- source URLs, hashes, and `files` or `ignore` rules
+- for packages in the `installed` state, the fonts directory and the recorded installed font files
 
 If a package name matches multiple packages recorded in the local package
 database, `info` prints all of them.
