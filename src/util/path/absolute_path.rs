@@ -18,27 +18,29 @@ pub(crate) enum AbsolutePathError {
 impl AbsolutePath {
     pub(crate) fn new<P>(path: P) -> Option<Self>
     where
-        P: Into<PathBuf>,
+        P: AsRef<Path>,
     {
         Self::try_new(path).ok()
     }
 
     pub(crate) fn try_new<P>(path: P) -> Result<Self, AbsolutePathError>
     where
-        P: Into<PathBuf>,
+        P: AsRef<Path>,
     {
-        let path = path.into();
+        let path = dunce::simplified(path.as_ref());
         if !path.is_absolute() {
             return Err(NotAbsoluteSnafu { path }.build());
         }
-        Ok(Self(path))
+        Ok(Self(path.to_path_buf()))
     }
 
     pub(crate) fn join<P>(&self, path: P) -> Self
     where
         P: AsRef<Path>,
     {
-        Self(self.0.join(path))
+        let path = self.0.join(path);
+        let path = dunce::simplified(&path);
+        Self(path.to_path_buf())
     }
 
     pub(crate) fn parent(&self) -> Option<Self> {
@@ -136,14 +138,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn absolute_path_buf_new_returns_some_for_absolute_paths() {
+    fn absolute_path_new_returns_some_for_absolute_paths() {
         let abs_path = AbsolutePath::new(r"C:\absolute\path").unwrap();
         assert_eq!(abs_path, Path::new(r"C:\absolute\path"));
     }
 
     #[test]
-    fn absolute_path_buf_new_returns_none_for_relative_paths() {
+    fn absolute_path_new_returns_none_for_relative_paths() {
         assert!(AbsolutePath::new("relative/path").is_none());
+    }
+
+    #[test]
+    fn absolute_path_new_simplifies_path_if_possible() {
+        let path = AbsolutePath::new(r"\\?\C:\absolute\path").unwrap();
+        assert_eq!(path, Path::new(r"C:\absolute\path"));
+
+        // path with reserved name component should not be simplified
+        let path = AbsolutePath::new(r"\\?\C:\CON").unwrap();
+        assert_eq!(path, Path::new(r"\\?\C:\CON"));
+
+        // path with UNC prefix should not be simplified
+        let path = AbsolutePath::new(r"\\?\UNC\server\share").unwrap();
+        assert_eq!(path, Path::new(r"\\?\UNC\server\share"));
+    }
+
+    #[test]
+    fn absolute_path_join_returns_simplified_absolute_path_if_possible() {
+        let path = AbsolutePath::new(r"C:\absolute\path").unwrap();
+        let joined = path.join(r"..\joined\path");
+        assert_eq!(joined, Path::new(r"C:\absolute\path\..\joined\path"));
+
+        let path = AbsolutePath::new(r"D:\absolute\path").unwrap();
+        let joined = path.join(r"\\?\C:\joined\path");
+        assert_eq!(joined, Path::new(r"C:\joined\path"));
+
+        let path = AbsolutePath::new(r"C:\absolute\path").unwrap();
+        let joined = path.join(r"\\?\UNC\server\share");
+        assert_eq!(joined, Path::new(r"\\?\UNC\server\share"));
     }
 
     #[test]
