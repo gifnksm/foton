@@ -93,7 +93,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
-      - run: just ci-tombi
+      - run: just ci-tombi-format
         shell: bash
       - run: just ci-tombi-lint
         shell: bash

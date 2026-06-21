@@ -75,7 +75,7 @@ markdownlint *args:
     npx markdownlint-cli {{ args }} .
 
 # Format TOML files.
-tombi *args:
+tombi-format *args:
     uvx tombi format {{ args }}
 
 # Lint TOML files.
@@ -95,7 +95,7 @@ test-guide *args:
     mdbook test ./docs/book {{ args }}
 
 # Run lint and static checks used for day-to-day local verification.
-ci-lint: ci-rustfmt ci-tombi ci-tombi-lint ci-check ci-clippy ci-machete ci-actionlint ci-typos ci-markdownlint ci-editorconfig
+ci-lint: ci-rustfmt ci-tombi-format ci-tombi-lint ci-check ci-clippy ci-machete ci-actionlint ci-typos ci-markdownlint ci-editorconfig
 
 # Run all CI-equivalent checks.
 ci: ci-lint ci-rustdoc ci-sync-rdme ci-test ci-coverage ci-build-guide ci-test-guide
@@ -105,8 +105,8 @@ ci-rustfmt:
     just fmt --check
 
 # CI: TOML formatting must be clean.
-ci-tombi:
-    just tombi --check
+ci-tombi-format:
+    just tombi-format --check
 
 # CI: TOML lint must be clean.
 ci-tombi-lint:
