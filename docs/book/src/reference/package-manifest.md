@@ -150,7 +150,7 @@ This is the stable identifier for the package.
 
 - **Type**: package name string
 - **Constraints**: must start with a lowercase ASCII letter and contain only
-  lowercase ASCII letters, digits, `-`, or `_`
+  lowercase ASCII letters, digits, or `-`
 - **Example**:
 
   ```toml

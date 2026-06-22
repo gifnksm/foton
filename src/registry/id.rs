@@ -21,12 +21,12 @@ impl RegistryId {
     }
 }
 
-const REGISTRY_ID_REGEX_STR: &str = r"^[a-z][-_0-9a-z]*$";
+const REGISTRY_ID_REGEX_STR: &str = r"^[a-z][-0-9a-z]*$";
 
 #[derive(Debug, Snafu)]
 pub(crate) enum RegistryIdError {
     #[snafu(display(
-        "invalid registry id `{id}`: must start with a lowercase ASCII letter and contain only lowercase ASCII letters, digits, `-` or `_`"
+        "invalid registry id `{id}`: must start with a lowercase ASCII letter and contain only lowercase ASCII letters, digits, or `-`"
     ))]
     InvalidFormat { id: String },
 }
@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn registry_id_new_accepts_valid_names() {
-        for name_str in ["example", "example-font", "example_font", "a0", "x"] {
+        for name_str in ["example", "example-font", "a0", "x"] {
             let name = RegistryId::new(name_str).unwrap();
             assert_eq!(name, name_str);
         }
@@ -157,6 +157,7 @@ mod tests {
         for name in [
             "",
             "Example",
+            "example_font",
             "0example",
             "-example",
             "_example",
