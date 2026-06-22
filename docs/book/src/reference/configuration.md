@@ -140,8 +140,8 @@ Commands such as `foton search --registry ...` and `foton install --registry ...
 use these registry IDs.
 
 - **Type**: table
-- **Constraints**: the registry ID must start with an ASCII letter and contain
-  only ASCII letters, digits, `-`, or `_`
+- **Constraints**: the registry ID must start with a lowercase ASCII letter and
+  contain only lowercase ASCII letters, digits, `-`, or `_`
 - **Example**:
 
   ```toml

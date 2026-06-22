@@ -149,8 +149,8 @@ The canonical package name used in commands such as
 This is the stable identifier for the package.
 
 - **Type**: package name string
-- **Constraints**: must start with an ASCII letter and contain only ASCII
-  letters, digits, `-`, or `_`
+- **Constraints**: must start with a lowercase ASCII letter and contain only
+  lowercase ASCII letters, digits, `-`, or `_`
 - **Example**:
 
   ```toml
