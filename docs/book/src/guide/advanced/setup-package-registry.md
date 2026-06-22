@@ -26,21 +26,23 @@ A registry stores package manifests in this directory layout:
 
 ```text
 <registry-root>/
-  <package-name>/
-    <version>/
-      manifest.toml
+  packages/
+    <package-name>/
+      <version>/
+        manifest.toml
 ```
 
 Example:
 
 ```text
 my-registry/
-  example-font/
-    1.2.3/
-      manifest.toml
-  another-font/
-    2.0.0/
-      manifest.toml
+  packages/
+    example-font/
+      1.2.3/
+        manifest.toml
+    another-font/
+      2.0.0/
+        manifest.toml
 ```
 
 Each package version has its own `manifest.toml` file.
@@ -113,7 +115,7 @@ enabled = false
 A common workflow is:
 
 1. Write and validate a manifest locally
-2. Place the manifest at `<package-name>/<version>/manifest.toml` in your
+2. Place the manifest at `packages/<package-name>/<version>/manifest.toml` in your
    registry
 3. Add the registry to your `config.toml` file
 4. Search or install from that package registry with `--registry <registry-id>`
