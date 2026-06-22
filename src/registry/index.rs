@@ -58,21 +58,35 @@ pub(crate) enum RegistryIndexError {
 #[derive(Debug)]
 pub(crate) struct RegistryIndex {
     id: RegistryId,
-    path: PathBuf,
+    root_path: PathBuf,
 }
 
 impl RegistryIndex {
-    pub(crate) fn open(id: RegistryId, path: PathBuf) -> Result<Self, RegistryIndexError> {
-        path.metadata()
-            .context(ReadMetadataSnafu { path: &path })?
+    pub(crate) fn open(id: RegistryId, root_path: PathBuf) -> Result<Self, RegistryIndexError> {
+        root_path
+            .metadata()
+            .context(ReadMetadataSnafu { path: &root_path })?
             .is_dir()
             .then_some(())
-            .context(NotADirectorySnafu { path: &path })?;
-        Ok(Self { id, path })
+            .context(NotADirectorySnafu { path: &root_path })?;
+        Ok(Self { id, root_path })
     }
 
     pub(crate) fn id(&self) -> &RegistryId {
         &self.id
+    }
+
+    fn package_root_path(&self) -> PathBuf {
+        self.root_path.join("packages")
+    }
+
+    fn package_versions_path(&self, name: &PackageName) -> PathBuf {
+        self.package_root_path().join(name)
+    }
+
+    fn package_dir_path(&self, pkg_id: &PackageId) -> PathBuf {
+        self.package_versions_path(pkg_id.name())
+            .join(pkg_id.version().to_string())
     }
 
     pub(crate) fn find_latest_package_by_spec(
@@ -90,10 +104,7 @@ impl RegistryIndex {
         &self,
         pkg_id: &PackageId,
     ) -> Result<Option<Arc<PackageDefinition>>, RegistryIndexError> {
-        let package_dir = self
-            .path
-            .join(pkg_id.name())
-            .join(pkg_id.version().to_string());
+        let package_dir = self.package_dir_path(pkg_id);
         if check_dir_presence(&package_dir)?.is_not_found() {
             return Ok(None);
         }
@@ -117,10 +128,11 @@ impl RegistryIndex {
         name: &PackageName,
         include_pre_release: bool,
     ) -> Result<Option<Arc<PackageDefinition>>, RegistryIndexError> {
-        let base_path = self.path.join(name);
-        let Some(versions) = read_child_directories::<PackageVersion, _, _>(&base_path, |path| {
-            InvalidVersionInDirectoryEntrySnafu { path }
-        })?
+        let versions_dir = self.package_versions_path(name);
+        let Some(versions) =
+            read_child_directories::<PackageVersion, _, _, _>(versions_dir, |path| {
+                InvalidVersionInDirectoryEntrySnafu { path }
+            })?
         else {
             return Ok(None);
         };
@@ -143,9 +155,11 @@ impl RegistryIndex {
         Option<impl Iterator<Item = Result<Arc<PackageDefinition>, RegistryIndexError>>>,
         RegistryIndexError,
     > {
-        let Some(names) = read_child_directories::<PackageName, _, _>(&self.path, |path| {
-            InvalidPackageNameInDirectoryEntrySnafu { path }
-        })?
+        let package_root_dir = self.package_root_path();
+        let Some(names) =
+            read_child_directories::<PackageName, _, _, _>(package_root_dir, |path| {
+                InvalidPackageNameInDirectoryEntrySnafu { path }
+            })?
         else {
             return Ok(None);
         };
@@ -156,23 +170,30 @@ impl RegistryIndex {
     }
 }
 
-fn read_child_directories<T, F, C>(
-    path: &Path,
+fn read_child_directories<T, P, F, C>(
+    path: P,
     mut f: F,
 ) -> Result<Option<impl Iterator<Item = Result<T, RegistryIndexError>>>, RegistryIndexError>
 where
     T: FromStr,
+    P: AsRef<Path>,
     F: FnMut(PathBuf) -> C,
     C: IntoError<RegistryIndexError, Source = T::Err>,
 {
-    let entries = match fs::read_dir(path) {
+    let entries = match fs::read_dir(path.as_ref()) {
         Ok(entries) => entries,
         Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(source) => return Err(ReadDirSnafu { path }.into_error(source)),
+        Err(source) => {
+            return Err(ReadDirSnafu {
+                path: path.as_ref(),
+            }
+            .into_error(source));
+        }
     };
 
     Ok(Some(entries.into_iter().filter_map(move |entry| {
         (|| {
+            let path = path.as_ref();
             let entry = entry.context(ReadDirEntrySnafu { path })?;
             let name = entry.file_name();
             let path = entry.path();

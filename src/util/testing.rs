@@ -212,6 +212,7 @@ where
     let registry_dir = registry_dir.as_ref();
     let pkg_id = pkg_id.try_into().unwrap();
     let dir = registry_dir
+        .join("packages")
         .join(pkg_id.name())
         .join(pkg_id.version().to_string());
     fs::create_dir_all(&dir).unwrap();

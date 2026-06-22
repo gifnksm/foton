@@ -10,30 +10,32 @@ A registry is organized by package name and package version:
 
 ```text
 <registry-root>/
-  <package-name>/
-    <version>/
-      manifest.toml
+  packages/
+    <package-name>/
+      <version>/
+        manifest.toml
 ```
 
 Example:
 
 ```text
 registry/
-  example-font/
-    1.2.3/
-      manifest.toml
-  another-font/
-    2.0.0/
-      manifest.toml
+  packages/
+    example-font/
+      1.2.3/
+        manifest.toml
+    another-font/
+      2.0.0/
+        manifest.toml
 ```
 
 The package ID in the manifest must match the directory that contains it.
 In other words, the manifest at
-`example-font/1.2.3/manifest.toml` must describe `example-font@1.2.3`.
+`packages/example-font/1.2.3/manifest.toml` must describe `example-font@1.2.3`.
 
 When `foton` scans the registry layout:
 
-- under `<registry-root>`, only directories are considered package-name entries;
+- under `packages`, only directories are considered package-name entries;
   hidden entries and other non-directory entries are ignored
 - under each `<package-name>` directory, only directories are considered
   version entries; hidden entries and other non-directory entries are ignored
