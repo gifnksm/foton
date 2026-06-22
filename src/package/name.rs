@@ -13,12 +13,12 @@ use snafu::Snafu;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct PackageName(Arc<str>);
 
-const PACKAGE_NAME_REGEX_STR: &str = r"^[a-z][-_0-9a-z]*$";
+const PACKAGE_NAME_REGEX_STR: &str = r"^[a-z][-0-9a-z]*$";
 
 #[derive(Debug, Snafu)]
 pub(crate) enum ParsePackageNameError {
     #[snafu(display(
-        "invalid package name `{name}`: must start with a lowercase ASCII letter and contain only lowercase ASCII letters, digits, `-` or `_`"
+        "invalid package name `{name}`: must start with a lowercase ASCII letter and contain only lowercase ASCII letters, digits, or `-`"
     ))]
     InvalidFormat { name: String },
 }
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn package_name_new_accepts_valid_names() {
-        for name_str in ["example", "example-font", "example_font", "a0", "x"] {
+        for name_str in ["example", "example-font", "a0", "x"] {
             let name = PackageName::new(name_str).unwrap();
             assert_eq!(name, name_str);
         }
@@ -163,6 +163,7 @@ mod tests {
         for name in [
             "",
             "Example",
+            "example_font",
             "0example",
             "-example",
             "_example",

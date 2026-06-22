@@ -141,7 +141,7 @@ use these registry IDs.
 
 - **Type**: table
 - **Constraints**: the registry ID must start with a lowercase ASCII letter and
-  contain only lowercase ASCII letters, digits, `-`, or `_`
+  contain only lowercase ASCII letters, digits, or `-`
 - **Example**:
 
   ```toml
