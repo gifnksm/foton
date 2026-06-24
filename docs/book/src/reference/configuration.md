@@ -36,7 +36,7 @@ This means:
 [install]
 max-source-size-bytes = 536870912
 max-fonts-per-package-source = 1000
-max-font-file-size-bytes = 52428800
+max-font-file-size-bytes = 134217728
 
 [registries.foton]
 source = "git+https://github.com/gifnksm/foton-registry.git"
@@ -70,7 +70,7 @@ All install limit values must be positive integers greater than zero.
   [install]
   max-source-size-bytes = 536870912
   max-fonts-per-package-source = 1000
-  max-font-file-size-bytes = 52428800
+  max-font-file-size-bytes = 134217728
   ```
 
 ### `registries` (optional)
@@ -134,12 +134,12 @@ This limit applies both to sources with `contents.type = "font-file"` and to
 individual font files selected from sources with `contents.type = "archive"`.
 
 - **Type**: positive unsigned integer
-- **Default**: `52428800` (50MiB)
+- **Default**: `134217728` (128MiB)
 - **Example**:
 
   ```toml
   [install]
-  max-font-file-size-bytes = 52428800
+  max-font-file-size-bytes = 134217728
   ```
 
 ## Registry entry fields

@@ -66,7 +66,7 @@ impl Default for InstallConfig {
         Self {
             max_source_size_bytes: NonZero::new(512 * 1024 * 1024).unwrap(), // 512 MiB
             max_fonts_per_package_source: NonZero::new(1000).unwrap(),
-            max_font_file_size_bytes: NonZero::new(50 * 1024 * 1024).unwrap(), // 50 MiB
+            max_font_file_size_bytes: NonZero::new(128 * 1024 * 1024).unwrap(), // 128 MiB
         }
     }
 }
