@@ -197,7 +197,10 @@ license = "OFL-1.1"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-files = [{ glob = "fonts/*.ttf" }]
+
+[sources.contents]
+type = "archive"
+fonts = [{ glob = "fonts/*.ttf" }]
 ignore = ["fonts/exclude.ttf"]
 "#,
         );
@@ -259,7 +262,10 @@ license = "OFL-1.1"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-files = [{ glob = "fonts/*.ttf" }]
+
+[sources.contents]
+type = "archive"
+fonts = [{ glob = "fonts/*.ttf" }]
 ignore = ["fonts/exclude.ttf"]
 "#,
         );

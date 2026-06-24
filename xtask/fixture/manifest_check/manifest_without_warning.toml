@@ -9,7 +9,10 @@ license = "OFL-1.1"
 [[sources]]
 url = "https://github.com/yuru7/HackGen/releases/download/v2.10.0/HackGen_v2.10.0.zip"
 hash = "sha256:ed182e2a4b95792d94dea7932f6b45280b5ae353651be249d5f6b7867b788db7"
-files = [
+
+[sources.contents]
+type = "archive"
+fonts = [
   { path = "HackGen_v2.10.0/HackGen-Regular.ttf", title = "HackGen Regular" },
   { path = "HackGen_v2.10.0/HackGen-Bold.ttf", title = "HackGen Bold" },
   { path = "HackGen_v2.10.0/HackGenConsole-Regular.ttf", title = "HackGen Console Regular" },

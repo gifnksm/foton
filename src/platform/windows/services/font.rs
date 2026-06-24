@@ -52,7 +52,7 @@ impl FontValidator {
     pub(crate) fn validate_font<P>(
         &self,
         fonts_dir: P,
-        file: &ExtractedFile<'_>,
+        file: &ExtractedFile,
     ) -> Result<Option<FontEntry>, FontValidatorError>
     where
         P: AsRef<Path>,
@@ -69,7 +69,6 @@ impl FontValidator {
         }
 
         let title = file
-            .rule()
             .title()
             .map(ToOwned::to_owned)
             .map_or_else(|| self.get_font_title(&path, file), Ok)?;
@@ -80,7 +79,7 @@ impl FontValidator {
     fn get_font_title(
         &self,
         path: &Path,
-        file: &ExtractedFile<'_>,
+        file: &ExtractedFile,
     ) -> Result<String, FontValidatorError> {
         let title = self
             .inspector

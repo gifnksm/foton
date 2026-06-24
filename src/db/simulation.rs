@@ -110,27 +110,13 @@ mod tests {
 
     #[test]
     fn install_reinstalls_same_version_with_different_definition_and_resets_activation() {
-        let installed_pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
-display-name = "Installed Definition"
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-"#,
+        let installed_pkg = testing::make_package_definition_with_display_name(
+            "example-font@0.1.0",
+            "Installed Definition",
         );
-        let manifest_pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
-display-name = "Manifest Definition"
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-"#,
+        let manifest_pkg = testing::make_package_definition_with_display_name(
+            "example-font@0.1.0",
+            "Manifest Definition",
         );
 
         testing::with_db(|_cx, db| {

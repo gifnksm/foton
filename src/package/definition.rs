@@ -1,7 +1,7 @@
 use url::Url;
 
 use crate::{
-    package::{FileRule, IgnoreRule, PackageId},
+    package::{PackageId, PackageSourceContents},
     util::{
         hash::GenericDigest,
         text::{MatchForm, MatchKind, TextMatcher},
@@ -24,8 +24,7 @@ pub(crate) struct PackageDefinition {
 pub(crate) struct PackageSource {
     pub(crate) url: Url,
     pub(crate) hash: GenericDigest,
-    pub(crate) files: Vec<FileRule>,
-    pub(crate) ignore: Vec<IgnoreRule>,
+    pub(crate) contents: PackageSourceContents,
 }
 
 impl PackageDefinition {
@@ -69,8 +68,7 @@ impl PackageDefinition {
         let titles = self
             .sources
             .iter()
-            .flat_map(|source| &source.files)
-            .filter_map(|file| file.title());
+            .flat_map(|source| source.contents.titles());
         for title in titles {
             let Some(res) = matcher.match_text(title) else {
                 continue;
@@ -142,6 +140,9 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         );
         let text_matcher = make_matcher(&["example font"]);
@@ -170,6 +171,9 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         );
         let text_matcher = make_matcher(&["example", "nerd"]);
@@ -188,6 +192,9 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         );
         let text_matcher = make_matcher(&["example", "font"]);

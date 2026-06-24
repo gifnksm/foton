@@ -9,8 +9,9 @@ mod v1;
 use v1 as latest;
 
 use crate::package::{
-    ActivationState, FontEntry, InstallationState, PackageDefinition, PackageId, PackageName,
-    PackageSource, PackageVersion,
+    ActivationState, ArchiveOptions, FontEntry, FontFileOptions, InstallationState,
+    PackageDefinition, PackageId, PackageName, PackageSource, PackageSourceContents,
+    PackageVersion,
 };
 
 pub(in crate::db) use self::latest::types::*;
@@ -263,6 +264,95 @@ impl PersistedPackageDefinition {
     }
 }
 
+impl From<&PackageSource> for PersistedPackageSource {
+    fn from(value: &PackageSource) -> Self {
+        Self {
+            url: value.url.clone(),
+            hash: value.hash.clone(),
+            contents: (&value.contents).into(),
+        }
+    }
+}
+
+impl From<&PersistedPackageSource> for PackageSource {
+    fn from(value: &PersistedPackageSource) -> Self {
+        Self {
+            url: value.url.clone(),
+            hash: value.hash.clone(),
+            contents: (&value.contents).into(),
+        }
+    }
+}
+
+impl From<&PackageSourceContents> for PersistedPackageSourceContents {
+    fn from(value: &PackageSourceContents) -> Self {
+        match value {
+            PackageSourceContents::FontFile(options) => Self::FontFile(options.into()),
+            PackageSourceContents::Archive(options) => Self::Archive(options.into()),
+        }
+    }
+}
+
+impl From<&PersistedPackageSourceContents> for PackageSourceContents {
+    fn from(value: &PersistedPackageSourceContents) -> Self {
+        match value {
+            PersistedPackageSourceContents::FontFile(options) => Self::FontFile(options.into()),
+            PersistedPackageSourceContents::Archive(options) => Self::Archive(options.into()),
+        }
+    }
+}
+
+impl From<&PersistedFontFileOptions> for FontFileOptions {
+    fn from(value: &PersistedFontFileOptions) -> Self {
+        Self {
+            file_name: value.file_name.clone(),
+            title: value.title.clone(),
+        }
+    }
+}
+
+impl From<&FontFileOptions> for PersistedFontFileOptions {
+    fn from(value: &FontFileOptions) -> Self {
+        Self {
+            file_name: value.file_name.clone(),
+            title: value.title.clone(),
+        }
+    }
+}
+
+impl From<&PersistedArchiveOptions> for ArchiveOptions {
+    fn from(value: &PersistedArchiveOptions) -> Self {
+        Self {
+            fonts: value.fonts.clone(),
+            ignore: value.ignore.clone(),
+        }
+    }
+}
+
+impl From<&ArchiveOptions> for PersistedArchiveOptions {
+    fn from(value: &ArchiveOptions) -> Self {
+        Self {
+            fonts: value.fonts.clone(),
+            ignore: value.ignore.clone(),
+        }
+    }
+}
+
+impl From<&FontEntry> for PersistedFontEntry {
+    fn from(value: &FontEntry) -> Self {
+        Self {
+            title: value.title().to_owned(),
+            file_name: value.file_name().clone(),
+        }
+    }
+}
+
+impl From<&PersistedFontEntry> for FontEntry {
+    fn from(value: &PersistedFontEntry) -> Self {
+        Self::new(value.title.clone(), value.file_name.clone())
+    }
+}
+
 impl PartialEq<PackageDefinition> for PersistedPackageDefinition {
     fn eq(&self, pkg: &PackageDefinition) -> bool {
         let Self {
@@ -290,49 +380,36 @@ impl PartialEq<PackageSource> for PersistedPackageSource {
         let Self {
             url,
             hash,
-            files,
-            ignore,
+            contents,
         } = self;
-        *url == source.url
-            && *hash == source.hash
-            && *files == source.files
-            && *ignore == source.ignore
+        *url == source.url && *hash == source.hash && *contents == source.contents
     }
 }
 
-impl From<&PackageSource> for PersistedPackageSource {
-    fn from(value: &PackageSource) -> Self {
-        Self {
-            url: value.url.clone(),
-            hash: value.hash.clone(),
-            files: value.files.clone(),
-            ignore: value.ignore.clone(),
+impl PartialEq<PackageSourceContents> for PersistedPackageSourceContents {
+    fn eq(&self, contents: &PackageSourceContents) -> bool {
+        match (self, contents) {
+            (Self::FontFile(self_options), PackageSourceContents::FontFile(options)) => {
+                self_options == options
+            }
+            (Self::Archive(self_options), PackageSourceContents::Archive(options)) => {
+                self_options == options
+            }
+            _ => false,
         }
     }
 }
 
-impl From<&PersistedPackageSource> for PackageSource {
-    fn from(value: &PersistedPackageSource) -> Self {
-        Self {
-            url: value.url.clone(),
-            hash: value.hash.clone(),
-            files: value.files.clone(),
-            ignore: value.ignore.clone(),
-        }
+impl PartialEq<FontFileOptions> for PersistedFontFileOptions {
+    fn eq(&self, options: &FontFileOptions) -> bool {
+        let Self { file_name, title } = self;
+        *file_name == options.file_name && *title == options.title
     }
 }
 
-impl From<&FontEntry> for PersistedFontEntry {
-    fn from(value: &FontEntry) -> Self {
-        Self {
-            title: value.title().to_owned(),
-            file_name: value.file_name().clone(),
-        }
-    }
-}
-
-impl From<&PersistedFontEntry> for FontEntry {
-    fn from(value: &PersistedFontEntry) -> Self {
-        Self::new(value.title.clone(), value.file_name.clone())
+impl PartialEq<ArchiveOptions> for PersistedArchiveOptions {
+    fn eq(&self, options: &ArchiveOptions) -> bool {
+        let Self { fonts, ignore } = self;
+        *fonts == options.fonts && *ignore == options.ignore
     }
 }

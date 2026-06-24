@@ -44,11 +44,15 @@ Warnings can include:
 - missing `description`
 - missing `license`
 - duplicate display names after normalization
-- exact `path` entries in `files` without `title`
-- `files` rules that match nothing
-- `ignore` rules that match nothing
-- `glob` entries in `files`
-- font-like files that match neither `files` nor `ignore`
+- source-content issues such as:
+  - for sources with `contents.type = "font-file"`:
+    - no `title`
+  - for sources with `contents.type = "archive"`:
+    - exact `path` entries in `fonts` without `title`
+    - `fonts` rules that match nothing
+    - `ignore` rules that match nothing
+    - `glob` entries in `fonts`
+    - font-like files that match neither `fonts` nor `ignore`
 
 ## Examples
 
@@ -67,7 +71,7 @@ foton --warnings-as-errors manifest check <manifest-path>
 - This command is primarily intended for package authors.
 - Because the command fetches sources, network access may be required.
 - A manifest that parses successfully can still fail `manifest check` if the
-  sources are invalid or the selected files do not install correctly.
+  sources are invalid or the selected fonts do not install correctly.
 
 ## Related pages
 
