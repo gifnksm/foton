@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, num::NonZero};
 
 use config::{Config, ConfigError};
 use serde::{Deserialize, Serialize};
@@ -22,9 +22,9 @@ pub(crate) struct FotonConfig {
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct InstallConfig {
-    pub(crate) max_archive_size_bytes: u64,
-    pub(crate) max_extracted_files: usize,
-    pub(crate) max_extracted_file_size_bytes: u64,
+    pub(crate) max_source_size_bytes: NonZero<u64>,
+    pub(crate) max_fonts_per_package_source: NonZero<usize>,
+    pub(crate) max_font_file_size_bytes: NonZero<u64>,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -64,9 +64,9 @@ fn default_registries() -> BTreeMap<RegistryId, RegistryConfig> {
 impl Default for InstallConfig {
     fn default() -> Self {
         Self {
-            max_archive_size_bytes: 512 * 1024 * 1024, // 512 MiB
-            max_extracted_files: 1000,
-            max_extracted_file_size_bytes: 50 * 1024 * 1024, // 50 MiB
+            max_source_size_bytes: NonZero::new(512 * 1024 * 1024).unwrap(), // 512 MiB
+            max_fonts_per_package_source: NonZero::new(1000).unwrap(),
+            max_font_file_size_bytes: NonZero::new(50 * 1024 * 1024).unwrap(), // 50 MiB
         }
     }
 }
@@ -94,16 +94,16 @@ mod tests {
         let config = load_config(&app_dirs).unwrap();
 
         assert_eq!(
-            config.install.max_archive_size_bytes,
-            FotonConfig::default().install.max_archive_size_bytes
+            config.install.max_source_size_bytes,
+            FotonConfig::default().install.max_source_size_bytes
         );
         assert_eq!(
-            config.install.max_extracted_files,
-            FotonConfig::default().install.max_extracted_files
+            config.install.max_fonts_per_package_source,
+            FotonConfig::default().install.max_fonts_per_package_source
         );
         assert_eq!(
-            config.install.max_extracted_file_size_bytes,
-            FotonConfig::default().install.max_extracted_file_size_bytes
+            config.install.max_font_file_size_bytes,
+            FotonConfig::default().install.max_font_file_size_bytes
         );
         assert_eq!(config.registries, FotonConfig::default().registries);
     }
@@ -115,9 +115,9 @@ mod tests {
             app_dirs.config_file(),
             r#"
 [install]
-max-archive-size-bytes = 123
-max-extracted-files = 456
-max-extracted-file-size-bytes = 789
+max-source-size-bytes = 123
+max-fonts-per-package-source = 456
+max-font-file-size-bytes = 789
 
 [registries.foton]
 source = "git+https://example.com/custom.git"
@@ -131,9 +131,9 @@ source = "local+C:/registry"
 
         let config = load_config(&app_dirs).unwrap();
 
-        assert_eq!(config.install.max_archive_size_bytes, 123);
-        assert_eq!(config.install.max_extracted_files, 456);
-        assert_eq!(config.install.max_extracted_file_size_bytes, 789);
+        assert_eq!(config.install.max_source_size_bytes.get(), 123);
+        assert_eq!(config.install.max_fonts_per_package_source.get(), 456);
+        assert_eq!(config.install.max_font_file_size_bytes.get(), 789);
         assert_eq!(
             config.registries[&RegistryId::foton()].source,
             RegistrySource::try_from("git+https://example.com/custom.git").unwrap()
@@ -153,7 +153,7 @@ source = "local+C:/registry"
             app_dirs.config_file(),
             r#"
 [install]
-max-archive-size-bytes = "invalid"
+max-source-size-bytes = "foton-invalid-value"
 "#,
         )
         .unwrap();
@@ -161,7 +161,8 @@ max-archive-size-bytes = "invalid"
         let err = load_config(&app_dirs).unwrap_err();
         let err = err.to_string();
 
-        assert!(err.contains("max-archive-size-bytes"));
+        assert!(err.contains("max-source-size-bytes"));
+        assert!(err.contains("foton-invalid-value"));
     }
 
     #[test]
@@ -197,6 +198,25 @@ foton-unknown-key = 123
         let err = err.to_string();
 
         assert!(err.contains("foton-unknown-key"));
+    }
+
+    #[test]
+    fn load_config_returns_error_for_zero_install_limit() {
+        let (_tempdir, app_dirs) = testing::make_app_dirs();
+        fs::write(
+            app_dirs.config_file(),
+            r"
+[install]
+max-source-size-bytes = 0
+",
+        )
+        .unwrap();
+
+        let err = load_config(&app_dirs).unwrap_err();
+        let err = err.to_string();
+
+        assert!(err.contains("max-source-size-bytes"));
+        assert!(err.contains('0'));
     }
 
     #[test]

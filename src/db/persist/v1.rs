@@ -29,7 +29,7 @@ pub(in crate::db::persist) mod types {
     use url::Url;
 
     use crate::{
-        package::{FileRule, IgnoreRule, PackageName, PackageVersion},
+        package::{FontRule, IgnoreRule, PackageName, PackageVersion},
         util::{hash::GenericDigest, path::FileName},
     };
 
@@ -72,6 +72,7 @@ pub(in crate::db::persist) mod types {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
     #[serde(deny_unknown_fields)]
     pub(in crate::db::persist) struct PersistedPackageDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -90,12 +91,38 @@ pub(in crate::db::persist) mod types {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
     #[serde(deny_unknown_fields)]
     pub(in crate::db::persist) struct PersistedPackageSource {
         pub(in crate::db::persist) url: Url,
         pub(in crate::db::persist) hash: GenericDigest,
+        pub(in crate::db::persist) contents: PersistedPackageSourceContents,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    #[serde(deny_unknown_fields)]
+    pub(in crate::db::persist) enum PersistedPackageSourceContents {
+        FontFile(PersistedFontFileOptions),
+        Archive(PersistedArchiveOptions),
+    }
+
+    #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    #[serde(rename_all = "kebab-case")]
+    pub(crate) struct PersistedFontFileOptions {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub(in crate::db::persist) file_name: Option<FileName>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub(in crate::db::persist) title: Option<String>,
+    }
+
+    #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    #[serde(rename_all = "kebab-case")]
+    pub(crate) struct PersistedArchiveOptions {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        pub(in crate::db::persist) files: Vec<FileRule>,
+        pub(in crate::db::persist) fonts: Vec<FontRule>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pub(in crate::db::persist) ignore: Vec<IgnoreRule>,
     }

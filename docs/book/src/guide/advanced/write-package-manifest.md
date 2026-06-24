@@ -2,7 +2,7 @@
 
 A package manifest is a TOML file that defines a font package.
 It tells `foton` what the package is called, where its downloadable sources are,
-and which files from those sources should be installed as fonts.
+and which fonts from those sources should be installed.
 
 ## Typical workflow
 
@@ -31,7 +31,10 @@ license = "OFL-1.1"
 [[sources]]
 url = "https://example.com/downloads/example-font-1.2.3.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-files = [
+
+[sources.contents]
+type = "archive"
+fonts = [
   { path = "example-font-1.2.3/ExampleFont-Regular.ttf", title = "Example Font Regular" },
   { path = "example-font-1.2.3/ExampleFont-Bold.ttf", title = "Example Font Bold" },
   { path = "example-font-1.2.3/ExampleFontUI-Regular.ttf", title = "Example Font UI Regular" },
@@ -50,10 +53,8 @@ At minimum, a manifest must define:
 - `version`
 - `sources`
 
-Each `sources` entry must define:
-
-- `url`
-- `hash`
+For the exact fields inside each source entry, see
+[Package Manifest Reference](../../reference/package-manifest.md).
 
 ## Choosing a package version
 
@@ -112,29 +113,39 @@ not repeat `repository` in `homepage` just to fill both fields.
 `foton manifest check` warns if `display-name`, `description`, or `license` is
 missing.
 
-## Choosing files from a source
+## Choosing fonts from a source
 
-Each `sources[]` entry can define `sources[].files` and `sources[].ignore`
-rules.
-Use them to control which files from the downloaded archive or file are treated
-as installable fonts.
+Each `sources[]` entry must define a `[sources.contents]` table.
+That table tells `foton` what kind of downloaded source it is working with and,
+for archive sources, which font files inside that source should be installed.
+
+If `contents.type = "archive"`, the downloaded source is an archive that
+contains one or more font files.
+If `contents.type = "font-file"`, the downloaded source itself is one font
+file.
 See [Package Manifest Reference](../../reference/package-manifest.md) for the exact
-behavior of `sources`, `sources[].files`, and `sources[].ignore`.
+field definitions and constraints.
 
-If you omit `sources[].files`, `foton` uses these default glob rules:
+### Archive sources (`contents.type = "archive"`)
+
+For an archive source, the `fonts` field under `[sources.contents]` selects
+which archive entries should be installed as fonts.
+If you omit `fonts`, `foton` uses these default glob rules:
 
 - `**/*.ttf`
 - `**/*.otf`
 - `**/*.ttc`
 - `**/*.otc`
 
-Prefer `sources[].files` entries that list each font file path explicitly.
+Prefer `fonts` entries that list each font file path explicitly.
 When you know the font title in advance, prefer `{ path = ..., title = ... }`
 entries.
 The `title` is the name `foton` uses when registering that font file on
 Windows. Other applications can also see and refer to the font by that
 name. If you specify it, `foton` uses that name instead of detecting one
 from the font file.
+If the archive entry name is unsuitable, you can also specify `file-name` on an
+exact `path` entry to tell `foton` what file name to store locally.
 Avoid `glob` rules when possible.
 This makes it clear from the manifest exactly which files belong to the
 package, and it reduces the chance of unintentionally picking up extra or
@@ -142,9 +153,29 @@ unexpected files from the source archive.
 
 If the source archive contains other font-like files such as `*.ttf`, `*.otf`,
 `*.ttc`, or `*.otc` that you do not want to install, prefer listing those paths in
-`sources[].ignore` explicitly.
+`ignore` explicitly.
 That makes the omission visible in the manifest and shows that the files were
 left out intentionally.
+
+### Direct font sources (`contents.type = "font-file"`)
+
+For a source with `contents.type = "font-file"`, the downloaded source itself
+is installed as one font file.
+Setting `title` is recommended so the recorded font title is explicit in the
+manifest and available for search and registration.
+You can also set `file-name` to override the local file name when the URL path
+is not suitable.
+
+```toml
+[[sources]]
+url = "https://example.com/download?id=123"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "font-file"
+file-name = "Example-Regular.ttf"
+title = "Example Regular"
+```
 
 ## Validate the manifest
 
@@ -161,10 +192,16 @@ It can also warn about issues such as:
 
 - missing `display-name`, `description`, or `license`
 - duplicated display names
-- exact `path` entries in `files` without `title`
-- `glob` entries in `files`
-- `files` or `ignore` rules that match nothing
-- font-like files that match neither `files` nor `ignore`
+
+It can also warn specifically about source contents, for example:
+
+- for sources with `contents.type = "font-file"`:
+  - no `title`
+- for sources with `contents.type = "archive"`:
+  - exact `path` entries in `fonts` without `title`
+  - `glob` entries in `fonts`
+  - `fonts` or `ignore` rules that match nothing
+  - font-like files that match neither `fonts` nor `ignore`
 
 If you want warnings to fail the command, use the global
 `--warnings-as-errors` option.

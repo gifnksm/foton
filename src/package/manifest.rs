@@ -9,10 +9,10 @@ use snafu::{IntoError as _, ResultExt as _, Snafu};
 
 use crate::{
     package::{
-        FileRule, IgnoreRule, PackageDefinition, PackageId, PackageName, PackageSource,
+        FontRule, IgnoreRule, PackageDefinition, PackageId, PackageName, PackageSource,
         PackageVersion,
     },
-    util::{glob::PathGlob, hash::GenericDigest},
+    util::{glob::PathGlob, hash::GenericDigest, path::FileName},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,16 +96,42 @@ pub(crate) struct PackageManifestSource {
     pub(crate) url: Url,
     /// Expected digest of the downloaded source used to verify integrity.
     pub(crate) hash: GenericDigest,
-    /// Rules selecting which font files to install from the downloaded source.
-    ///
-    /// When omitted, common font file extensions are included by default. If a path matches both
-    /// `files` and `ignore`, `ignore` takes precedence.
+    pub(crate) contents: PackageSourceContents,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
+#[serde(tag = "type")]
+pub(crate) enum PackageSourceContents {
+    FontFile(#[serde(default)] FontFileOptions),
+    Archive(#[serde(default)] ArchiveOptions),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct FontFileOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) file_name: Option<FileName>,
     #[serde(
-        default = "default_files",
-        deserialize_with = "non_empty_vec::deserialize"
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "option_nonempty_string_without_surrounding_whitespaces::deserialize"
     )]
-    pub(crate) files: Vec<FileRule>,
-    /// Rules excluding files from installation even if they are matched by `files`.
+    pub(crate) title: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct ArchiveOptions {
+    #[serde(
+        default = "default_archive_fonts",
+        deserialize_with = "non_empty_vec::deserialize",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub(crate) fonts: Vec<FontRule>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) ignore: Vec<IgnoreRule>,
 }
@@ -141,14 +167,12 @@ impl From<PackageManifestSource> for PackageSource {
         let PackageManifestSource {
             url,
             hash,
-            files,
-            ignore,
+            contents,
         } = source;
         Self {
             url,
             hash,
-            files,
-            ignore,
+            contents,
         }
     }
 }
@@ -159,12 +183,40 @@ impl PackageManifest {
     }
 }
 
-fn default_files() -> Vec<FileRule> {
+impl PackageSourceContents {
+    pub(crate) fn as_font_file(&self) -> Option<&FontFileOptions> {
+        match self {
+            Self::FontFile(font_file_options) => Some(font_file_options),
+            Self::Archive(_) => None,
+        }
+    }
+
+    pub(crate) fn as_archive(&self) -> Option<&ArchiveOptions> {
+        match self {
+            Self::FontFile(_) => None,
+            Self::Archive(archive_options) => Some(archive_options),
+        }
+    }
+
+    pub(crate) fn titles(&self) -> Box<dyn Iterator<Item = &str> + '_> {
+        match self {
+            Self::FontFile(options) => Box::new(options.title.as_deref().into_iter()),
+            Self::Archive(options) => Box::new(
+                options
+                    .fonts
+                    .iter()
+                    .filter_map(|font_rule| font_rule.title()),
+            ),
+        }
+    }
+}
+
+fn default_archive_fonts() -> Vec<FontRule> {
     vec![
-        FileRule::glob(PathGlob::new("**/*.ttf").unwrap()),
-        FileRule::glob(PathGlob::new("**/*.otf").unwrap()),
-        FileRule::glob(PathGlob::new("**/*.ttc").unwrap()),
-        FileRule::glob(PathGlob::new("**/*.otc").unwrap()),
+        FontRule::glob(PathGlob::new("**/*.ttf").unwrap()),
+        FontRule::glob(PathGlob::new("**/*.otf").unwrap()),
+        FontRule::glob(PathGlob::new("**/*.ttc").unwrap()),
+        FontRule::glob(PathGlob::new("**/*.otc").unwrap()),
     ]
 }
 
@@ -349,7 +401,10 @@ mod tests {
     [[sources]]
     url = "https://example.com/example-font-0.1.0.zip"
     hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-    files = [{ glob = "*/*.ttf" }]
+
+    [sources.contents]
+    type = "archive"
+    fonts = [{ glob = "*/*.ttf" }]
     "#
     }
 
@@ -374,15 +429,16 @@ mod tests {
             manifest.sources[0].hash.to_string(),
             "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
+        let archive = manifest.sources[0].contents.as_archive().unwrap();
         assert_eq!(
-            manifest.sources[0]
-                .files
+            archive
+                .fonts
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>(),
             ["*/*.ttf"]
         );
-        assert!(manifest.sources[0].ignore.is_empty());
+        assert!(archive.ignore.is_empty());
     }
 
     #[test]
@@ -401,7 +457,10 @@ license = "OFL-1.1"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-files = [{ glob = "*/*.ttf" }]
+
+[sources.contents]
+type = "archive"
+fonts = [{ glob = "*/*.ttf" }]
 "#,
         );
 
@@ -434,9 +493,10 @@ files = [{ glob = "*/*.ttf" }]
             manifest.sources[0].hash.to_string(),
             "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         );
+        let archive = manifest.sources[0].contents.as_archive().unwrap();
         assert_eq!(
-            manifest.sources[0]
-                .files
+            archive
+                .fonts
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>(),
@@ -455,6 +515,9 @@ license = "not-a-valid-spdx"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         )
         .unwrap_err();
@@ -478,7 +541,7 @@ version = "0.1.0"
     }
 
     #[test]
-    fn package_manifest_rejects_empty_files() {
+    fn package_manifest_rejects_empty_fonts() {
         let err = testing::try_parse_manifest(
             r#"
 name = "example-font"
@@ -487,7 +550,10 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-files = []
+
+[sources.contents]
+type = "archive"
+fonts = []
 "#,
         )
         .unwrap_err();
@@ -527,6 +593,9 @@ display-name = ""
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         )
         .unwrap_err();
@@ -548,6 +617,9 @@ description = " example-font "
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         )
         .unwrap_err();
@@ -569,6 +641,9 @@ aliases = [" Example Font "]
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         )
         .unwrap_err();
@@ -589,6 +664,9 @@ version = "0.1.0"
 [[sources]]
 url = "file:///tmp/example-font_v0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         )
         .unwrap_err();
@@ -607,6 +685,9 @@ homepage = "file:///tmp/project"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         )
         .unwrap_err();
@@ -624,18 +705,22 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         );
 
+        let archive = manifest.sources[0].contents.as_archive().unwrap();
         assert_eq!(
-            manifest.sources[0]
-                .files
+            archive
+                .fonts
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>(),
             ["**/*.ttf", "**/*.otf", "**/*.ttc", "**/*.otc"]
         );
-        assert!(manifest.sources[0].ignore.is_empty());
+        assert!(archive.ignore.is_empty());
     }
 
     #[test]
@@ -648,13 +733,17 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-files = [{ glob = "fonts/*.ttf" }]
+
+[sources.contents]
+type = "archive"
+fonts = [{ glob = "fonts/*.ttf" }]
 ignore = ["fonts/exclude.ttf", { glob = "fonts/legacy/*.ttf" }]
 "#,
         );
 
+        let archive = manifest.sources[0].contents.as_archive().unwrap();
         assert_eq!(
-            manifest.sources[0]
+            archive
                 .ignore
                 .iter()
                 .map(ToString::to_string)

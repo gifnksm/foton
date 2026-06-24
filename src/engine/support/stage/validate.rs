@@ -70,7 +70,7 @@ enum ValidationErrorReport {
 pub(super) fn validate_and_prune_fonts<S>(
     cx: &ReportContext<S>,
     fonts_dir: &AbsolutePath,
-    extracted: &[ExtractedFile<'_>],
+    extracted: &[ExtractedFile],
 ) -> Result<Vec<FontEntry>, S::Error>
 where
     S: ReportScope,

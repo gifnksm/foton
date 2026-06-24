@@ -1,8 +1,7 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, path::PathBuf};
 
 use snafu::Snafu;
 
-pub(crate) use self::extract::*;
 use crate::{
     cli::{
         context::ReportContext,
@@ -10,7 +9,9 @@ use crate::{
             ErrorReportExt as _, NeverReport, OperationError as _, ReportScope, SubReportScope,
         },
     },
-    package::{FontEntry, PackageDefinition, PackageDirs, PackageId},
+    engine::support::stage::extract::ExtractResult,
+    package::{ArchiveOptions, FontEntry, PackageDefinition, PackageDirs, PackageId},
+    util::path::FileName,
 };
 
 mod download;
@@ -40,11 +41,55 @@ enum StageErrorReport {
     NoValidFonts { pkg_id: PackageId },
 }
 
-pub(crate) async fn stage_package<S>(
+#[derive(Debug, Clone)]
+pub(crate) struct ExtractedFile {
+    file_name: FileName,
+    title: Option<String>,
+}
+
+impl ExtractedFile {
+    pub(crate) fn file_name(&self) -> &FileName {
+        &self.file_name
+    }
+
+    pub(crate) fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ExtractEntry {
+    pub(crate) path_in_archive: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ExtractDetail<'s> {
+    FontFile {},
+    Archive(ArchiveExtractDetail<'s>),
+}
+
+impl<'s> ExtractDetail<'s> {
+    pub(crate) fn as_archive(&self) -> Option<&ArchiveExtractDetail<'s>> {
+        match self {
+            Self::FontFile {} => None,
+            Self::Archive(detail) => Some(detail),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ArchiveExtractDetail<'s> {
+    pub(crate) options: &'s ArchiveOptions,
+    pub(crate) included: Vec<ExtractEntry>,
+    pub(crate) excluded: Vec<ExtractEntry>,
+    pub(crate) suspicious_skips: Vec<ExtractEntry>,
+}
+
+pub(crate) async fn stage_package<'s, S>(
     cx: &ReportContext<S>,
     pkg_dirs: &PackageDirs,
-    pkg: &PackageDefinition,
-) -> Result<(Vec<FontEntry>, Vec<ExtractDetail>), S::Error>
+    pkg: &'s PackageDefinition,
+) -> Result<(Vec<FontEntry>, Vec<ExtractDetail<'s>>), S::Error>
 where
     S: ReportScope,
 {
@@ -53,22 +98,23 @@ where
     let reporter = cx.reporter();
     let package_fonts_dir = pkg_dirs.fonts_dir();
 
-    let mut file_names = vec![];
+    let mut extracted_files = vec![];
     let mut extract_details = vec![];
 
     for source in &pkg.sources {
-        let file = cx
+        let (file, file_size) = cx
             .cancel_token()
-            .run_until_cancelled(download::download_archive(&cx, &pkg.id, source))
+            .run_until_cancelled(download::download_source_file(&cx, &pkg.id, source))
             .await
             .unwrap_or(Err(S::Error::cancelled()))?;
-        let (source_file_names, extract_detail) =
-            extract_archive(&cx, file, &source.files, &source.ignore, package_fonts_dir)?;
-        file_names.extend(source_file_names);
-        extract_details.push(extract_detail);
+        let ExtractResult { files, detail } =
+            extract::extract_contents(&cx, file, file_size, source, package_fonts_dir)?;
+        extracted_files.extend(files);
+        extract_details.push(detail);
     }
 
-    let valid_entries = validate::validate_and_prune_fonts(&cx, package_fonts_dir, &file_names)?;
+    let valid_entries =
+        validate::validate_and_prune_fonts(&cx, package_fonts_dir, &extracted_files)?;
     if cx.cancel_token().is_cancelled() {
         return Err(S::Error::cancelled());
     }

@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io, iter,
+    io,
     path::PathBuf,
 };
 
@@ -16,9 +16,9 @@ use crate::{
             ScopeResultErrorExt as _,
         },
     },
-    engine::{self, ExtractDetail},
+    engine::{self, ArchiveExtractDetail, ExtractDetail},
     package::{
-        self, FileRule, IgnoreRule, PackageDefinition, PackageDirs, PackageId, PackageManifest,
+        self, FontRule, IgnoreRule, PackageDefinition, PackageDirs, PackageId, PackageManifest,
         PackageManifestError,
     },
     util::{
@@ -70,21 +70,29 @@ enum CheckManifestWarnReport {
     },
     #[snafu(display(
         concat_line!(
-            "`sources[{source_index}].files[{file_index}]` specifies exact `path` without `title`: {path}",
+            "`sources[{source_index}].contents` specifies a font file without `title`",
+            "prefer adding `title` so the font title used for search, recording, and registration is declared explicitly in the manifest",
+        ),
+        source_index = source_index,
+    ))]
+    FontFileMissingTitle { source_index: usize },
+    #[snafu(display(
+        concat_line!(
+            "`sources[{source_index}].contents.fonts[{file_index}]` specifies exact `path` without `title`: {path}",
             "prefer adding `title` so the font title used for search, recording, and registration is declared explicitly in the manifest",
         ),
         source_index = source_index,
         file_index = file_index,
         path = path.display(),
     ))]
-    FilePathMissingTitle {
+    ArchiveFontsPathMissingTitle {
         source_index: usize,
         file_index: usize,
         path: PathBuf,
     },
     #[snafu(display(
         concat_line!(
-            "`sources[{source_index}].files` contains `glob` rule: {glob}",
+            "`sources[{source_index}].contents.fonts` contains `glob` rule: {glob}",
             "this glob matches the following paths:",
             "{extracted}",
             "prefer explicit `path` entries when the intended files are known",
@@ -93,38 +101,38 @@ enum CheckManifestWarnReport {
         glob = glob,
         extracted = BulletList(&extracted.iter().map(|path| path.display()).collect::<Vec<_>>()),
     ))]
-    FilesGlob {
+    ArchiveFontsGlob {
         source_index: usize,
         glob: PathGlob,
         extracted: BTreeSet<PathBuf>,
     },
     #[snafu(display(
         concat_line!(
-            "`{rule}` in `sources[{source_index}].files` does not match any paths",
+            "`{rule}` in `sources[{source_index}].contents.fonts` does not match any paths",
             "consider removing it or replacing it with a `path` or `glob` that matches the intended files",
         ),
         source_index = source_index,
         rule = rule,
     ))]
-    FilesRuleMatchesNothing { source_index: usize, rule: FileRule },
+    ArchiveFontsRuleMatchesNothing { source_index: usize, rule: FontRule },
     #[snafu(display(
         concat_line!(
-            "`{rule}` in `sources[{source_index}].files` matches only paths that are also ignored",
+            "`{rule}` in `sources[{source_index}].contents.fonts` matches only paths that are also ignored",
             "{ignored}",
-            "consider removing the redundant `files` rule or adjusting `files` / `ignore` so the intended files are selected",
+            "consider removing the redundant `fonts` rule or adjusting `fonts` / `ignore` so the intended files are selected",
         ),
         source_index = source_index,
         rule = rule,
         ignored = BulletList(&ignored.iter().map(|path| path.display()).collect::<Vec<_>>()),
     ))]
-    FilesRuleMatchesOnlyIgnoredPaths {
+    ArchiveFontsRuleMatchesOnlyIgnoredPaths {
         source_index: usize,
-        rule: FileRule,
+        rule: FontRule,
         ignored: BTreeSet<PathBuf>,
     },
     #[snafu(display(
         concat_line!(
-            "`sources[{source_index}].files` contains multiple rules that match the same path: {path}",
+            "`sources[{source_index}].contents.fonts` contains multiple rules that match the same path: {path}",
             "{rules}",
             "consider removing redundant rules",
         ),
@@ -132,33 +140,33 @@ enum CheckManifestWarnReport {
         path = path.display(),
         rules = BulletList(rules),
     ))]
-    MultipleFilesRulesMatchSamePath {
+    MultipleArchiveFontsRulesMatchSamePath {
         source_index: usize,
         path: PathBuf,
-        rules: Vec<FileRule>,
+        rules: Vec<FontRule>,
     },
     #[snafu(display(
         concat_line!(
-            "`{rule}` in `sources[{source_index}].ignore` does not match any paths",
+            "`{rule}` in `sources[{source_index}].contents.ignore` does not match any paths",
             "consider removing it or replacing it with a `path` or `glob` that matches the intended files",
         ),
         source_index = source_index,
         rule = rule,
     ))]
-    IgnoreRuleMatchesNothing {
+    ArchiveIgnoreRuleMatchesNothing {
         source_index: usize,
         rule: IgnoreRule,
     },
     #[snafu(display(
         concat_line!(
-            "`sources[{source_index}]` contains font-like paths that match neither `files` nor `ignore`",
+            "`sources[{source_index}]` contains font-like paths that match neither `fonts` nor `ignore`",
             "{skipped}",
-            "consider adding them to `files` or `ignore` explicitly, depending on the intended behavior",
+            "consider adding them to `fonts` or `ignore` explicitly, depending on the intended behavior",
         ),
         source_index = source_index,
         skipped = BulletList(&skipped.iter().map(|path| path.display()).collect::<Vec<_>>()),
     ))]
-    SuspiciousSkip {
+    ArchiveSuspiciousSkip {
         source_index: usize,
         skipped: BTreeSet<PathBuf>,
     },
@@ -239,17 +247,18 @@ pub(crate) async fn check_manifest(
 fn check_fields(
     cx: &ReportContext<CheckManifestScope>,
     pkg: &PackageDefinition,
-    extract_details: &[ExtractDetail],
+    extract_details: &[ExtractDetail<'_>],
 ) -> Result<(), CheckManifestError> {
     let mut reports = vec![];
 
     check_missing_fields(pkg, &mut reports);
     check_homepage_and_repository_url(pkg, &mut reports);
     check_display_name_duplication(pkg, &mut reports);
-    check_file_path_missing_title(pkg, &mut reports);
-    check_files_extraction(pkg, extract_details, &mut reports);
-    check_ignore_extraction(pkg, extract_details, &mut reports);
-    check_suspicious_skips(extract_details, &mut reports);
+    check_font_file_missing_title(pkg, &mut reports);
+    check_archive_fonts_path_missing_title(pkg, &mut reports);
+    check_archive_fonts_extraction(pkg, extract_details, &mut reports);
+    check_archive_ignore_extraction(pkg, extract_details, &mut reports);
+    check_archive_suspicious_skips(extract_details, &mut reports);
 
     let mut err = None;
     for report in reports {
@@ -318,17 +327,34 @@ fn check_display_name_duplication(
     }
 }
 
-fn check_file_path_missing_title(
+fn check_font_file_missing_title(
     pkg: &PackageDefinition,
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
     for (source_index, source) in pkg.sources.iter().enumerate() {
-        for (file_index, file_rule) in source.files.iter().enumerate() {
+        let Some(font_file) = source.contents.as_font_file() else {
+            continue;
+        };
+        if font_file.title.is_none() {
+            reports.push(FontFileMissingTitleSnafu { source_index }.build());
+        }
+    }
+}
+
+fn check_archive_fonts_path_missing_title(
+    pkg: &PackageDefinition,
+    reports: &mut Vec<CheckManifestWarnReport>,
+) {
+    for (source_index, source) in pkg.sources.iter().enumerate() {
+        let Some(archive) = source.contents.as_archive() else {
+            continue;
+        };
+        for (file_index, file_rule) in archive.fonts.iter().enumerate() {
             if let Some(path) = file_rule.matcher().as_path()
                 && file_rule.title().is_none()
             {
                 reports.push(
-                    FilePathMissingTitleSnafu {
+                    ArchiveFontsPathMissingTitleSnafu {
                         source_index,
                         file_index,
                         path: path.original(),
@@ -340,7 +366,10 @@ fn check_file_path_missing_title(
     }
 }
 
-fn collect_file_rule_matches(extract_detail: &ExtractDetail, rule: &FileRule) -> BTreeSet<PathBuf> {
+fn collect_file_rule_matches(
+    extract_detail: &ArchiveExtractDetail<'_>,
+    rule: &FontRule,
+) -> BTreeSet<PathBuf> {
     extract_detail
         .included
         .iter()
@@ -350,8 +379,8 @@ fn collect_file_rule_matches(extract_detail: &ExtractDetail, rule: &FileRule) ->
 }
 
 fn collect_ignored_file_rule_matches(
-    extract_detail: &ExtractDetail,
-    rule: &FileRule,
+    extract_detail: &ArchiveExtractDetail<'_>,
+    rule: &FontRule,
 ) -> BTreeSet<PathBuf> {
     extract_detail
         .excluded
@@ -362,7 +391,7 @@ fn collect_ignored_file_rule_matches(
 }
 
 fn collect_ignore_rule_matches(
-    extract_detail: &ExtractDetail,
+    extract_detail: &ArchiveExtractDetail<'_>,
     rule: &IgnoreRule,
 ) -> BTreeSet<PathBuf> {
     extract_detail
@@ -373,17 +402,18 @@ fn collect_ignore_rule_matches(
         .collect()
 }
 
-fn check_files_extraction(
+fn check_archive_fonts_extraction(
     pkg: &PackageDefinition,
-    extract_details: &[ExtractDetail],
+    extract_details: &[ExtractDetail<'_>],
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
     assert_eq!(pkg.sources.len(), extract_details.len());
-    for (source_index, (source, extract_detail)) in
-        iter::zip(&pkg.sources, extract_details).enumerate()
-    {
+    for (source_index, extract_detail) in extract_details.iter().enumerate() {
+        let Some(extract_detail) = extract_detail.as_archive() else {
+            continue;
+        };
         let mut source_rules: BTreeMap<PathBuf, Vec<_>> = BTreeMap::new();
-        for rule in &source.files {
+        for rule in &extract_detail.options.fonts {
             let extracted = collect_file_rule_matches(extract_detail, rule);
             let ignored = collect_ignored_file_rule_matches(extract_detail, rule);
             for path in &extracted {
@@ -395,7 +425,7 @@ fn check_files_extraction(
             if extracted.is_empty() {
                 if ignored.is_empty() {
                     reports.push(
-                        FilesRuleMatchesNothingSnafu {
+                        ArchiveFontsRuleMatchesNothingSnafu {
                             source_index,
                             rule: rule.clone(),
                         }
@@ -403,7 +433,7 @@ fn check_files_extraction(
                     );
                 } else {
                     reports.push(
-                        FilesRuleMatchesOnlyIgnoredPathsSnafu {
+                        ArchiveFontsRuleMatchesOnlyIgnoredPathsSnafu {
                             source_index,
                             rule: rule.clone(),
                             ignored,
@@ -413,7 +443,7 @@ fn check_files_extraction(
                 }
             } else if let Some(glob) = rule.matcher().as_glob() {
                 reports.push(
-                    FilesGlobSnafu {
+                    ArchiveFontsGlobSnafu {
                         source_index,
                         glob: glob.clone(),
                         extracted,
@@ -425,7 +455,7 @@ fn check_files_extraction(
         for (path, rules) in source_rules {
             if rules.len() > 1 {
                 reports.push(
-                    MultipleFilesRulesMatchSamePathSnafu {
+                    MultipleArchiveFontsRulesMatchSamePathSnafu {
                         source_index,
                         path,
                         rules,
@@ -437,20 +467,21 @@ fn check_files_extraction(
     }
 }
 
-fn check_ignore_extraction(
+fn check_archive_ignore_extraction(
     pkg: &PackageDefinition,
-    extract_details: &[ExtractDetail],
+    extract_details: &[ExtractDetail<'_>],
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
     assert_eq!(pkg.sources.len(), extract_details.len());
-    for (source_index, (source, extract_detail)) in
-        iter::zip(&pkg.sources, extract_details).enumerate()
-    {
-        for rule in &source.ignore {
+    for (source_index, extract_detail) in extract_details.iter().enumerate() {
+        let Some(extract_detail) = extract_detail.as_archive() else {
+            continue;
+        };
+        for rule in &extract_detail.options.ignore {
             let extracted = collect_ignore_rule_matches(extract_detail, rule);
             if extracted.is_empty() {
                 reports.push(
-                    IgnoreRuleMatchesNothingSnafu {
+                    ArchiveIgnoreRuleMatchesNothingSnafu {
                         source_index,
                         rule: rule.clone(),
                     }
@@ -461,11 +492,14 @@ fn check_ignore_extraction(
     }
 }
 
-fn check_suspicious_skips(
-    extract_details: &[ExtractDetail],
+fn check_archive_suspicious_skips(
+    extract_details: &[ExtractDetail<'_>],
     reports: &mut Vec<CheckManifestWarnReport>,
 ) {
     for (source_index, extract_detail) in extract_details.iter().enumerate() {
+        let Some(extract_detail) = extract_detail.as_archive() else {
+            continue;
+        };
         if !extract_detail.suspicious_skips.is_empty() {
             let skipped: BTreeSet<_> = extract_detail
                 .suspicious_skips
@@ -473,7 +507,7 @@ fn check_suspicious_skips(
                 .map(|entry| entry.path_in_archive.clone())
                 .collect();
             reports.push(
-                SuspiciousSkipSnafu {
+                ArchiveSuspiciousSkipSnafu {
                     source_index,
                     skipped,
                 }
@@ -488,7 +522,7 @@ mod tests {
     use std::assert_matches;
 
     use super::*;
-    use crate::{engine::ExtractEntry, util::testing};
+    use crate::{engine::ExtractEntry, package::ArchiveOptions, util::testing};
 
     fn to_extract_entries(paths: &[&str]) -> Vec<ExtractEntry> {
         paths
@@ -500,16 +534,18 @@ mod tests {
             .collect()
     }
 
-    fn make_extract_detail(
+    fn make_archive_extract_detail<'s>(
+        options: &'s ArchiveOptions,
         included: &[&str],
         excluded: &[&str],
         suspicious_skips: &[&str],
-    ) -> ExtractDetail {
-        ExtractDetail {
+    ) -> ExtractDetail<'s> {
+        ExtractDetail::Archive(ArchiveExtractDetail {
+            options,
             included: to_extract_entries(included),
             excluded: to_extract_entries(excluded),
             suspicious_skips: to_extract_entries(suspicious_skips),
-        }
+        })
     }
 
     #[test]
@@ -522,6 +558,9 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         );
         let mut reports = vec![];
@@ -550,6 +589,9 @@ repository = "https://example.com/repo"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         );
         let mut reports = vec![];
@@ -574,6 +616,9 @@ aliases = ["UDP Gothic"]
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         );
         let mut reports = vec![];
@@ -588,7 +633,32 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     }
 
     #[test]
-    fn check_file_path_missing_title_reports_file_rules_with_exact_path_and_no_title() {
+    fn check_font_file_missing_title_reports_font_file_source_without_title() {
+        let pkg = testing::parse_manifest_to_definition(
+            r#"
+name = "example-font"
+version = "0.1.0"
+
+[[sources]]
+url = "https://example.com/Example-Regular.ttf"
+hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "font-file"
+"#,
+        );
+        let mut reports = vec![];
+
+        check_font_file_missing_title(&pkg, &mut reports);
+
+        assert_matches!(
+            reports.as_slice(),
+            [CheckManifestWarnReport::FontFileMissingTitle { source_index }] if *source_index == 0
+        );
+    }
+
+    #[test]
+    fn check_archive_fonts_path_missing_title_reports_file_rules_with_exact_path_and_no_title() {
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
@@ -597,22 +667,25 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-files = ["fonts/actual.ttf"]
+
+[sources.contents]
+type = "archive"
+fonts = ["fonts/actual.ttf"]
 "#,
         );
         let mut reports = vec![];
 
-        check_file_path_missing_title(&pkg, &mut reports);
+        check_archive_fonts_path_missing_title(&pkg, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
-            [CheckManifestWarnReport::FilePathMissingTitle { source_index, file_index, path }]
+            [CheckManifestWarnReport::ArchiveFontsPathMissingTitle { source_index, file_index, path }]
                 if *source_index == 0 && *file_index == 0 && path == "fonts/actual.ttf"
         );
     }
 
     #[test]
-    fn check_files_extraction_reports_rules_matching_no_paths() {
+    fn check_archive_fonts_extraction_reports_rules_matching_no_paths() {
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
@@ -621,23 +694,32 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-files = ["fonts/missing.ttf"]
+
+[sources.contents]
+type = "archive"
+fonts = ["fonts/missing.ttf"]
 "#,
         );
-        let extract_details = [make_extract_detail(&["fonts/actual.ttf"], &[], &[])];
+        let options = pkg.sources[0].contents.as_archive().unwrap();
+        let extract_details = [make_archive_extract_detail(
+            options,
+            &["fonts/actual.ttf"],
+            &[],
+            &[],
+        )];
         let mut reports = vec![];
 
-        check_files_extraction(&pkg, &extract_details, &mut reports);
+        check_archive_fonts_extraction(&pkg, &extract_details, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
-            [CheckManifestWarnReport::FilesRuleMatchesNothing { source_index, rule }]
+            [CheckManifestWarnReport::ArchiveFontsRuleMatchesNothing { source_index, rule }]
                 if *source_index == 0 && rule.to_string() == "fonts/missing.ttf"
         );
     }
 
     #[test]
-    fn check_files_extraction_reports_rules_matching_only_ignored_paths() {
+    fn check_archive_fonts_extraction_reports_rules_matching_only_ignored_paths() {
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
@@ -646,22 +728,27 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-files = ["fonts/skip.ttf"]
+
+[sources.contents]
+type = "archive"
+fonts = ["fonts/skip.ttf"]
 ignore = ["fonts/skip.ttf"]
 "#,
         );
-        let extract_details = [make_extract_detail(
+        let options = pkg.sources[0].contents.as_archive().unwrap();
+        let extract_details = [make_archive_extract_detail(
+            options,
             &["fonts/actual.ttf"],
             &["fonts/skip.ttf"],
             &[],
         )];
         let mut reports = vec![];
 
-        check_files_extraction(&pkg, &extract_details, &mut reports);
+        check_archive_fonts_extraction(&pkg, &extract_details, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
-            [CheckManifestWarnReport::FilesRuleMatchesOnlyIgnoredPaths {
+            [CheckManifestWarnReport::ArchiveFontsRuleMatchesOnlyIgnoredPaths {
                 source_index,
                 rule,
                 ignored,
@@ -672,7 +759,7 @@ ignore = ["fonts/skip.ttf"]
     }
 
     #[test]
-    fn check_files_extraction_reports_glob_rules() {
+    fn check_archive_fonts_extraction_reports_glob_rules() {
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
@@ -681,17 +768,26 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-files = [{ glob = "fonts/a.ttf" }]
+
+[sources.contents]
+type = "archive"
+fonts = [{ glob = "fonts/a.ttf" }]
 "#,
         );
-        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[], &[])];
+        let options = pkg.sources[0].contents.as_archive().unwrap();
+        let extract_details = [make_archive_extract_detail(
+            options,
+            &["fonts/a.ttf"],
+            &[],
+            &[],
+        )];
         let mut reports = vec![];
 
-        check_files_extraction(&pkg, &extract_details, &mut reports);
+        check_archive_fonts_extraction(&pkg, &extract_details, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
-            [CheckManifestWarnReport::FilesGlob { source_index, glob, extracted }]
+            [CheckManifestWarnReport::ArchiveFontsGlob { source_index, glob, extracted }]
                 if *source_index == 0
                     && glob.as_str() == "fonts/a.ttf"
                     && extracted == &BTreeSet::from([PathBuf::from("fonts/a.ttf")])
@@ -699,7 +795,7 @@ files = [{ glob = "fonts/a.ttf" }]
     }
 
     #[test]
-    fn check_files_extraction_reports_multiple_rules_matching_same_path() {
+    fn check_archive_fonts_extraction_reports_multiple_rules_matching_same_path() {
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
@@ -708,17 +804,26 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-files = ["fonts/a.ttf", { path = "fonts/a.ttf" }]
+
+[sources.contents]
+type = "archive"
+fonts = ["fonts/a.ttf", { path = "fonts/a.ttf" }]
 "#,
         );
-        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[], &[])];
+        let options = pkg.sources[0].contents.as_archive().unwrap();
+        let extract_details = [make_archive_extract_detail(
+            options,
+            &["fonts/a.ttf"],
+            &[],
+            &[],
+        )];
         let mut reports = vec![];
 
-        check_files_extraction(&pkg, &extract_details, &mut reports);
+        check_archive_fonts_extraction(&pkg, &extract_details, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
-            [CheckManifestWarnReport::MultipleFilesRulesMatchSamePath {
+            [CheckManifestWarnReport::MultipleArchiveFontsRulesMatchSamePath {
                 source_index,
                 path,
                 rules,
@@ -730,7 +835,7 @@ files = ["fonts/a.ttf", { path = "fonts/a.ttf" }]
     }
 
     #[test]
-    fn check_files_extraction_reports_glob_rule_and_duplicate_match_independently() {
+    fn check_archive_fonts_extraction_reports_glob_rule_and_duplicate_match_independently() {
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
@@ -739,17 +844,26 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-files = [{ glob = "fonts/*.ttf" }, "fonts/a.ttf"]
+
+[sources.contents]
+type = "archive"
+fonts = [{ glob = "fonts/*.ttf" }, "fonts/a.ttf"]
 "#,
         );
-        let extract_details = [make_extract_detail(&["fonts/a.ttf"], &[], &[])];
+        let options = pkg.sources[0].contents.as_archive().unwrap();
+        let extract_details = [make_archive_extract_detail(
+            options,
+            &["fonts/a.ttf"],
+            &[],
+            &[],
+        )];
         let mut reports = vec![];
 
-        check_files_extraction(&pkg, &extract_details, &mut reports);
+        check_archive_fonts_extraction(&pkg, &extract_details, &mut reports);
 
         assert!(reports.iter().any(|report| matches!(
             report,
-            CheckManifestWarnReport::FilesGlob {
+            CheckManifestWarnReport::ArchiveFontsGlob {
                 source_index,
                 glob,
                 extracted,
@@ -759,7 +873,7 @@ files = [{ glob = "fonts/*.ttf" }, "fonts/a.ttf"]
         )));
         assert!(reports.iter().any(|report| matches!(
             report,
-            CheckManifestWarnReport::MultipleFilesRulesMatchSamePath {
+            CheckManifestWarnReport::MultipleArchiveFontsRulesMatchSamePath {
                 source_index,
                 path,
                 rules,
@@ -771,7 +885,7 @@ files = [{ glob = "fonts/*.ttf" }, "fonts/a.ttf"]
     }
 
     #[test]
-    fn check_ignore_extraction_reports_rules_matching_no_paths() {
+    fn check_archive_ignore_extraction_reports_rules_matching_no_paths() {
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
@@ -780,23 +894,32 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 ignore = ["fonts/missing.ttf"]
 "#,
         );
-        let extract_details = [make_extract_detail(&["fonts/actual.ttf"], &[], &[])];
+        let options = pkg.sources[0].contents.as_archive().unwrap();
+        let extract_details = [make_archive_extract_detail(
+            options,
+            &["fonts/actual.ttf"],
+            &[],
+            &[],
+        )];
         let mut reports = vec![];
 
-        check_ignore_extraction(&pkg, &extract_details, &mut reports);
+        check_archive_ignore_extraction(&pkg, &extract_details, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
-            [CheckManifestWarnReport::IgnoreRuleMatchesNothing { source_index, rule }]
+            [CheckManifestWarnReport::ArchiveIgnoreRuleMatchesNothing { source_index, rule }]
                 if *source_index == 0 && rule.to_string() == "fonts/missing.ttf"
         );
     }
 
     #[test]
-    fn check_ignore_extraction_does_not_report_when_rule_matches_paths() {
+    fn check_archive_ignore_extraction_does_not_report_when_rule_matches_paths() {
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
@@ -805,35 +928,45 @@ version = "0.1.0"
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 ignore = ["fonts/skip.ttf"]
 "#,
         );
-        let extract_details = [make_extract_detail(
+        let options = pkg.sources[0].contents.as_archive().unwrap();
+        let extract_details = [make_archive_extract_detail(
+            options,
             &["fonts/actual.ttf"],
             &["fonts/skip.ttf"],
             &[],
         )];
         let mut reports = vec![];
 
-        check_ignore_extraction(&pkg, &extract_details, &mut reports);
+        check_archive_ignore_extraction(&pkg, &extract_details, &mut reports);
 
         assert!(reports.is_empty());
     }
 
     #[test]
-    fn check_suspicious_skips_reports_font_like_paths_not_covered_by_files_or_ignore() {
-        let extract_details = [make_extract_detail(
+    fn check_archive_suspicious_skips_reports_font_like_paths_not_covered_by_files_or_ignore() {
+        let options = &ArchiveOptions {
+            fonts: vec![],
+            ignore: vec![],
+        };
+        let extract_details = [make_archive_extract_detail(
+            options,
             &["fonts/actual.ttf"],
             &[],
             &["fonts/SKIP.TTF", "fonts/skip.otf"],
         )];
         let mut reports = vec![];
 
-        check_suspicious_skips(&extract_details, &mut reports);
+        check_archive_suspicious_skips(&extract_details, &mut reports);
 
         assert_matches!(
             reports.as_slice(),
-            [CheckManifestWarnReport::SuspiciousSkip { source_index, skipped }]
+            [CheckManifestWarnReport::ArchiveSuspiciousSkip { source_index, skipped }]
                 if *source_index == 0
                     && skipped == &BTreeSet::from([
                         PathBuf::from("fonts/SKIP.TTF"),

@@ -14,7 +14,8 @@ On Windows, the configuration file is stored at:
 
 The configuration file currently controls:
 
-- install-time safety limits for downloaded archives and extracted files
+- install-time safety limits for downloaded package sources and the font files
+  selected from them
 - the set of configured package registries
 - whether each configured registry is enabled by default
 
@@ -33,9 +34,9 @@ This means:
 
 ```toml
 [install]
-max-archive-size-bytes = 536870912
-max-extracted-files = 1000
-max-extracted-file-size-bytes = 52428800
+max-source-size-bytes = 536870912
+max-fonts-per-package-source = 1000
+max-font-file-size-bytes = 52428800
 
 [registries.foton]
 source = "git+https://github.com/gifnksm/foton-registry.git"
@@ -59,6 +60,7 @@ Defaults are listed in the metadata bullets for the relevant sections and keys.
 
 The `install` section defines safety limits used while processing package
 sources.
+All install limit values must be positive integers greater than zero.
 
 - **Type**: table
 - **Default**: built-in install limits are used if this section is omitted
@@ -66,9 +68,9 @@ sources.
 
   ```toml
   [install]
-  max-archive-size-bytes = 536870912
-  max-extracted-files = 1000
-  max-extracted-file-size-bytes = 52428800
+  max-source-size-bytes = 536870912
+  max-fonts-per-package-source = 1000
+  max-font-file-size-bytes = 52428800
   ```
 
 ### `registries` (optional)
@@ -91,43 +93,53 @@ search or install from.
 
 ## Install section fields
 
-### `install.max-archive-size-bytes` (optional)
+### `install.max-source-size-bytes` (optional)
 
-The maximum allowed size, in bytes, of a downloaded archive or source file.
+The maximum allowed size, in bytes, of one downloaded package source.
+This limit applies before `foton` interprets the source as a direct font file or
+as an archive.
 
-- **Type**: unsigned integer
+- **Type**: positive unsigned integer
 - **Default**: `536870912` (512MiB)
 - **Example**:
 
   ```toml
   [install]
-  max-archive-size-bytes = 536870912
+  max-source-size-bytes = 536870912
   ```
 
-### `install.max-extracted-files` (optional)
+### `install.max-fonts-per-package-source` (optional)
 
-The maximum number of files that may be extracted from a source archive.
+The maximum number of font files that `foton` may take from one package
+source.
+For sources with `contents.type = "archive"`, this limits how many archive
+entries may become installed font files.
+For sources with `contents.type = "font-file"`, the source itself counts as
+one font file.
 
-- **Type**: unsigned integer
+- **Type**: positive unsigned integer
 - **Default**: `1000`
 - **Example**:
 
   ```toml
   [install]
-  max-extracted-files = 1000
+  max-fonts-per-package-source = 1000
   ```
 
-### `install.max-extracted-file-size-bytes` (optional)
+### `install.max-font-file-size-bytes` (optional)
 
-The maximum allowed size, in bytes, of a single extracted file.
+The maximum allowed size, in bytes, of one font file selected for
+installation.
+This limit applies both to sources with `contents.type = "font-file"` and to
+individual font files selected from sources with `contents.type = "archive"`.
 
-- **Type**: unsigned integer
+- **Type**: positive unsigned integer
 - **Default**: `52428800` (50MiB)
 - **Example**:
 
   ```toml
   [install]
-  max-extracted-file-size-bytes = 52428800
+  max-font-file-size-bytes = 52428800
   ```
 
 ## Registry entry fields

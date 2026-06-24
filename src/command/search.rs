@@ -233,6 +233,9 @@ description = "Example font family for UI and coding"
 [[sources]]
 url = "https://example.com/example-font-1.0.0.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[sources.contents]
+type = "archive"
 "#,
         );
         let pkg = Arc::new(manifest.into());

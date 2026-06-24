@@ -9,18 +9,21 @@ use crate::{
     package::manifest,
     util::{
         glob::PathGlob,
+        path::FileName,
         path_matcher::{PathMatcher, PathMatcherError},
     },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(into = "RawFileRule")]
-pub(crate) struct FileRule {
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct FontRule {
     matcher: PathMatcher,
+    file_name: Option<FileName>,
     title: Option<String>,
 }
 
-impl FileRule {
+impl FontRule {
     #[cfg(test)]
     pub(crate) fn path<P>(path: P) -> Result<Self, PathRuleError>
     where
@@ -28,6 +31,7 @@ impl FileRule {
     {
         Ok(Self {
             matcher: PathMatcher::path(path)?,
+            file_name: None,
             title: None,
         })
     }
@@ -35,6 +39,7 @@ impl FileRule {
     pub(crate) fn glob(glob: PathGlob) -> Self {
         Self {
             matcher: PathMatcher::glob(glob),
+            file_name: None,
             title: None,
         }
     }
@@ -50,12 +55,16 @@ impl FileRule {
         &self.matcher
     }
 
+    pub(crate) fn file_name(&self) -> Option<&FileName> {
+        self.file_name.as_ref()
+    }
+
     pub(crate) fn title(&self) -> Option<&str> {
         self.title.as_deref()
     }
 }
 
-impl Display for FileRule {
+impl Display for FontRule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.matcher, f)
     }
@@ -63,6 +72,7 @@ impl Display for FileRule {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(into = "RawIgnoreRule")]
+#[serde(rename_all = "kebab-case")]
 pub(crate) struct IgnoreRule {
     matcher: PathMatcher,
 }
@@ -98,6 +108,8 @@ pub(crate) enum PathRuleError {
     EmptyPath,
     #[display("exactly one of `path` or `glob` must be specified")]
     InvalidMatcher,
+    #[display("`file-name` may be specified only together with `path`")]
+    FileNameWithoutPath,
     #[display("`title` may be specified only together with `path`")]
     TitleWithoutPath,
 }
@@ -112,11 +124,14 @@ impl From<PathMatcherError> for PathRuleError {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 struct RawFileRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     glob: Option<PathGlob>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    file_name: Option<FileName>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -127,6 +142,7 @@ struct RawFileRule {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 struct RawIgnoreRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     path: Option<String>,
@@ -134,7 +150,7 @@ struct RawIgnoreRule {
     glob: Option<PathGlob>,
 }
 
-impl<'de> Deserialize<'de> for FileRule {
+impl<'de> Deserialize<'de> for FontRule {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -142,7 +158,7 @@ impl<'de> Deserialize<'de> for FileRule {
         struct Visitor;
 
         impl<'de> de::Visitor<'de> for Visitor {
-            type Value = FileRule;
+            type Value = FontRule;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "a path string or an object with `path` / `glob`")
@@ -152,8 +168,9 @@ impl<'de> Deserialize<'de> for FileRule {
             where
                 E: de::Error,
             {
-                Ok(FileRule {
+                Ok(FontRule {
                     matcher: PathMatcher::path(value.to_owned()).map_err(E::custom)?,
+                    file_name: None,
                     title: None,
                 })
             }
@@ -162,8 +179,9 @@ impl<'de> Deserialize<'de> for FileRule {
             where
                 E: de::Error,
             {
-                Ok(FileRule {
+                Ok(FontRule {
                     matcher: PathMatcher::path(value).map_err(E::custom)?,
+                    file_name: None,
                     title: None,
                 })
             }
@@ -173,7 +191,7 @@ impl<'de> Deserialize<'de> for FileRule {
                 A: de::MapAccess<'de>,
             {
                 let raw = RawFileRule::deserialize(MapAccessDeserializer::new(map))?;
-                FileRule::try_from(raw).map_err(de::Error::custom)
+                FontRule::try_from(raw).map_err(de::Error::custom)
             }
         }
 
@@ -226,35 +244,51 @@ impl<'de> Deserialize<'de> for IgnoreRule {
     }
 }
 
-impl TryFrom<RawFileRule> for FileRule {
+impl TryFrom<RawFileRule> for FontRule {
     type Error = PathRuleError;
 
     fn try_from(value: RawFileRule) -> Result<Self, Self::Error> {
-        let RawFileRule { path, glob, title } = value;
-        let (matcher, title) = match (path, glob, title) {
-            (Some(path), None, title) => (PathMatcher::path(path)?, title),
-            (None, Some(glob), None) => (PathMatcher::glob(glob), None),
-            (None, Some(_), Some(_)) => return Err(PathRuleError::TitleWithoutPath),
-            (Some(_), Some(_), _) | (None, None, _) => {
+        let RawFileRule {
+            path,
+            glob,
+            file_name,
+            title,
+        } = value;
+        let (matcher, file_name, title) = match (path, glob, file_name, title) {
+            (Some(path), None, file_name, title) => (PathMatcher::path(path)?, file_name, title),
+            (None, Some(glob), None, None) => (PathMatcher::glob(glob), None, None),
+            (None, Some(_), Some(_), _) => return Err(PathRuleError::FileNameWithoutPath),
+            (None, Some(_), _, Some(_)) => return Err(PathRuleError::TitleWithoutPath),
+            (Some(_), Some(_), _, _) | (None, None, _, _) => {
                 return Err(PathRuleError::InvalidMatcher);
             }
         };
-        Ok(Self { matcher, title })
+        Ok(Self {
+            matcher,
+            file_name,
+            title,
+        })
     }
 }
 
-impl From<FileRule> for RawFileRule {
-    fn from(value: FileRule) -> Self {
-        let FileRule { matcher, title } = value;
+impl From<FontRule> for RawFileRule {
+    fn from(value: FontRule) -> Self {
+        let FontRule {
+            matcher,
+            file_name,
+            title,
+        } = value;
         match matcher {
             PathMatcher::Path(path) => Self {
                 path: Some(path.into_original()),
                 glob: None,
+                file_name,
                 title,
             },
             PathMatcher::Glob(glob) => Self {
                 path: None,
                 glob: Some(glob),
+                file_name: None,
                 title: None,
             },
         }
@@ -300,7 +334,7 @@ mod tests {
     fn file_rule_deserializes_path_string() {
         #[derive(Deserialize)]
         struct Wrapper {
-            value: FileRule,
+            value: FontRule,
         }
 
         let wrapper: Wrapper = toml::from_str("value = \"fonts/A.ttf\"").unwrap();
@@ -313,14 +347,14 @@ mod tests {
 
     #[test]
     fn file_rule_deserializes_path_object() {
-        let rule: FileRule = toml::from_str("path = \"fonts/A.ttf\"").unwrap();
+        let rule: FontRule = toml::from_str("path = \"fonts/A.ttf\"").unwrap();
 
         assert_eq!(rule.matcher(), &PathMatcher::path("fonts/A.ttf").unwrap());
     }
 
     #[test]
     fn file_rule_deserializes_glob_object() {
-        let rule: FileRule = toml::from_str("glob = \"**/*.ttf\"").unwrap();
+        let rule: FontRule = toml::from_str("glob = \"**/*.ttf\"").unwrap();
 
         assert_eq!(
             rule.matcher(),
@@ -330,7 +364,7 @@ mod tests {
 
     #[test]
     fn file_rule_rejects_unknown_fields() {
-        let err = toml::from_str::<FileRule>(
+        let err = toml::from_str::<FontRule>(
             "path = \"fonts/A.ttf\"\n__foton_unused_field__ = \"B.ttf\"",
         )
         .unwrap_err();
@@ -345,7 +379,7 @@ mod tests {
 
     #[test]
     fn file_rule_rejects_path_and_glob_together() {
-        let err = toml::from_str::<FileRule>("path = \"fonts/A.ttf\"\nglob = \"fonts/*.ttf\"")
+        let err = toml::from_str::<FontRule>("path = \"fonts/A.ttf\"\nglob = \"fonts/*.ttf\"")
             .unwrap_err();
 
         assert!(
@@ -358,7 +392,7 @@ mod tests {
 
     #[test]
     fn file_rule_rejects_title_without_path() {
-        let err = toml::from_str::<FileRule>("glob = \"fonts/*.ttf\"\ntitle = \"Example Font\"")
+        let err = toml::from_str::<FontRule>("glob = \"fonts/*.ttf\"\ntitle = \"Example Font\"")
             .unwrap_err();
 
         assert!(
@@ -399,7 +433,7 @@ mod tests {
 
     #[test]
     fn file_rule_glob_constructor_builds_glob_rule() {
-        let rule = FileRule::glob(PathGlob::new("**/*.ttf").unwrap());
+        let rule = FontRule::glob(PathGlob::new("**/*.ttf").unwrap());
 
         assert_eq!(
             rule.matcher(),

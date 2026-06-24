@@ -30,7 +30,10 @@ license = "OFL-1.1"
 [[sources]]
 url = "https://example.com/downloads/example-font-1.2.3.zip"
 hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-files = [
+
+[sources.contents]
+type = "archive"
+fonts = [
   { path = "example-font-1.2.3/ExampleFont-Regular.ttf", title = "Example Font Regular" },
   { path = "example-font-1.2.3/ExampleFont-Bold.ttf", title = "Example Font Bold" },
 ]
@@ -45,10 +48,14 @@ For example, it can report:
 - missing recommended fields such as `display-name`, `description`, or
   `license`
 - duplicate display names after normalization
-- exact `path` entries in `files` without `title`
-- `files` or `ignore` rules that match nothing
-- `glob` entries in `files`
-- font-like files in a source that match neither `files` nor `ignore`
+- source-content issues such as:
+  - for sources with `contents.type = "font-file"`:
+    - no `title`
+  - for sources with `contents.type = "archive"`:
+    - exact `path` entries in `fonts` without `title`
+    - `fonts` or `ignore` rules that match nothing
+    - `glob` entries in `fonts`
+    - font-like files that match neither `fonts` nor `ignore`
 
 ## Package version format and ordering
 
@@ -271,8 +278,8 @@ package.
 ### `sources` (required)
 
 A non-empty array of source objects.
-Each source describes one downloadable archive or file from which `foton` can
-install fonts.
+Each source describes one downloadable font file or archive from which `foton`
+can install fonts.
 
 - **Type**: non-empty array of source objects
 - **Example**:
@@ -281,6 +288,9 @@ install fonts.
   [[sources]]
   url = "https://example.com/downloads/example-font-1.2.3.zip"
   hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+  [sources.contents]
+  type = "archive"
   ```
 
 ## Source fields
@@ -315,25 +325,106 @@ The expected digest used to verify source integrity.
   hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
   ```
 
-### `sources[].files` (optional, recommended)
+### `sources[].contents` (required)
 
-Rules that select font files from the downloaded source.
+A table that describes what the downloaded source contains.
+Use `contents.type = "font-file"` when the downloaded source is itself one
+font file.
+Use `contents.type = "archive"` when the downloaded source is an archive that
+contains one or more font files.
+
+- **Type**: contents table
+- **Example**:
+
+  ```toml
+  [[sources]]
+  url = "https://example.com/downloads/example-font-1.2.3.zip"
+  hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+  [sources.contents]
+  type = "archive"
+  ```
+
+### `sources[].contents.type` (required)
+
+The kind of downloaded source.
+
+- **Type**: string
+- **Allowed values**:
+  - `"font-file"` — the downloaded source is one font file
+  - `"archive"` — the downloaded source is an archive that contains font files
+- **Example**:
+
+  ```toml
+  [sources.contents]
+  type = "font-file"
+  ```
+
+### `sources[].contents.title` (optional, recommended for sources with `contents.type = "font-file"`)
+
+The title to record for a source with `contents.type = "font-file"`.
+When omitted, `foton` detects the title from the font file.
+
+- **Type**: string
+- **Constraints**: must be non-empty and must not have leading or trailing
+  whitespace
+- **Recommended because**: it makes the recorded font title explicit in the
+  manifest and improves search and registration behavior
+- **Example**:
+
+  ```toml
+  [[sources]]
+  url = "https://example.com/fonts/Example-Regular.ttf"
+  hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+  [sources.contents]
+  type = "font-file"
+  title = "Example Regular"
+  ```
+
+### `sources[].contents.file-name` (optional, for sources with `contents.type = "font-file"`)
+
+The file name that `foton` should use for a source with
+`contents.type = "font-file"`.
+When omitted, `foton` derives the file name from the URL path.
+
+- **Type**: file name string
+- **Constraints**: must be a valid plain file name
+- **Example**:
+
+  ```toml
+  [[sources]]
+  url = "https://example.com/download?id=123"
+  hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+  [sources.contents]
+  type = "font-file"
+  file-name = "Example-Regular.ttf"
+  title = "Example Regular"
+  ```
+
+### `sources[].contents.fonts` (optional, recommended for sources with `contents.type = "archive"`)
+
+Rules that select font files from a source with
+`contents.type = "archive"`.
 Each entry is either:
 
 - a string, which is shorthand for an exact `path`
 - an object that specifies exactly one of `path` or `glob`
 
-If an entry uses `path`, it may also specify `title`.
-If an entry uses `glob`, it must not specify `title`.
+If an entry uses `path`, it may also specify `title` and `file-name`.
+If an entry uses `glob`, it must not specify `title` or `file-name`.
 If omitted, `foton` uses the default font-file glob rules.
 
-- **Type**: non-empty array of file rules
+- **Type**: non-empty array of font rules
 - **Constraints**:
   - each exact `path` must be non-empty
   - each `glob` must be valid and non-empty
   - `title` may be specified only together with `path`
+  - `file-name` may be specified only together with `path`
   - when present, `title` must be non-empty and must not have leading or
     trailing whitespace
+  - when present, `file-name` must be a valid plain file name
 - **Default**: `{ glob = "**/*.ttf" }`, `{ glob = "**/*.otf" }`,
   `{ glob = "**/*.ttc" }`, and `{ glob = "**/*.otc" }`
 - **Recommended because**: it makes the package contents explicit and reduces
@@ -344,31 +435,46 @@ If omitted, `foton` uses the default font-file glob rules.
   - `title` is also used when matching search queries
   - if an exact `path` entry omits `title`, `foton` detects the name from the
     font file instead of taking it from the manifest
-  - `glob` entries cannot declare `title`; for files matched by `glob`,
-    `foton` detects each name from the font file
+  - if an exact `path` entry specifies `file-name`, `foton` stores the
+    extracted font file using that file name instead of the archive entry's
+    original basename
+  - `glob` entries cannot declare `title` or `file-name`; for files matched by
+    `glob`, `foton` detects each name from the font file and keeps the original
+    basename from the archive entry
 - **Examples**:
 
   ```toml
   [[sources]]
-  files = [
+  url = "https://example.com/downloads/example-font-1.2.3.zip"
+  hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+  [sources.contents]
+  type = "archive"
+  fonts = [
     { path = "fonts/ExampleFont-Regular.ttf", title = "Example Font Regular" },
-    { path = "fonts/ExampleFont-Bold.ttf", title = "Example Font Bold" },
+    { path = "fonts/ExampleFont-Bold.ttf", file-name = "Example-Bold.ttf", title = "Example Font Bold" },
     { glob = "fonts/ExampleFontUI-*.ttf" },
   ]
   ```
 
-### `sources[].ignore` (optional)
+### `sources[].contents.ignore` (optional, for sources with `contents.type = "archive"`)
 
-Rules that exclude files even if they match `files`.
+Rules that exclude archive entries from a source with
+`contents.type = "archive"` even if they match `fonts`.
 Each entry may be written as a string or `{ path = ... }` for an exact path, or
 as `{ glob = ... }` for a glob rule.
-If a path matches both `files` and `ignore`, `ignore` takes precedence.
+If a path matches both `fonts` and `ignore`, `ignore` takes precedence.
 
 - **Type**: array of ignore rules
 - **Example**:
 
   ```toml
   [[sources]]
+  url = "https://example.com/downloads/example-font-1.2.3.zip"
+  hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+  [sources.contents]
+  type = "archive"
   ignore = [
     "fonts/Extra.ttf",
     { glob = "fonts/legacy/*.ttf" },
