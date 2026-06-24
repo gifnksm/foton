@@ -146,7 +146,8 @@ fn extract_archive_impl<'r>(
             if let Some(ext) = path_in_archive.extension()
                 && (ext.eq_ignore_ascii_case("ttf")
                     || ext.eq_ignore_ascii_case("otf")
-                    || ext.eq_ignore_ascii_case("ttc"))
+                    || ext.eq_ignore_ascii_case("ttc")
+                    || ext.eq_ignore_ascii_case("otc"))
             {
                 suspicious_skips.push(ExtractEntry { path_in_archive });
             }
@@ -237,8 +238,9 @@ mod tests {
     fn default_files() -> Vec<FileRule> {
         vec![
             FileRule::glob(PathGlob::new("**/*.ttf").unwrap()),
-            FileRule::glob(PathGlob::new("**/*.ttc").unwrap()),
             FileRule::glob(PathGlob::new("**/*.otf").unwrap()),
+            FileRule::glob(PathGlob::new("**/*.ttc").unwrap()),
+            FileRule::glob(PathGlob::new("**/*.otc").unwrap()),
         ]
     }
 
@@ -353,8 +355,9 @@ mod tests {
     fn extract_archive_filters_non_font_files() {
         let archive = build_zip(&[
             ("font.ttf", b"font"),
-            ("font.ttc", b"collection"),
             ("font.otf", b"otf"),
+            ("font.ttc", b"collection"),
+            ("font.otc", b"otc-collection"),
             ("README.txt", b"readme"),
             ("dir/", b""),
         ]);
@@ -367,7 +370,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(files, vec!["font.ttf", "font.ttc", "font.otf"]);
+        assert_eq!(files, vec!["font.ttf", "font.otf", "font.ttc", "font.otc"]);
     }
 
     #[test]

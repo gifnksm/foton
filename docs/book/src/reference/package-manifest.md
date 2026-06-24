@@ -334,8 +334,8 @@ If omitted, `foton` uses the default font-file glob rules.
   - `title` may be specified only together with `path`
   - when present, `title` must be non-empty and must not have leading or
     trailing whitespace
-- **Default**: `{ glob = "**/*.ttf" }`, `{ glob = "**/*.otf" }`, and
-  `{ glob = "**/*.ttc" }`
+- **Default**: `{ glob = "**/*.ttf" }`, `{ glob = "**/*.otf" }`,
+  `{ glob = "**/*.ttc" }`, and `{ glob = "**/*.otc" }`
 - **Recommended because**: it makes the package contents explicit and reduces
   unintended matches from the source archive
 - **Notes**:
