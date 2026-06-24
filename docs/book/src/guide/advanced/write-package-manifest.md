@@ -126,6 +126,7 @@ If you omit `sources[].files`, `foton` uses these default glob rules:
 - `**/*.ttf`
 - `**/*.otf`
 - `**/*.ttc`
+- `**/*.otc`
 
 Prefer `sources[].files` entries that list each font file path explicitly.
 When you know the font title in advance, prefer `{ path = ..., title = ... }`
@@ -140,7 +141,7 @@ package, and it reduces the chance of unintentionally picking up extra or
 unexpected files from the source archive.
 
 If the source archive contains other font-like files such as `*.ttf`, `*.otf`,
-or `*.ttc` that you do not want to install, prefer listing those paths in
+`*.ttc`, or `*.otc` that you do not want to install, prefer listing those paths in
 `sources[].ignore` explicitly.
 That makes the omission visible in the manifest and shows that the files were
 left out intentionally.

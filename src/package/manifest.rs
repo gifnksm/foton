@@ -164,6 +164,7 @@ fn default_files() -> Vec<FileRule> {
         FileRule::glob(PathGlob::new("**/*.ttf").unwrap()),
         FileRule::glob(PathGlob::new("**/*.otf").unwrap()),
         FileRule::glob(PathGlob::new("**/*.ttc").unwrap()),
+        FileRule::glob(PathGlob::new("**/*.otc").unwrap()),
     ]
 }
 
@@ -632,7 +633,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>(),
-            ["**/*.ttf", "**/*.otf", "**/*.ttc"]
+            ["**/*.ttf", "**/*.otf", "**/*.ttc", "**/*.otc"]
         );
         assert!(manifest.sources[0].ignore.is_empty());
     }
