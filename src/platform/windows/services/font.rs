@@ -3,30 +3,26 @@ use std::path::{Path, PathBuf};
 use snafu::{OptionExt as _, ResultExt as _, Snafu};
 
 use crate::{
-    engine::ExtractedFile,
-    package::FontEntry,
-    platform::windows::primitives::font_inspector::{FontInspector, FontInspectorError},
-    util::macros::concat_line,
+    platform::windows::primitives::{
+        direct_write::{DirectWriteError, DirectWriteFactory},
+        property_store::{PropertyStore, PropertyStoreError, PropertyStoreKey},
+    },
+    util::{macros::concat_line, path::FileName},
 };
 
 #[derive(Debug, Snafu)]
-pub(crate) enum FontValidatorError {
-    #[snafu(display("failed to create FontInspector"))]
-    CreateFontInspector {
-        #[snafu(source(from(FontInspectorError, Box::new)))]
-        source: Box<FontInspectorError>,
-    },
-    #[snafu(display("failed to check if font file is supported: {path}", path = path.display()))]
-    CheckSupport {
+pub(crate) enum FontInspectorError {
+    #[snafu(display("failed to create DirectWrite factory for inspecting font"))]
+    CreateDirectWriteFactory { source: DirectWriteError },
+    #[snafu(display("failed to check if the font file is supported: {path}", path = path.display()))]
+    CheckFontSupported {
         path: PathBuf,
-        #[snafu(source(from(FontInspectorError, Box::new)))]
-        source: Box<FontInspectorError>,
+        source: DirectWriteError,
     },
-    #[snafu(display("failed to get font title for file: {path}", path = path.display()))]
-    GetFontTitle {
+    #[snafu(display("failed to get font title from property store: {path}", path = path.display()))]
+    GetFontTitleFromPropertyStore {
         path: PathBuf,
-        #[snafu(source(from(FontInspectorError, Box::new)))]
-        source: Box<FontInspectorError>,
+        source: PropertyStoreError,
     },
     #[snafu(display(
         concat_line!(
@@ -39,53 +35,68 @@ pub(crate) enum FontValidatorError {
 }
 
 #[derive(Debug)]
-pub(crate) struct FontValidator {
-    inspector: FontInspector,
+pub(crate) struct FontInspector {
+    factory: DirectWriteFactory,
 }
 
-impl FontValidator {
-    pub(crate) fn new() -> Result<Self, FontValidatorError> {
-        let inspector = FontInspector::new().context(CreateFontInspectorSnafu)?;
-        Ok(Self { inspector })
+#[derive(Debug)]
+pub(crate) struct InspectedFont {}
+
+impl FontInspector {
+    pub(crate) fn new() -> Result<Self, FontInspectorError> {
+        let factory = DirectWriteFactory::new().context(CreateDirectWriteFactorySnafu)?;
+        Ok(Self { factory })
     }
 
-    pub(crate) fn validate_font<P>(
+    pub(crate) fn inspect_font<P>(
         &self,
-        fonts_dir: P,
-        file: &ExtractedFile,
-    ) -> Result<Option<FontEntry>, FontValidatorError>
+        path: P,
+    ) -> Result<Option<InspectedFont>, FontInspectorError>
     where
         P: AsRef<Path>,
     {
-        let fonts_dir = fonts_dir.as_ref();
-        let path = fonts_dir.join(file.file_name());
-        let supported = self
-            .inspector
-            .is_supported_font_file(&path)
-            .context(CheckSupportSnafu { path: &path })?;
-
-        if !supported {
+        let path = path.as_ref();
+        if !self.is_supported_font_file(path)? {
             return Ok(None);
         }
-
-        let title = file
-            .title()
-            .map(ToOwned::to_owned)
-            .map_or_else(|| self.get_font_title(&path, file), Ok)?;
-
-        Ok(Some(FontEntry::new(title, file.file_name())))
+        Ok(Some(InspectedFont {}))
     }
 
-    fn get_font_title(
+    fn is_supported_font_file(&self, path: &Path) -> Result<bool, FontInspectorError> {
+        let analyze_result = (|| {
+            let font_file = self.factory.font_file(path)?;
+            font_file.analyze()
+        })()
+        .context(CheckFontSupportedSnafu { path })?;
+
+        Ok(analyze_result.is_supported)
+    }
+
+    // Title lookup is intentionally kept separate from `inspect_font`.
+    //
+    // To read the title, we first obtain a property store with
+    // `SHGetPropertyStoreFromParsingName`. That API breaks on
+    // extended-length paths such as `\\?\C:\...`, so call this only when
+    // the caller actually needs the font title.
+    #[expect(clippy::unused_self)]
+    pub(crate) fn get_font_title<P>(
         &self,
-        path: &Path,
-        file: &ExtractedFile,
-    ) -> Result<String, FontValidatorError> {
-        let title = self
-            .inspector
-            .get_font_title(path)
-            .context(GetFontTitleSnafu { path })?
-            .unwrap_or_else(|| file.file_name().to_os_string());
+        path: P,
+        file_name: &FileName,
+    ) -> Result<String, FontInspectorError>
+    where
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref();
+        let mut title = (|| {
+            let store = PropertyStore::new(path)?;
+            store.get_property_as_os_string(PropertyStoreKey::Title)
+        })()
+        .context(GetFontTitleFromPropertyStoreSnafu { path })?;
+
+        if title.is_empty() {
+            title = file_name.to_os_string();
+        }
 
         let title = title
             .into_string()
