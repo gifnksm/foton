@@ -1,4 +1,4 @@
-use std::{collections::HashSet, marker::PhantomData, path::PathBuf};
+use std::{marker::PhantomData, path::PathBuf};
 
 use snafu::{ResultExt as _, Snafu};
 
@@ -67,14 +67,6 @@ enum ValidationErrorReport {
         #[snafu(source(from(FontInspectorError, Box::new)))]
         source: Box<FontInspectorError>,
     },
-    #[snafu(display("failed to get font title for file: {file_name}", file_name = file_name.display()))]
-    GetFontTitle {
-        file_name: FileName,
-        #[snafu(source(from(FontInspectorError, Box::new)))]
-        source: Box<FontInspectorError>,
-    },
-    #[snafu(display("duplicate font name found in package: {title}"))]
-    DuplicateFontName { title: String },
 }
 
 pub(super) fn validate_and_prune_fonts<S>(
@@ -88,7 +80,6 @@ where
     let cx = ValidationScope::start_with_report(cx, "Validating fonts...");
 
     let mut valid_entries = vec![];
-    let mut valid_entry_titles = HashSet::new();
     let inspector = FontInspector::new()
         .context(CreateFontInspectorSnafu)
         .report_error(&cx)?;
@@ -108,21 +99,7 @@ where
             continue;
         };
 
-        // Avoid title lookup unless we need a fallback.
-        // `SHGetPropertyStoreFromParsingName` breaks on `\\?\C:\...` paths.
-        let title = match file.title() {
-            Some(title) => title.to_owned(),
-            None => inspector
-                .get_font_title(path, file_name)
-                .context(GetFontTitleSnafu { file_name })
-                .report_error(&cx)?,
-        };
-
-        if !valid_entry_titles.insert(title.to_lowercase()) {
-            return Err(DuplicateFontNameSnafu { title }.build().report_error(&cx));
-        }
-
-        let entry = FontEntry::new(title, file_name);
+        let entry = FontEntry::new(file_name);
         valid_entries.push(entry);
     }
 

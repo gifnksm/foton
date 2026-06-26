@@ -12,7 +12,7 @@ use crate::{
     },
     package::{FontEntry, PackageDirs, PackageId},
     platform::windows::primitives::{
-        registry::{self, RegisteredFont, RegistryError},
+        registry::{self, RegisteredFont, RegisteredFontError, RegistryError},
         session::{self, SessionError},
     },
     util::macros::concat_line,
@@ -56,6 +56,8 @@ enum RegistrationNoticeReport {
 
 #[derive(Debug, Snafu)]
 enum RegistrationErrorReport {
+    #[snafu(transparent)]
+    RegisteredFont { source: RegisteredFontError },
     #[snafu(display("failed to register package fonts in the registry"))]
     RegisterFontsInRegistry { source: RegistryError },
 }
@@ -75,8 +77,15 @@ where
     let fonts_dir = pkg_dir.fonts_dir();
     let registered_fonts = font_entries
         .into_iter()
-        .map(|entry| RegisteredFont::new(entry.title(), fonts_dir.join(entry.file_name())))
-        .collect::<Vec<_>>();
+        .map(|entry| {
+            RegisteredFont::new(
+                entry.file_name().to_os_string(),
+                fonts_dir.join(entry.file_name()),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(Into::into)
+        .report_error(&cx)?;
 
     // Report fatal errors at the point of failure so they stay ordered relative to
     // warnings emitted by later best-effort steps in this function. Callers should

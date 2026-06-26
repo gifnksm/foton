@@ -35,10 +35,10 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 [sources.contents]
 type = "archive"
 fonts = [
-  { path = "example-font-1.2.3/ExampleFont-Regular.ttf", title = "Example Font Regular" },
-  { path = "example-font-1.2.3/ExampleFont-Bold.ttf", title = "Example Font Bold" },
-  { path = "example-font-1.2.3/ExampleFontUI-Regular.ttf", title = "Example Font UI Regular" },
-  { path = "example-font-1.2.3/ExampleFontUI-Bold.ttf", title = "Example Font UI Bold" },
+  "example-font-1.2.3/ExampleFont-Regular.ttf",
+  "example-font-1.2.3/ExampleFont-Bold.ttf",
+  "example-font-1.2.3/ExampleFontUI-Regular.ttf",
+  "example-font-1.2.3/ExampleFontUI-Bold.ttf",
 ]
 ```
 
@@ -138,14 +138,9 @@ If you omit `fonts`, `foton` uses these default glob rules:
 - `**/*.otc`
 
 Prefer `fonts` entries that list each font file path explicitly.
-When you know the font title in advance, prefer `{ path = ..., title = ... }`
-entries.
-The `title` is the name `foton` uses when registering that font file on
-Windows. Other applications can also see and refer to the font by that
-name. If you specify it, `foton` uses that name instead of detecting one
-from the font file.
-If the archive entry name is unsuitable, you can also specify `file-name` on an
-exact `path` entry to tell `foton` what file name to store locally.
+If the archive entry's file name is unsuitable, you can also specify
+`file-name` on a `path` entry written as `{ path = ... }` to tell `foton`
+what file name to store locally.
 Avoid `glob` rules when possible.
 This makes it clear from the manifest exactly which files belong to the
 package, and it reduces the chance of unintentionally picking up extra or
@@ -161,10 +156,8 @@ left out intentionally.
 
 For a source with `contents.type = "font-file"`, the downloaded source itself
 is installed as one font file.
-Setting `title` is recommended so the recorded font title is explicit in the
-manifest and available for search and registration.
-You can also set `file-name` to override the local file name when the URL path
-is not suitable.
+You can set `file-name` to override the local file name when the URL path is
+not suitable.
 
 ```toml
 [[sources]]
@@ -174,7 +167,6 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 [sources.contents]
 type = "font-file"
 file-name = "Example-Regular.ttf"
-title = "Example Regular"
 ```
 
 ## Validate the manifest
@@ -195,10 +187,7 @@ It can also warn about issues such as:
 
 It can also warn specifically about source contents, for example:
 
-- for sources with `contents.type = "font-file"`:
-  - no `title`
 - for sources with `contents.type = "archive"`:
-  - exact `path` entries in `fonts` without `title`
   - `glob` entries in `fonts`
   - `fonts` or `ignore` rules that match nothing
   - font-like files that match neither `fonts` nor `ignore`

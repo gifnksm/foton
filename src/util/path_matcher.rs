@@ -37,13 +37,6 @@ impl PathMatcher {
         }
     }
 
-    pub(crate) fn as_path(&self) -> Option<&LiteralPathMatcher> {
-        match self {
-            Self::Path(path_matcher) => Some(path_matcher),
-            Self::Glob(_) => None,
-        }
-    }
-
     pub(crate) fn as_glob(&self) -> Option<&PathGlob> {
         match self {
             Self::Glob(glob) => Some(glob),
@@ -80,10 +73,6 @@ impl LiteralPathMatcher {
         P: AsRef<Path>,
     {
         self.glob.matches(path)
-    }
-
-    pub(crate) fn original(&self) -> &str {
-        &self.original
     }
 
     pub(crate) fn into_original(self) -> String {

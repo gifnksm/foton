@@ -70,28 +70,6 @@ enum CheckManifestWarnReport {
     },
     #[snafu(display(
         concat_line!(
-            "`sources[{source_index}].contents` specifies a font file without `title`",
-            "prefer adding `title` so the font title used for search, recording, and registration is declared explicitly in the manifest",
-        ),
-        source_index = source_index,
-    ))]
-    FontFileMissingTitle { source_index: usize },
-    #[snafu(display(
-        concat_line!(
-            "`sources[{source_index}].contents.fonts[{file_index}]` specifies exact `path` without `title`: {path}",
-            "prefer adding `title` so the font title used for search, recording, and registration is declared explicitly in the manifest",
-        ),
-        source_index = source_index,
-        file_index = file_index,
-        path = path.display(),
-    ))]
-    ArchiveFontsPathMissingTitle {
-        source_index: usize,
-        file_index: usize,
-        path: PathBuf,
-    },
-    #[snafu(display(
-        concat_line!(
             "`sources[{source_index}].contents.fonts` contains `glob` rule: {glob}",
             "this glob matches the following paths:",
             "{extracted}",
@@ -254,8 +232,6 @@ fn check_fields(
     check_missing_fields(pkg, &mut reports);
     check_homepage_and_repository_url(pkg, &mut reports);
     check_display_name_duplication(pkg, &mut reports);
-    check_font_file_missing_title(pkg, &mut reports);
-    check_archive_fonts_path_missing_title(pkg, &mut reports);
     check_archive_fonts_extraction(pkg, extract_details, &mut reports);
     check_archive_ignore_extraction(pkg, extract_details, &mut reports);
     check_archive_suspicious_skips(extract_details, &mut reports);
@@ -323,45 +299,6 @@ fn check_display_name_duplication(
     for (normalized, values) in display_names {
         if values.len() > 1 {
             reports.push(DuplicatedDisplayNameSnafu { normalized, values }.build());
-        }
-    }
-}
-
-fn check_font_file_missing_title(
-    pkg: &PackageDefinition,
-    reports: &mut Vec<CheckManifestWarnReport>,
-) {
-    for (source_index, source) in pkg.sources.iter().enumerate() {
-        let Some(font_file) = source.contents.as_font_file() else {
-            continue;
-        };
-        if font_file.title.is_none() {
-            reports.push(FontFileMissingTitleSnafu { source_index }.build());
-        }
-    }
-}
-
-fn check_archive_fonts_path_missing_title(
-    pkg: &PackageDefinition,
-    reports: &mut Vec<CheckManifestWarnReport>,
-) {
-    for (source_index, source) in pkg.sources.iter().enumerate() {
-        let Some(archive) = source.contents.as_archive() else {
-            continue;
-        };
-        for (file_index, file_rule) in archive.fonts.iter().enumerate() {
-            if let Some(path) = file_rule.matcher().as_path()
-                && file_rule.title().is_none()
-            {
-                reports.push(
-                    ArchiveFontsPathMissingTitleSnafu {
-                        source_index,
-                        file_index,
-                        path: path.original(),
-                    }
-                    .build(),
-                );
-            }
         }
     }
 }
@@ -629,58 +566,6 @@ type = "archive"
             reports.as_slice(),
             [CheckManifestWarnReport::DuplicatedDisplayName { normalized, values }]
                 if normalized == "udpgothic" && values.len() == 2
-        );
-    }
-
-    #[test]
-    fn check_font_file_missing_title_reports_font_file_source_without_title() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
-
-[[sources]]
-url = "https://example.com/Example-Regular.ttf"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-[sources.contents]
-type = "font-file"
-"#,
-        );
-        let mut reports = vec![];
-
-        check_font_file_missing_title(&pkg, &mut reports);
-
-        assert_matches!(
-            reports.as_slice(),
-            [CheckManifestWarnReport::FontFileMissingTitle { source_index }] if *source_index == 0
-        );
-    }
-
-    #[test]
-    fn check_archive_fonts_path_missing_title_reports_file_rules_with_exact_path_and_no_title() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-[sources.contents]
-type = "archive"
-fonts = ["fonts/actual.ttf"]
-"#,
-        );
-        let mut reports = vec![];
-
-        check_archive_fonts_path_missing_title(&pkg, &mut reports);
-
-        assert_matches!(
-            reports.as_slice(),
-            [CheckManifestWarnReport::ArchiveFontsPathMissingTitle { source_index, file_index, path }]
-                if *source_index == 0 && *file_index == 0 && path == "fonts/actual.ttf"
         );
     }
 

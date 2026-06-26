@@ -113,8 +113,6 @@ pub(in crate::db::persist) mod types {
     pub(crate) struct PersistedFontFileOptions {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub(in crate::db::persist) file_name: Option<FileName>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pub(in crate::db::persist) title: Option<String>,
     }
 
     #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -130,7 +128,6 @@ pub(in crate::db::persist) mod types {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
     pub(in crate::db::persist) struct PersistedFontEntry {
-        pub(in crate::db::persist) title: String,
         pub(in crate::db::persist) file_name: FileName,
     }
 }

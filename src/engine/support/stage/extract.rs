@@ -121,7 +121,7 @@ fn extract_font_file<'s>(
     fonts_dir: &AbsolutePath,
     config: &FotonConfig,
 ) -> Result<ExtractResult<'s>, ExtractErrorReport> {
-    let FontFileOptions { file_name, title } = options;
+    let FontFileOptions { file_name } = options;
     let file_name = match file_name {
         Some(name) => name.clone(),
         None => url_to_filename(url)?,
@@ -136,10 +136,7 @@ fn extract_font_file<'s>(
     );
 
     create_font_file(fonts_dir, &file_name, &mut file)?;
-    let files = vec![ExtractedFile {
-        file_name,
-        title: title.clone(),
-    }];
+    let files = vec![ExtractedFile { file_name }];
     Ok(ExtractResult {
         files,
         detail: ExtractDetail::FontFile {},
@@ -215,10 +212,7 @@ fn extract_archive<'s>(
 
         create_font_file(fonts_dir, &file_name, &mut archive_file)?;
 
-        files.push(ExtractedFile {
-            file_name,
-            title: include_rule.title().map(ToOwned::to_owned),
-        });
+        files.push(ExtractedFile { file_name });
         included.push(ExtractEntry { path_in_archive });
     }
     Ok(ExtractResult {
@@ -368,24 +362,21 @@ mod tests {
 
         assert_eq!(res.file_names(), ["Example-Regular.ttf"]);
         assert!(matches!(res.detail, ExtractDetail::FontFile {}));
-        assert_eq!(res.files[0].title(), None);
         assert!(tempdir.path().join("Example-Regular.ttf").exists());
     }
 
     #[test]
-    fn extract_font_file_uses_overridden_file_name_and_title() {
+    fn extract_font_file_uses_overridden_file_name() {
         let file = build_file(b"font");
         let url = Url::parse("https://example.com/download?id=123").unwrap();
         let options = FontFileOptions {
             file_name: Some(FileName::new("Renamed.ttf").unwrap()),
-            title: Some("Example Regular".to_string()),
         };
 
         let (tempdir, res) =
             extract_font_file_to_tempdir(file, 4, &url, &options, &FotonConfig::default()).unwrap();
 
         assert_eq!(res.file_names(), ["Renamed.ttf"]);
-        assert_eq!(res.files[0].title(), Some("Example Regular"));
         assert!(tempdir.path().join("Renamed.ttf").exists());
     }
 

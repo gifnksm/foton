@@ -306,7 +306,6 @@ impl From<&PersistedFontFileOptions> for FontFileOptions {
     fn from(value: &PersistedFontFileOptions) -> Self {
         Self {
             file_name: value.file_name.clone(),
-            title: value.title.clone(),
         }
     }
 }
@@ -315,7 +314,6 @@ impl From<&FontFileOptions> for PersistedFontFileOptions {
     fn from(value: &FontFileOptions) -> Self {
         Self {
             file_name: value.file_name.clone(),
-            title: value.title.clone(),
         }
     }
 }
@@ -341,7 +339,6 @@ impl From<&ArchiveOptions> for PersistedArchiveOptions {
 impl From<&FontEntry> for PersistedFontEntry {
     fn from(value: &FontEntry) -> Self {
         Self {
-            title: value.title().to_owned(),
             file_name: value.file_name().clone(),
         }
     }
@@ -349,7 +346,7 @@ impl From<&FontEntry> for PersistedFontEntry {
 
 impl From<&PersistedFontEntry> for FontEntry {
     fn from(value: &PersistedFontEntry) -> Self {
-        Self::new(value.title.clone(), value.file_name.clone())
+        Self::new(value.file_name.clone())
     }
 }
 
@@ -402,8 +399,8 @@ impl PartialEq<PackageSourceContents> for PersistedPackageSourceContents {
 
 impl PartialEq<FontFileOptions> for PersistedFontFileOptions {
     fn eq(&self, options: &FontFileOptions) -> bool {
-        let Self { file_name, title } = self;
-        *file_name == options.file_name && *title == options.title
+        let Self { file_name } = self;
+        *file_name == options.file_name
     }
 }
 

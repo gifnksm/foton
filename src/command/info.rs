@@ -139,12 +139,7 @@ where
         )?;
         writeln!(writer, "Installed Fonts ({}):", font_entries.len())?;
         for font in &font_entries {
-            writeln!(
-                writer,
-                "  - {} ({})",
-                font.file_name().display(),
-                font.title(),
-            )?;
+            writeln!(writer, "  - {}", font.file_name().display())?;
         }
     }
     writeln!(writer)?;
@@ -160,11 +155,11 @@ mod tests {
         util::{macros::concat_line, path::FileName, testing},
     };
 
-    fn make_font_entries(entries: &[(&str, &str)]) -> Vec<FontEntry> {
+    fn make_font_entries(entries: &[&str]) -> Vec<FontEntry> {
         entries
             .iter()
             .copied()
-            .map(|(title, file_name)| FontEntry::new(title, FileName::new(file_name).unwrap()))
+            .map(|file_name| FontEntry::new(FileName::new(file_name).unwrap()))
             .collect()
     }
 
@@ -204,10 +199,8 @@ fonts = [{ glob = "fonts/*.ttf" }]
 ignore = ["fonts/exclude.ttf"]
 "#,
         );
-        let font_entries = make_font_entries(&[
-            ("Example Font Regular", "example-font-regular.ttf"),
-            ("Example Font Bold", "example-font-bold.ttf"),
-        ]);
+        let font_entries =
+            make_font_entries(&["example-font-regular.ttf", "example-font-bold.ttf"]);
 
         let (output, expected) = testing::with_db(|cx, db| {
             mark_as_active_with_fonts(db, &pkg, &font_entries);
@@ -232,8 +225,8 @@ ignore = ["fonts/exclude.ttf"]
                     "License: OFL-1.1",
                     "Fonts Directory: {fonts_dir}",
                     "Installed Fonts (2):",
-                    "  - example-font-regular.ttf (Example Font Regular)",
-                    "  - example-font-bold.ttf (Example Font Bold)",
+                    "  - example-font-regular.ttf",
+                    "  - example-font-bold.ttf",
                     "",
                     "",
                 ),

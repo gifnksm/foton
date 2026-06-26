@@ -65,22 +65,6 @@ impl PackageDefinition {
             max_res = Option::max(max_res, res);
         }
 
-        let titles = self
-            .sources
-            .iter()
-            .flat_map(|source| source.contents.titles());
-        for title in titles {
-            let Some(res) = matcher.match_text(title) else {
-                continue;
-            };
-            let res = Some(PackageMatchResult {
-                form: res.form,
-                kind: res.kind,
-                field: PackageDefinitionField::Title,
-            });
-            max_res = Option::max(max_res, res);
-        }
-
         if let Some(res) = self
             .description
             .as_deref()
@@ -101,7 +85,6 @@ impl PackageDefinition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum PackageDefinitionField {
     Description,
-    Title,
     Aliases,
     DisplayName,
     Name,
