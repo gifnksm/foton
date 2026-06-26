@@ -12,7 +12,7 @@ use crate::{
     },
     engine::ExtractedFile,
     package::FontEntry,
-    platform::windows::services::font::{FontValidator, FontValidatorError},
+    platform::windows::services::font::{FontInspector, FontInspectorError, InspectedFont},
     util::{
         fs as fs_util,
         macros::concat_line,
@@ -56,12 +56,22 @@ enum ValidationWarnReport {
 
 #[derive(Debug, Snafu)]
 enum ValidationErrorReport {
-    #[snafu(display("failed to create font validator"))]
-    CreateValidator { source: FontValidatorError },
-    #[snafu(display("failed to validate font file: {file_name}", file_name = file_name.display()))]
-    ValidateFont {
+    #[snafu(display("failed to create font inspector"))]
+    CreateFontInspector {
+        #[snafu(source(from(FontInspectorError, Box::new)))]
+        source: Box<FontInspectorError>,
+    },
+    #[snafu(display("failed to inspect font file: {file_name}", file_name = file_name.display()))]
+    InspectFont {
         file_name: FileName,
-        source: FontValidatorError,
+        #[snafu(source(from(FontInspectorError, Box::new)))]
+        source: Box<FontInspectorError>,
+    },
+    #[snafu(display("failed to get font title for file: {file_name}", file_name = file_name.display()))]
+    GetFontTitle {
+        file_name: FileName,
+        #[snafu(source(from(FontInspectorError, Box::new)))]
+        source: Box<FontInspectorError>,
     },
     #[snafu(display("duplicate font name found in package: {title}"))]
     DuplicateFontName { title: String },
@@ -79,36 +89,40 @@ where
 
     let mut valid_entries = vec![];
     let mut valid_entry_titles = HashSet::new();
-    let validator = FontValidator::new()
-        .context(CreateValidatorSnafu)
+    let inspector = FontInspector::new()
+        .context(CreateFontInspectorSnafu)
         .report_error(&cx)?;
 
     for file in extracted {
-        let Some(entry) = validator
-            .validate_font(fonts_dir, file)
-            .context(ValidateFontSnafu {
-                file_name: file.file_name(),
-            })
+        let file_name = file.file_name();
+        let path = &fonts_dir.join(file_name);
+        let Some(InspectedFont {}) = inspector
+            .inspect_font(path)
+            .context(InspectFontSnafu { file_name })
             .report_error(&cx)?
         else {
-            let path = fonts_dir.join(file.file_name());
-            UnsupportedFontFileSnafu { path: &path }
-                .build()
-                .report_warn(&cx)?;
-            fs_util::remove_file(&path)
-                .context(RemoveUnsupportedFontFileSnafu { path: &path })
+            UnsupportedFontFileSnafu { path }.build().report_warn(&cx)?;
+            fs_util::remove_file(path)
+                .context(RemoveUnsupportedFontFileSnafu { path })
                 .report_warn(&cx)?;
             continue;
         };
 
-        if !valid_entry_titles.insert(entry.title().to_lowercase()) {
-            return Err(DuplicateFontNameSnafu {
-                title: entry.title(),
-            }
-            .build()
-            .report_error(&cx));
+        // Avoid title lookup unless we need a fallback.
+        // `SHGetPropertyStoreFromParsingName` breaks on `\\?\C:\...` paths.
+        let title = match file.title() {
+            Some(title) => title.to_owned(),
+            None => inspector
+                .get_font_title(path, file_name)
+                .context(GetFontTitleSnafu { file_name })
+                .report_error(&cx)?,
+        };
+
+        if !valid_entry_titles.insert(title.to_lowercase()) {
+            return Err(DuplicateFontNameSnafu { title }.build().report_error(&cx));
         }
 
+        let entry = FontEntry::new(title, file_name);
         valid_entries.push(entry);
     }
 
