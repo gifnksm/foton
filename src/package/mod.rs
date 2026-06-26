@@ -15,23 +15,16 @@ mod version;
 
 #[derive(Debug, Clone)]
 pub(crate) struct FontEntry {
-    title: String,
     file_name: FileName,
 }
 
 impl FontEntry {
-    pub(crate) fn new<T, F>(title: T, file_name: F) -> Self
+    pub(crate) fn new<F>(file_name: F) -> Self
     where
-        T: Into<String>,
         F: Into<FileName>,
     {
-        let title = title.into();
         let file_name = file_name.into();
-        Self { title, file_name }
-    }
-
-    pub(crate) fn title(&self) -> &str {
-        &self.title
+        Self { file_name }
     }
 
     pub(crate) fn file_name(&self) -> &FileName {

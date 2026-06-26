@@ -114,12 +114,6 @@ pub(crate) enum PackageSourceContents {
 pub(crate) struct FontFileOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) file_name: Option<FileName>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "option_nonempty_string_without_surrounding_whitespaces::deserialize"
-    )]
-    pub(crate) title: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -184,29 +178,11 @@ impl PackageManifest {
 }
 
 impl PackageSourceContents {
-    pub(crate) fn as_font_file(&self) -> Option<&FontFileOptions> {
-        match self {
-            Self::FontFile(font_file_options) => Some(font_file_options),
-            Self::Archive(_) => None,
-        }
-    }
-
+    #[cfg(test)]
     pub(crate) fn as_archive(&self) -> Option<&ArchiveOptions> {
         match self {
             Self::FontFile(_) => None,
             Self::Archive(archive_options) => Some(archive_options),
-        }
-    }
-
-    pub(crate) fn titles(&self) -> Box<dyn Iterator<Item = &str> + '_> {
-        match self {
-            Self::FontFile(options) => Box::new(options.title.as_deref().into_iter()),
-            Self::Archive(options) => Box::new(
-                options
-                    .fonts
-                    .iter()
-                    .filter_map(|font_rule| font_rule.title()),
-            ),
         }
     }
 }

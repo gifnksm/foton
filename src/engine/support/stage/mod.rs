@@ -44,16 +44,11 @@ enum StageErrorReport {
 #[derive(Debug, Clone)]
 pub(crate) struct ExtractedFile {
     file_name: FileName,
-    title: Option<String>,
 }
 
 impl ExtractedFile {
     pub(crate) fn file_name(&self) -> &FileName {
         &self.file_name
-    }
-
-    pub(crate) fn title(&self) -> Option<&str> {
-        self.title.as_deref()
     }
 }
 

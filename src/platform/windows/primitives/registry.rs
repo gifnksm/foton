@@ -89,10 +89,10 @@ pub(crate) enum RegistryError {
         path: String,
         source: windows_core::Error,
     },
-    #[snafu(display("failed to set registry value for font `{title}`: {path}"))]
-    SetFontValue {
+    #[snafu(display("failed to set registry value for font `{file_name}`: {path}"))]
+    SetValue {
+        file_name: String,
         path: String,
-        title: String,
         source: windows_core::Error,
     },
     #[snafu(display("registry key for package version already exists: {path}"))]
@@ -161,9 +161,9 @@ where
     for font in fonts {
         let font = font.as_ref();
         key.set_value(font.reg_name(), &font.reg_value())
-            .context(SetFontValueSnafu {
+            .context(SetValueSnafu {
+                file_name: &font.file_name,
                 path: &path,
-                title: font.title(),
             })?;
     }
 
@@ -228,18 +228,20 @@ fn remove_key_if_empty(path: &str) -> Result<(), RegistryError> {
 
 #[derive(Debug, Snafu)]
 pub(crate) enum RegisteredFontError {
-    #[snafu(display("registered font path for `{name}` has invalid value type"))]
+    #[snafu(display("registered font file name is not valid UTF-8: {file_name}", file_name = file_name.display()))]
+    FileNameNotUtf8 { file_name: OsString },
+    #[snafu(display("registered font path for `{reg_name}` has invalid value type"))]
     InvalidFontPathValueType {
-        name: String,
+        reg_name: String,
         source: windows_core::Error,
     },
-    #[snafu(display("registered font path for `{name}` is not an absolute path: {path}", path = path.display()))]
-    FontPathIsNotAbsolute { name: String, path: OsString },
+    #[snafu(display("registered font path for `{file_name}` is not an absolute path: {path}", path = path.display()))]
+    FontPathIsNotAbsolute { file_name: String, path: OsString },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct RegisteredFont {
-    title: String,
+    file_name: String,
     path: AbsolutePath,
 }
 
@@ -250,18 +252,17 @@ impl AsRef<RegisteredFont> for RegisteredFont {
 }
 
 impl RegisteredFont {
-    pub(crate) fn new<T, P>(title: T, path: P) -> Self
+    pub(crate) fn new<T, P>(file_name: T, path: P) -> Result<Self, RegisteredFontError>
     where
-        T: Into<String>,
+        T: Into<OsString>,
         P: Into<AbsolutePath>,
     {
-        let name = title.into();
+        let file_name = file_name.into();
         let path = path.into();
-        Self { title: name, path }
-    }
-
-    pub(crate) fn title(&self) -> &str {
-        &self.title
+        let file_name = file_name
+            .into_string()
+            .map_err(|title| FileNameNotUtf8Snafu { file_name: title }.build())?;
+        Ok(Self { file_name, path })
     }
 
     pub(crate) fn path(&self) -> &AbsolutePath {
@@ -270,17 +271,22 @@ impl RegisteredFont {
 
     fn from_reg(reg_name: String, reg_value: Value) -> Result<Self, RegisteredFontError> {
         let path = HSTRING::try_from(reg_value)
-            .context(InvalidFontPathValueTypeSnafu { name: &reg_name })?
+            .context(InvalidFontPathValueTypeSnafu {
+                reg_name: &reg_name,
+            })?
             .to_os_string();
         let path = AbsolutePath::new(&path).context(FontPathIsNotAbsoluteSnafu {
-            name: &reg_name,
+            file_name: &reg_name,
             path: &path,
         })?;
-        Ok(Self::new(reg_name, path))
+        Ok(Self {
+            file_name: reg_name,
+            path,
+        })
     }
 
     fn reg_name(&self) -> &str {
-        &self.title
+        &self.file_name
     }
 
     fn reg_value(&self) -> Value {
@@ -397,26 +403,28 @@ mod tests {
 
             let expected_entries = [
                 RegisteredFont::new(
-                    "Example Font A (TrueType)",
+                    "example-font-a.ttf",
                     AbsolutePath::new(r"C:\path\to\example-font-a.ttf").unwrap(),
-                ),
+                )
+                .unwrap(),
                 RegisteredFont::new(
-                    "Example Font B (TrueType)",
+                    "example-font-b.ttf",
                     AbsolutePath::new(r"C:\path\to\example-font-b.ttc").unwrap(),
-                ),
+                )
+                .unwrap(),
             ];
 
             register_package_fonts(app_id, &pkg_id, &expected_entries).unwrap();
 
             let mut actual_entries = list_registered_package_fonts(app_id, &pkg_id).unwrap();
-            actual_entries.sort_by(|lhs, rhs| lhs.title().cmp(rhs.title()));
+            actual_entries.sort_by(|lhs, rhs| lhs.reg_name().cmp(rhs.reg_name()));
 
             let mut expected_entries = expected_entries;
-            expected_entries.sort_by(|lhs, rhs| lhs.title().cmp(rhs.title()));
+            expected_entries.sort_by(|lhs, rhs| lhs.reg_name().cmp(rhs.reg_name()));
 
             assert_eq!(actual_entries.len(), expected_entries.len());
             for (actual, expected) in actual_entries.iter().zip(expected_entries.iter()) {
-                assert_eq!(actual.title(), expected.title());
+                assert_eq!(actual.reg_name(), expected.reg_name());
                 assert_eq!(actual.path(), expected.path());
             }
 
@@ -448,10 +456,13 @@ mod tests {
                 } => {
                     assert_eq!(err_path, path);
                     match *source {
-                        RegisteredFontError::InvalidFontPathValueType { name, .. } => {
+                        RegisteredFontError::InvalidFontPathValueType {
+                            reg_name: name, ..
+                        } => {
                             assert_eq!(name, "Invalid Font");
                         }
-                        other @ RegisteredFontError::FontPathIsNotAbsolute { .. } => {
+                        other @ (RegisteredFontError::FileNameNotUtf8 { .. }
+                        | RegisteredFontError::FontPathIsNotAbsolute { .. }) => {
                             panic!("unexpected registered font error: {other:?}")
                         }
                     }
@@ -474,9 +485,10 @@ mod tests {
                 app_id,
                 &pkg_id,
                 [RegisteredFont::new(
-                    "Example Font (TrueType)",
+                    "example-font.ttf",
                     AbsolutePath::new(r"C:\path\to\example-font.ttf").unwrap(),
-                )],
+                )
+                .unwrap()],
             )
             .unwrap();
 
@@ -512,9 +524,10 @@ mod tests {
             .unwrap();
 
             let entries = [RegisteredFont::new(
-                "Example Font (TrueType)",
+                "example-font.ttf",
                 AbsolutePath::new(r"C:\path\to\example-font.ttf").unwrap(),
-            )];
+            )
+            .unwrap()];
 
             register_package_fonts(app_id, &pkg_id_v1, &entries).unwrap();
             register_package_fonts(app_id, &pkg_id_v2, &entries).unwrap();
@@ -541,9 +554,10 @@ mod tests {
         with_registry_test(|app_id| {
             let pkg_id = test_package_id("duplicate-register");
             let entries = [RegisteredFont::new(
-                "Example Font (TrueType)",
+                "example-font.ttf",
                 AbsolutePath::new(r"C:\path\to\example-font.ttf").unwrap(),
-            )];
+            )
+            .unwrap()];
 
             let path = key::package_version(app_id, &pkg_id);
             let key = CURRENT_USER.create(&path).unwrap();

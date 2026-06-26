@@ -45,13 +45,9 @@ Warnings can include:
 - missing `license`
 - duplicate display names after normalization
 - source-content issues such as:
-  - for sources with `contents.type = "font-file"`:
-    - no `title`
   - for sources with `contents.type = "archive"`:
-    - exact `path` entries in `fonts` without `title`
-    - `fonts` rules that match nothing
-    - `ignore` rules that match nothing
     - `glob` entries in `fonts`
+    - `fonts` or `ignore` rules that match nothing
     - font-like files that match neither `fonts` nor `ignore`
 
 ## Examples
