@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     ffi::OsString,
+    fmt::{self, Display},
     io,
 };
 
@@ -150,8 +151,20 @@ struct InstalledFontFile {
 
 #[derive(Debug, derive_more::IsVariant)]
 enum InstalledFontInspection {
-    Available(InspectedFont),
+    Available(Vec<InstalledFontFamily>),
     Unavailable,
+}
+
+impl Display for InstalledFontFamily {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { family, faces } = self;
+        let faces = faces
+            .iter()
+            .map(|s| s.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(f, "{} ({faces})", family.display())
+    }
 }
 
 fn load_package_info(
@@ -180,7 +193,7 @@ fn load_package_info(
                 .fonts()
                 .map(|font| load_font_info(cx, &pkg_dirs, &font, inspector))
                 .collect::<Result<Vec<_>, _>>()?;
-            let families = collect_family_info(&fonts);
+            let families = collect_families_from_files(&fonts);
             Ok(InstalledFontsInfo {
                 fonts_dir,
                 families,
@@ -203,6 +216,36 @@ fn load_package_info(
     })
 }
 
+#[derive(Debug, Default)]
+struct FontFamilyAccumulator {
+    families: BTreeMap<OsString, InstalledFontFamily>,
+}
+
+impl FontFamilyAccumulator {
+    fn entry(&mut self, family: OsString) -> &mut InstalledFontFamily {
+        self.families
+            .entry(family.clone())
+            .or_insert_with(|| InstalledFontFamily {
+                family,
+                faces: BTreeSet::new(),
+            })
+    }
+
+    fn add_face(&mut self, family: OsString, face: OsString) {
+        self.entry(family).faces.insert(face);
+    }
+
+    fn append_family(&mut self, family: &InstalledFontFamily) {
+        self.entry(family.family.clone())
+            .faces
+            .extend(family.faces.iter().cloned());
+    }
+
+    fn into_families(self) -> Vec<InstalledFontFamily> {
+        self.families.into_values().collect()
+    }
+}
+
 fn load_font_info(
     cx: &ReportContext<InfoScope>,
     pkg_dirs: &PackageDirs,
@@ -215,7 +258,14 @@ fn load_font_info(
         .context(InspectFontFileSnafu { path })
         .report_warn(cx)?;
     let inspection = match res {
-        Some(inspected_font) => InstalledFontInspection::Available(inspected_font),
+        Some(InspectedFont { faces }) => {
+            let mut accum = FontFamilyAccumulator::default();
+            for face in faces {
+                let InspectedFontFace { family, face } = face;
+                accum.add_face(family, face);
+            }
+            InstalledFontInspection::Available(accum.into_families())
+        }
         None => InstalledFontInspection::Unavailable,
     };
     Ok(InstalledFontFile {
@@ -224,24 +274,16 @@ fn load_font_info(
     })
 }
 
-fn collect_family_info(fonts: &[InstalledFontFile]) -> Vec<InstalledFontFamily> {
-    let mut families = BTreeMap::new();
+fn collect_families_from_files(fonts: &[InstalledFontFile]) -> Vec<InstalledFontFamily> {
+    let mut accum = FontFamilyAccumulator::default();
     for font in fonts {
-        if let InstalledFontInspection::Available(InspectedFont { faces }) = &font.inspection {
-            for face in faces {
-                let InspectedFontFace { family, face } = face;
-                let family_entry =
-                    families
-                        .entry(family.clone())
-                        .or_insert_with(|| InstalledFontFamily {
-                            family: family.clone(),
-                            faces: BTreeSet::new(),
-                        });
-                family_entry.faces.insert(face.clone());
+        if let InstalledFontInspection::Available(inspection) = &font.inspection {
+            for family in inspection {
+                accum.append_family(family);
             }
         }
     }
-    families.into_values().collect()
+    accum.into_families()
 }
 
 fn render_package_info<W>(mut writer: W, info: &PackageInfo, show_files: bool) -> io::Result<()>
@@ -294,14 +336,8 @@ where
         } = installed_fonts;
 
         writeln!(writer, "Installed Font Families ({}):", families.len())?;
-        for family_info in families {
-            let InstalledFontFamily { family, faces, .. } = family_info;
-            let faces = faces
-                .iter()
-                .map(|s| s.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            writeln!(writer, "  - {} ({faces})", family.display())?;
+        for family in families {
+            writeln!(writer, "  - {family}")?;
         }
         if *has_unavailable_fonts {
             writeln!(
@@ -320,10 +356,9 @@ where
                 } = font;
                 writeln!(writer, "  - {}", file_name.display())?;
                 match inspection {
-                    InstalledFontInspection::Available(InspectedFont { faces }) => {
-                        for face in faces {
-                            let InspectedFontFace { family, face } = face;
-                            writeln!(writer, "    - {} ({})", family.display(), face.display())?;
+                    InstalledFontInspection::Available(families) => {
+                        for family in families {
+                            writeln!(writer, "    - {family}")?;
                         }
                     }
                     InstalledFontInspection::Unavailable => {
@@ -339,7 +374,6 @@ where
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
     use crate::util::{macros::concat_line, path::FileName};
 
@@ -358,25 +392,22 @@ mod tests {
         }
     }
 
-    fn inspected_font_face(family: &str, face: &str) -> InspectedFontFace {
-        InspectedFontFace {
-            family: family.into(),
-            face: face.into(),
-        }
-    }
-
     #[test]
-    fn collect_family_info_groups_faces_by_family() {
+    fn collect_families_from_files_groups_faces_by_family_across_files() {
         let fonts = [
             InstalledFontFile {
                 file_name: FileName::new("example-font-collection.ttc").unwrap(),
-                inspection: InstalledFontInspection::Available(InspectedFont {
-                    faces: vec![
-                        inspected_font_face("Example Font", "Regular"),
-                        inspected_font_face("Example Font", "Bold"),
-                        inspected_font_face("Example Font UI", "Regular"),
-                    ],
-                }),
+                inspection: InstalledFontInspection::Available(vec![
+                    installed_font_family("Example Font", &["Regular", "Bold"]),
+                    installed_font_family("Example Font UI", &["Regular"]),
+                ]),
+            },
+            InstalledFontFile {
+                file_name: FileName::new("example-font-italic.ttf").unwrap(),
+                inspection: InstalledFontInspection::Available(vec![installed_font_family(
+                    "Example Font",
+                    &["Italic"],
+                )]),
             },
             InstalledFontFile {
                 file_name: FileName::new("example-font-bold.ttf").unwrap(),
@@ -384,9 +415,9 @@ mod tests {
             },
         ];
         assert_eq!(
-            collect_family_info(&fonts),
+            collect_families_from_files(&fonts),
             vec![
-                installed_font_family("Example Font", &["Bold", "Regular"]),
+                installed_font_family("Example Font", &["Bold", "Italic", "Regular"]),
                 installed_font_family("Example Font UI", &["Regular"]),
             ]
         );
@@ -414,18 +445,15 @@ mod tests {
                 font_files: vec![
                     InstalledFontFile {
                         file_name: FileName::new("example-font-collection.ttc").unwrap(),
-                        inspection: InstalledFontInspection::Available(InspectedFont {
-                            faces: vec![
-                                inspected_font_face("Example Font", "Regular"),
-                                inspected_font_face("Example Font", "Bold"),
-                            ],
-                        }),
+                        inspection: InstalledFontInspection::Available(vec![
+                            installed_font_family("Example Font", &["Regular", "Bold"]),
+                        ]),
                     },
                     InstalledFontFile {
                         file_name: FileName::new("example-font-ui-regular.ttf").unwrap(),
-                        inspection: InstalledFontInspection::Available(InspectedFont {
-                            faces: vec![inspected_font_face("Example Font UI", "Regular")],
-                        }),
+                        inspection: InstalledFontInspection::Available(vec![
+                            installed_font_family("Example Font UI", &["Regular"]),
+                        ]),
                     },
                     InstalledFontFile {
                         file_name: FileName::new("example-font-bold.ttf").unwrap(),
@@ -453,8 +481,7 @@ mod tests {
             r"Fonts Directory: C:\path\to\fonts",
             "Installed Font Files (3):",
             "  - example-font-collection.ttc",
-            "    - Example Font (Regular)",
-            "    - Example Font (Bold)",
+            "    - Example Font (Bold, Regular)",
             "  - example-font-ui-regular.ttf",
             "    - Example Font UI (Regular)",
             "  - example-font-bold.ttf",
