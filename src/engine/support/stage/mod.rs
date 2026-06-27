@@ -108,8 +108,7 @@ where
         extract_details.push(detail);
     }
 
-    let valid_pkg_fonts =
-        validate::validate_and_prune_fonts(&cx, package_fonts_dir, &extracted_files)?;
+    let valid_pkg_fonts = validate::validate_fonts(&cx, package_fonts_dir, &extracted_files)?;
     if cx.cancel_token().is_cancelled() {
         return Err(S::Error::cancelled());
     }

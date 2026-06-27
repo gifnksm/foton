@@ -8,12 +8,19 @@ use crate::{
         context::{ReportContext, RootContext},
         reporter::{
             ErrorReportExt as _, NeverReport, OperationError, ReportScope, RootReportScope,
-            ScopeResultErrorExt as _,
+            ScopeResultErrorExt as _, ScopeResultWarnExt as _,
         },
     },
     db::PackageDbEntry,
     engine,
-    package::{PackageDefinition, PackageDirs, PackageSpec},
+    package::{
+        ActivationState, InstallationState, PackageDefinition, PackageDirs, PackageFont, PackageId,
+        PackageSpec,
+    },
+    platform::windows::services::font::{
+        FontInspector, FontInspectorError, InspectedFont, InspectedFontFace,
+    },
+    util::path::{AbsolutePath, FileName},
 };
 
 #[derive(Debug, Default)]
@@ -21,7 +28,7 @@ struct InfoScope {}
 
 impl ReportScope for InfoScope {
     type NoticeReportValue = NeverReport;
-    type WarnReportValue = NeverReport;
+    type WarnReportValue = InfoWarnReport;
     type ErrorReportValue = InfoErrorReport;
     type Error = InfoError;
 }
@@ -29,7 +36,19 @@ impl ReportScope for InfoScope {
 impl RootReportScope for InfoScope {}
 
 #[derive(Debug, Snafu)]
+enum InfoWarnReport {
+    #[snafu(display("failed to inspect font file: {path}", path = path.display()))]
+    InspectFontFile {
+        path: AbsolutePath,
+        #[snafu(source(from(FontInspectorError, Box::new)))]
+        source: Box<FontInspectorError>,
+    },
+}
+
+#[derive(Debug, Snafu)]
 enum InfoErrorReport {
+    #[snafu(display("failed to create font inspector"))]
+    CreateFontInspector { source: FontInspectorError },
     #[snafu(display("no package matches the specified package `{pkg_spec}`"))]
     NoMatchingPackage { pkg_spec: PackageSpec },
     #[snafu(display("failed to write package info to stdout"))]
@@ -65,6 +84,10 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
     let db = engine::load_database(&cx, &mut db_lock_file, *exit_on_lock)?;
 
+    let inspector = FontInspector::new()
+        .context(CreateFontInspectorSnafu)
+        .report_error(&cx)?;
+
     let mut res = Ok(());
     for pkg_spec in pkg_specs {
         let mut entries = db.entries_by_spec(pkg_spec).peekable();
@@ -76,7 +99,8 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
         }
 
         for entry in entries {
-            render_package_info(&cx, io::stdout().lock(), &entry)
+            let info = load_package_info(&cx, &entry, &inspector)?;
+            render_package_info(io::stdout().lock(), &info)
                 .context(WriteInfoSnafu)
                 .report_error(&cx)?;
         }
@@ -85,15 +109,45 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
     res
 }
 
-fn render_package_info<S, W>(
-    cx: &ReportContext<S>,
-    mut writer: W,
+#[derive(Debug)]
+struct PackageInfo {
+    id: PackageId,
+    installation_state: InstallationState,
+    activation_state: ActivationState,
+    display_name: Option<String>,
+    description: Option<String>,
+    aliases: Vec<String>,
+    homepage: Option<String>,
+    repository: Option<String>,
+    license: Option<String>,
+    installed_fonts: Option<InstalledFontsInfo>,
+}
+
+#[derive(Debug)]
+struct InstalledFontsInfo {
+    fonts_dir: AbsolutePath,
+    fonts: Vec<InstalledFont>,
+}
+
+#[derive(Debug)]
+struct InstalledFont {
+    file_name: FileName,
+    inspection: InstalledFontInspection,
+}
+
+#[derive(Debug)]
+enum InstalledFontInspection {
+    Available(InspectedFont),
+    Unavailable,
+}
+
+fn load_package_info(
+    cx: &ReportContext<InfoScope>,
     entry: &PackageDbEntry<'_>,
-) -> io::Result<()>
-where
-    S: ReportScope,
-    W: io::Write,
-{
+    inspector: &FontInspector,
+) -> Result<PackageInfo, InfoError> {
+    let installation_state = entry.installation_state();
+    let activation_state = entry.activation_state();
     let PackageDefinition {
         id,
         display_name,
@@ -104,14 +158,76 @@ where
         license,
         sources: _,
     } = entry.make_definition();
-    let pkg_dirs = PackageDirs::new(cx.app_dirs(), &id);
+    let installed_fonts = installation_state
+        .is_installed()
+        .then(|| {
+            let pkg_dirs = PackageDirs::new(cx.app_dirs(), &id);
+            let fonts_dir = pkg_dirs.fonts_dir().clone();
+            let fonts = entry
+                .fonts()
+                .map(|font| load_font_info(cx, &pkg_dirs, &font, inspector))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(InstalledFontsInfo { fonts_dir, fonts })
+        })
+        .transpose()?;
+    Ok(PackageInfo {
+        id,
+        installation_state,
+        activation_state,
+        display_name,
+        description,
+        aliases,
+        homepage,
+        repository,
+        license,
+        installed_fonts,
+    })
+}
+
+fn load_font_info(
+    cx: &ReportContext<InfoScope>,
+    pkg_dirs: &PackageDirs,
+    font: &PackageFont,
+    inspector: &FontInspector,
+) -> Result<InstalledFont, InfoError> {
+    let path = &font.path(pkg_dirs);
+    let res = inspector
+        .inspect_font(path)
+        .context(InspectFontFileSnafu { path })
+        .report_warn(cx)?;
+    let inspection = match res {
+        Some(inspected_font) => InstalledFontInspection::Available(inspected_font),
+        None => InstalledFontInspection::Unavailable,
+    };
+    Ok(InstalledFont {
+        file_name: font.file_name().clone(),
+        inspection,
+    })
+}
+
+fn render_package_info<W>(mut writer: W, info: &PackageInfo) -> io::Result<()>
+where
+    W: io::Write,
+{
+    let PackageInfo {
+        id,
+        installation_state,
+        activation_state,
+        display_name,
+        description,
+        aliases,
+        homepage,
+        repository,
+        license,
+        installed_fonts,
+    } = info;
 
     writeln!(writer, "Package ID: {id}")?;
     if let Some(display_name) = display_name {
         writeln!(writer, "Display Name: {display_name}")?;
     }
-    writeln!(writer, "Installation State: {}", entry.installation_state())?;
-    writeln!(writer, "Activation State: {}", entry.activation_state())?;
+    writeln!(writer, "Installation State: {installation_state}")?;
+    writeln!(writer, "Activation State: {activation_state}")?;
     if let Some(description) = description {
         writeln!(writer, "Description: {description}")?;
     }
@@ -130,16 +246,27 @@ where
     if let Some(license) = license {
         writeln!(writer, "License: {license}")?;
     }
-    if entry.installation_state().is_installed() {
-        let pkg_fonts = entry.fonts().collect::<Vec<_>>();
-        writeln!(
-            writer,
-            "Fonts Directory: {}",
-            pkg_dirs.fonts_dir().display(),
-        )?;
-        writeln!(writer, "Installed Fonts ({}):", pkg_fonts.len())?;
-        for font in &pkg_fonts {
-            writeln!(writer, "  - {}", font.file_name().display())?;
+    if let Some(installed_fonts) = installed_fonts {
+        let InstalledFontsInfo { fonts_dir, fonts } = installed_fonts;
+        writeln!(writer, "Fonts Directory: {}", fonts_dir.display())?;
+        writeln!(writer, "Installed Font Files ({}):", fonts.len())?;
+        for font in fonts {
+            let InstalledFont {
+                file_name,
+                inspection,
+            } = font;
+            writeln!(writer, "  - {}", file_name.display())?;
+            match inspection {
+                InstalledFontInspection::Available(InspectedFont { faces }) => {
+                    for face in faces {
+                        let InspectedFontFace { family, face } = face;
+                        writeln!(writer, "    - {} / {}", family.display(), face.display())?;
+                    }
+                }
+                InstalledFontInspection::Unavailable => {
+                    writeln!(writer, "    (failed to inspect font file; see warnings)")?;
+                }
+            }
         }
     }
     writeln!(writer)?;
@@ -148,128 +275,89 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+
     use super::*;
-    use crate::{
-        db::PackageDatabase,
-        package::PackageFont,
-        util::{macros::concat_line, path::FileName, testing},
-    };
-
-    fn make_pkg_fonts(pkg_fonts: &[&str]) -> Vec<PackageFont> {
-        pkg_fonts
-            .iter()
-            .copied()
-            .map(|file_name| PackageFont::new(FileName::new(file_name).unwrap()))
-            .collect()
-    }
-
-    fn mark_as_active_with_fonts(
-        db: &mut PackageDatabase<'_>,
-        pkg: &PackageDefinition,
-        pkg_fonts: &[PackageFont],
-    ) {
-        let mut tx = db.transaction();
-        tx.begin_install(pkg);
-        tx.complete_install(&pkg.id, pkg_fonts).unwrap();
-        tx.begin_activate(&pkg.id).unwrap();
-        tx.complete_activate(&pkg.id).unwrap();
-        tx.commit().unwrap();
-    }
+    use crate::util::{macros::concat_line, path::FileName};
 
     #[test]
     fn render_package_info_prints_installed_package_details_and_recorded_fonts() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-display-name = "Example Font"
-version = "0.1.0"
-description = "Example font family for UI and coding"
-aliases = ["Example Font UI"]
-homepage = "https://example.com/example-font"
-repository = "https://github.com/example/example-font"
-license = "OFL-1.1"
+        let info = PackageInfo {
+            id: "example-font@0.1.0".parse().unwrap(),
+            installation_state: InstallationState::Installed,
+            activation_state: ActivationState::Active,
+            display_name: Some("Example Font".to_owned()),
+            description: Some("Example font family for UI and coding".to_owned()),
+            aliases: vec!["Example Font UI".to_owned()],
+            homepage: Some("https://example.com/example-font".to_owned()),
+            repository: Some("https://github.com/example/example-font".to_owned()),
+            license: Some("OFL-1.1".to_owned()),
+            installed_fonts: Some(InstalledFontsInfo {
+                fonts_dir: AbsolutePath::new(r"C:\path\to\fonts").unwrap(),
+                fonts: vec![
+                    InstalledFont {
+                        file_name: FileName::new("example-font-regular.ttf").unwrap(),
+                        inspection: InstalledFontInspection::Available(InspectedFont {
+                            faces: vec![InspectedFontFace {
+                                family: OsString::from("Example Font"),
+                                face: OsString::from("Regular"),
+                            }],
+                        }),
+                    },
+                    InstalledFont {
+                        file_name: FileName::new("example-font-bold.ttf").unwrap(),
+                        inspection: InstalledFontInspection::Unavailable,
+                    },
+                ],
+            }),
+        };
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        let mut output = vec![];
+        render_package_info(&mut output, &info).unwrap();
+        let output = String::from_utf8(output).unwrap();
 
-[sources.contents]
-type = "archive"
-fonts = [{ glob = "fonts/*.ttf" }]
-ignore = ["fonts/exclude.ttf"]
-"#,
+        let expected = concat_line!(
+            "Package ID: example-font@0.1.0",
+            "Display Name: Example Font",
+            "Installation State: installed",
+            "Activation State: active",
+            "Description: Example font family for UI and coding",
+            "Aliases (1):",
+            "  - Example Font UI",
+            "Homepage: https://example.com/example-font",
+            "Repository: https://github.com/example/example-font",
+            "License: OFL-1.1",
+            r"Fonts Directory: C:\path\to\fonts",
+            "Installed Font Files (2):",
+            "  - example-font-regular.ttf",
+            "    - Example Font / Regular",
+            "  - example-font-bold.ttf",
+            "    (failed to inspect font file; see warnings)",
+            "",
+            "",
         );
-        let pkg_fonts = make_pkg_fonts(&["example-font-regular.ttf", "example-font-bold.ttf"]);
-
-        let (output, expected) = testing::with_db(|cx, db| {
-            mark_as_active_with_fonts(db, &pkg, &pkg_fonts);
-
-            let mut output = Vec::new();
-            let entry = db.entry_by_id(&pkg.id).unwrap();
-            render_package_info(cx, &mut output, &entry).unwrap();
-            let output = String::from_utf8(output).unwrap();
-
-            let pkg_dirs = PackageDirs::new(cx.app_dirs(), &pkg.id);
-            let expected = format!(
-                concat_line!(
-                    "Package ID: example-font@0.1.0",
-                    "Display Name: Example Font",
-                    "Installation State: installed",
-                    "Activation State: active",
-                    "Description: Example font family for UI and coding",
-                    "Aliases (1):",
-                    "  - Example Font UI",
-                    "Homepage: https://example.com/example-font",
-                    "Repository: https://github.com/example/example-font",
-                    "License: OFL-1.1",
-                    "Fonts Directory: {fonts_dir}",
-                    "Installed Fonts (2):",
-                    "  - example-font-regular.ttf",
-                    "  - example-font-bold.ttf",
-                    "",
-                    "",
-                ),
-                fonts_dir = pkg_dirs.fonts_dir().display(),
-            );
-
-            (output, expected)
-        });
 
         assert_eq!(output, expected);
     }
 
     #[test]
     fn render_package_info_omits_installed_font_details_for_incomplete_install() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-display-name = "Example Font"
-version = "0.1.0"
-description = "Example font family for UI and coding"
-aliases = ["Example Font UI"]
-homepage = "https://example.com/example-font"
-repository = "https://github.com/example/example-font"
-license = "OFL-1.1"
+        let info = PackageInfo {
+            id: "example-font@0.1.0".parse().unwrap(),
+            installation_state: InstallationState::IncompleteInstall,
+            activation_state: ActivationState::Inactive,
+            display_name: Some("Example Font".to_owned()),
+            description: Some("Example font family for UI and coding".to_owned()),
+            aliases: vec!["Example Font UI".to_owned()],
+            homepage: Some("https://example.com/example-font".to_owned()),
+            repository: Some("https://github.com/example/example-font".to_owned()),
+            license: Some("OFL-1.1".to_owned()),
+            installed_fonts: None,
+        };
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-[sources.contents]
-type = "archive"
-fonts = [{ glob = "fonts/*.ttf" }]
-ignore = ["fonts/exclude.ttf"]
-"#,
-        );
-
-        let output = testing::with_db(|cx, db| {
-            testing::mark_as_incomplete_install(db, &pkg);
-
-            let mut output = Vec::new();
-            let entry = db.entry_by_id(&pkg.id).unwrap();
-            render_package_info(cx, &mut output, &entry).unwrap();
-            String::from_utf8(output).unwrap()
-        });
+        let mut output = vec![];
+        render_package_info(&mut output, &info).unwrap();
+        let output = String::from_utf8(output).unwrap();
 
         let expected = concat_line!(
             "Package ID: example-font@0.1.0",

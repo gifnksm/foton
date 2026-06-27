@@ -1,23 +1,16 @@
-use std::{marker::PhantomData, path::PathBuf};
+use std::marker::PhantomData;
 
 use snafu::{ResultExt as _, Snafu};
 
 use crate::{
     cli::{
         context::ReportContext,
-        reporter::{
-            ErrorReportExt as _, NeverReport, ReportScope, ScopeResultErrorExt as _,
-            ScopeResultWarnExt as _, SubReportScope,
-        },
+        reporter::{NeverReport, ReportScope, ScopeResultErrorExt as _, SubReportScope},
     },
     engine::ExtractedFile,
     package::PackageFont,
     platform::windows::services::font::{FontInspector, FontInspectorError, InspectedFont},
-    util::{
-        fs as fs_util,
-        macros::concat_line,
-        path::{AbsolutePath, FileName},
-    },
+    util::path::{AbsolutePath, FileName},
 };
 
 #[derive(Debug, Default)]
@@ -30,29 +23,12 @@ where
     S: ReportScope,
 {
     type NoticeReportValue = NeverReport;
-    type WarnReportValue = ValidationWarnReport;
+    type WarnReportValue = NeverReport;
     type ErrorReportValue = ValidationErrorReport;
     type Error = S::Error;
 }
 
 impl<S> SubReportScope<S> for ValidationScope<S> where S: ReportScope {}
-
-#[derive(Debug, Snafu)]
-enum ValidationWarnReport {
-    #[snafu(display("unsupported font file found: {path}", path = path.display()))]
-    UnsupportedFontFile { path: PathBuf },
-    #[snafu(display(
-        concat_line!(
-            "failed to remove unsupported font file: {path}",
-            "manual cleanup may be required",
-        ),
-        path = path.display(),
-    ))]
-    RemoveUnsupportedFontFile {
-        path: PathBuf,
-        source: fs_util::FsError,
-    },
-}
 
 #[derive(Debug, Snafu)]
 enum ValidationErrorReport {
@@ -69,7 +45,7 @@ enum ValidationErrorReport {
     },
 }
 
-pub(super) fn validate_and_prune_fonts<S>(
+pub(super) fn validate_fonts<S>(
     cx: &ReportContext<S>,
     fonts_dir: &AbsolutePath,
     extracted: &[ExtractedFile],
@@ -87,17 +63,11 @@ where
     for file in extracted {
         let file_name = file.file_name();
         let path = &fonts_dir.join(file_name);
-        let Some(InspectedFont {}) = inspector
+
+        let InspectedFont { faces: _ } = inspector
             .inspect_font(path)
             .context(InspectFontSnafu { file_name })
-            .report_error(&cx)?
-        else {
-            UnsupportedFontFileSnafu { path }.build().report_warn(&cx)?;
-            fs_util::remove_file(path)
-                .context(RemoveUnsupportedFontFileSnafu { path })
-                .report_warn(&cx)?;
-            continue;
-        };
+            .report_error(&cx)?;
 
         let pkg_font = PackageFont::new(file_name);
         valid_pkg_fonts.push(pkg_font);
