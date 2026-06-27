@@ -9,9 +9,8 @@ mod v1;
 use v1 as latest;
 
 use crate::package::{
-    ActivationState, ArchiveOptions, FontEntry, FontFileOptions, InstallationState,
-    PackageDefinition, PackageId, PackageName, PackageSource, PackageSourceContents,
-    PackageVersion,
+    ActivationState, ArchiveOptions, FontFileOptions, InstallationState, PackageDefinition,
+    PackageFont, PackageId, PackageName, PackageSource, PackageSourceContents, PackageVersion,
 };
 
 pub(in crate::db) use self::latest::types::*;
@@ -156,7 +155,7 @@ impl PersistedPackageEntry {
             installation_state: installation_state.into(),
             activation_state: activation_state.into(),
             definition: definition.into(),
-            font_entries: vec![],
+            fonts: vec![],
         }
     }
 
@@ -180,12 +179,12 @@ impl PersistedPackageEntry {
         self.definition.make_definition(pkg_id)
     }
 
-    pub(in crate::db) fn font_entries(&self) -> impl Iterator<Item = FontEntry> + '_ {
-        self.font_entries.iter().map(Into::into)
+    pub(in crate::db) fn fonts(&self) -> impl Iterator<Item = PackageFont> + '_ {
+        self.fonts.iter().map(Into::into)
     }
 
-    pub(in crate::db) fn set_font_entries(&mut self, entries: &[FontEntry]) {
-        self.font_entries = entries.iter().map(Into::into).collect();
+    pub(in crate::db) fn set_fonts(&mut self, entries: &[PackageFont]) {
+        self.fonts = entries.iter().map(Into::into).collect();
     }
 
     pub(in crate::db) fn has_same_definition_as(&self, pkg: &PackageDefinition) -> bool {
@@ -336,16 +335,16 @@ impl From<&ArchiveOptions> for PersistedArchiveOptions {
     }
 }
 
-impl From<&FontEntry> for PersistedFontEntry {
-    fn from(value: &FontEntry) -> Self {
+impl From<&PackageFont> for PersistedPackageFont {
+    fn from(value: &PackageFont) -> Self {
         Self {
             file_name: value.file_name().clone(),
         }
     }
 }
 
-impl From<&PersistedFontEntry> for FontEntry {
-    fn from(value: &PersistedFontEntry) -> Self {
+impl From<&PersistedPackageFont> for PackageFont {
+    fn from(value: &PersistedPackageFont) -> Self {
         Self::new(value.file_name.clone())
     }
 }

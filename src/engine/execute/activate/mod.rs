@@ -95,7 +95,7 @@ where
             &cx,
             self.cleanup_tracker.clone(),
             pkg_id,
-            entry.font_entries(),
+            entry.fonts(),
         )?);
 
         Ok(())

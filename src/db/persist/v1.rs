@@ -51,7 +51,7 @@ pub(in crate::db::persist) mod types {
         pub(in crate::db::persist) installation_state: PersistedInstallationState,
         pub(in crate::db::persist) activation_state: PersistedActivationState,
         pub(in crate::db::persist) definition: PersistedPackageDefinition,
-        pub(in crate::db::persist) font_entries: Vec<PersistedFontEntry>,
+        pub(in crate::db::persist) fonts: Vec<PersistedPackageFont>,
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, derive_more::IsVariant)]
@@ -127,7 +127,7 @@ pub(in crate::db::persist) mod types {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
-    pub(in crate::db::persist) struct PersistedFontEntry {
+    pub(in crate::db::persist) struct PersistedPackageFont {
         pub(in crate::db::persist) file_name: FileName,
     }
 }

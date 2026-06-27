@@ -3,7 +3,7 @@ use snafu::{OptionExt as _, Snafu};
 use crate::{
     db::persist::{PersistedPackageDb, PersistedPackageEntry},
     package::{
-        ActivationState, FontEntry, InstallationState, PackageDefinition, PackageId, PackageName,
+        ActivationState, InstallationState, PackageDefinition, PackageFont, PackageId, PackageName,
         PackageSpec,
     },
 };
@@ -85,8 +85,8 @@ impl<'a> PackageDbEntry<'a> {
         self.data.make_definition(self.id.clone())
     }
 
-    pub(crate) fn font_entries(&self) -> impl Iterator<Item = FontEntry> + 'a {
-        self.data.font_entries()
+    pub(crate) fn fonts(&self) -> impl Iterator<Item = PackageFont> + 'a {
+        self.data.fonts()
     }
 }
 
@@ -275,13 +275,13 @@ impl PackageDbState {
     pub(in crate::db) fn complete_install(
         &mut self,
         pkg_id: &PackageId,
-        font_entries: &[FontEntry],
+        pkg_fonts: &[PackageFont],
     ) -> Result<(), PackageDbStateError> {
         self.check_installation_state(pkg_id, InstallationState::IncompleteInstall)?;
 
         let db_entry = self.data.entry_mut(pkg_id).unwrap();
         db_entry.set_installation_state(InstallationState::Installed);
-        db_entry.set_font_entries(font_entries);
+        db_entry.set_fonts(pkg_fonts);
         Ok(())
     }
 

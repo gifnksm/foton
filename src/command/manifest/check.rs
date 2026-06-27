@@ -216,7 +216,7 @@ pub(crate) async fn check_manifest(
         .context(CreatePackageDirsSnafu { pkg_id })
         .report_error(&cx)?;
 
-    let (_font_entries, extract_details) = engine::stage_package(&cx, &pkg_dirs, &pkg).await?;
+    let (_pkg_fonts, extract_details) = engine::stage_package(&cx, &pkg_dirs, &pkg).await?;
     check_fields(&cx, &pkg, &extract_details)?;
 
     Ok(())
