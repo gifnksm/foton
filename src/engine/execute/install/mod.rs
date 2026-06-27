@@ -17,7 +17,7 @@ use crate::{
         },
         support,
     },
-    package::{self, FontEntry, PackageDefinition, PackageDirs, PackageId},
+    package::{self, PackageDefinition, PackageDirs, PackageFont, PackageId},
     platform::windows::steps::unregistration::{self, UnregistrationIntent},
     util::{fs::FsError, macros::concat_line},
 };
@@ -61,7 +61,7 @@ where
 {
     pkg: Arc<PackageDefinition>,
     cleanup_tracker: CleanupTracker,
-    font_entries: Option<Vec<FontEntry>>,
+    pkg_fonts: Option<Vec<PackageFont>>,
     pkg_dirs_guard: Option<PackageDirsGuard<InstallExecutionScope<S>>>,
     installation_persisted: bool,
 }
@@ -79,7 +79,7 @@ where
         Self {
             pkg,
             cleanup_tracker: CleanupTracker::default(),
-            font_entries: None,
+            pkg_fonts: None,
             pkg_dirs_guard: None,
             installation_persisted: false,
         }
@@ -119,9 +119,9 @@ where
             pkg_id,
         )?);
         let pkg_dirs_guard = self.pkg_dirs_guard.as_ref().unwrap();
-        let (font_entries, _) = support::stage_package(&cx, pkg_dirs_guard, &self.pkg).await?;
+        let (pkg_fonts, _) = support::stage_package(&cx, pkg_dirs_guard, &self.pkg).await?;
 
-        self.font_entries = Some(font_entries);
+        self.pkg_fonts = Some(pkg_fonts);
 
         Ok(())
     }
@@ -131,8 +131,8 @@ where
         _cx: &ReportContext<S>,
         tx: &mut PackageDatabaseTransaction<'_, '_>,
     ) -> Result<(), S::Error> {
-        let font_entries = self.font_entries.as_ref().unwrap();
-        tx.complete_install(&self.pkg.id, font_entries).unwrap();
+        let pkg_fonts = self.pkg_fonts.as_ref().unwrap();
+        tx.complete_install(&self.pkg.id, pkg_fonts).unwrap();
         Ok(())
     }
 
@@ -206,7 +206,7 @@ mod tests {
         testing::with_db(|cx, db| {
             let mut tx = db.transaction();
             let mut step = PreparedInstallStep::from_plan_step(&mut tx, install_op(&PKG));
-            step.font_entries = Some(vec![]);
+            step.pkg_fonts = Some(vec![]);
 
             step.on_complete(cx, &mut tx).unwrap();
             assert!(!step.installation_persisted);

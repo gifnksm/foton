@@ -11,7 +11,7 @@ use crate::{
         },
     },
     engine::ExtractedFile,
-    package::FontEntry,
+    package::PackageFont,
     platform::windows::services::font::{FontInspector, FontInspectorError, InspectedFont},
     util::{
         fs as fs_util,
@@ -73,13 +73,13 @@ pub(super) fn validate_and_prune_fonts<S>(
     cx: &ReportContext<S>,
     fonts_dir: &AbsolutePath,
     extracted: &[ExtractedFile],
-) -> Result<Vec<FontEntry>, S::Error>
+) -> Result<Vec<PackageFont>, S::Error>
 where
     S: ReportScope,
 {
     let cx = ValidationScope::start_with_report(cx, "Validating fonts...");
 
-    let mut valid_entries = vec![];
+    let mut valid_pkg_fonts = vec![];
     let inspector = FontInspector::new()
         .context(CreateFontInspectorSnafu)
         .report_error(&cx)?;
@@ -99,9 +99,9 @@ where
             continue;
         };
 
-        let entry = FontEntry::new(file_name);
-        valid_entries.push(entry);
+        let pkg_font = PackageFont::new(file_name);
+        valid_pkg_fonts.push(pkg_font);
     }
 
-    Ok(valid_entries)
+    Ok(valid_pkg_fonts)
 }

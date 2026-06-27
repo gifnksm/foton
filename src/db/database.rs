@@ -13,7 +13,7 @@ use crate::{
         persist::{self, PersistError, PersistedPackageDb},
         simulation::SimulatedPackageDbState,
     },
-    package::{FontEntry, PackageDefinition, PackageId, PackageSpec},
+    package::{PackageDefinition, PackageFont, PackageId, PackageSpec},
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
 
@@ -153,10 +153,10 @@ impl PackageDatabaseTransaction<'_, '_> {
     pub(crate) fn complete_install(
         &mut self,
         pkg_id: &PackageId,
-        font_entries: &[FontEntry],
+        pkg_fonts: &[PackageFont],
     ) -> Result<(), PackageDatabaseError> {
         self.working_state
-            .complete_install(pkg_id, font_entries)
+            .complete_install(pkg_id, pkg_fonts)
             .map_err(Into::into)
     }
 

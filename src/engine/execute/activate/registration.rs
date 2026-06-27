@@ -8,7 +8,7 @@ use crate::{
         reporter::{ErrorReportExt as _, ReportScope, SubReportScope},
     },
     engine::execute::support::CleanupTracker,
-    package::{FontEntry, PackageId},
+    package::{PackageFont, PackageId},
     platform::windows::steps::{
         registration,
         unregistration::{self, UnregistrationIntent},
@@ -50,11 +50,11 @@ pub(super) fn register_package_fonts<S, I>(
     cx: &ReportContext<S>,
     cleanup_tracker: CleanupTracker,
     pkg_id: &PackageId,
-    font_entries: I,
+    pkg_fonts: I,
 ) -> Result<RegistrationGuard<S>, S::Error>
 where
     S: ReportScope,
-    I: IntoIterator<Item = FontEntry>,
+    I: IntoIterator<Item = PackageFont>,
 {
     let cx = RegistrationScope::start(cx);
     let mut guard = RegistrationGuard {
@@ -64,7 +64,7 @@ where
         cleanup_tracker,
         pkg_id: pkg_id.clone(),
     };
-    registration::register_package_fonts(&cx, pkg_id, font_entries)?;
+    registration::register_package_fonts(&cx, pkg_id, pkg_fonts)?;
     guard.registered = true;
     Ok(guard)
 }

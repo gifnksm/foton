@@ -10,7 +10,7 @@ use crate::{
             SubReportScope,
         },
     },
-    package::{FontEntry, PackageDirs, PackageId},
+    package::{PackageDirs, PackageFont, PackageId},
     platform::windows::primitives::{
         registry::{self, RegisteredFont, RegisteredFontError, RegistryError},
         session::{self, SessionError},
@@ -65,22 +65,21 @@ enum RegistrationErrorReport {
 pub(crate) fn register_package_fonts<S, I>(
     cx: &ReportContext<S>,
     pkg_id: &PackageId,
-    font_entries: I,
+    pkg_fonts: I,
 ) -> Result<(), S::Error>
 where
     S: ReportScope,
-    I: IntoIterator<Item = FontEntry>,
+    I: IntoIterator<Item = PackageFont>,
 {
     let cx = RegistrationScope::start_with_report(cx, "Registering fonts...");
 
-    let pkg_dir = PackageDirs::new(cx.app_dirs(), pkg_id);
-    let fonts_dir = pkg_dir.fonts_dir();
-    let registered_fonts = font_entries
+    let pkg_dirs = PackageDirs::new(cx.app_dirs(), pkg_id);
+    let registered_fonts = pkg_fonts
         .into_iter()
-        .map(|entry| {
+        .map(|pkg_font| {
             RegisteredFont::new(
-                entry.file_name().to_os_string(),
-                fonts_dir.join(entry.file_name()),
+                pkg_font.file_name().to_os_string(),
+                pkg_font.path(&pkg_dirs),
             )
         })
         .collect::<Result<Vec<_>, _>>()

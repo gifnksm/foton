@@ -131,14 +131,14 @@ where
         writeln!(writer, "License: {license}")?;
     }
     if entry.installation_state().is_installed() {
-        let font_entries = entry.font_entries().collect::<Vec<_>>();
+        let pkg_fonts = entry.fonts().collect::<Vec<_>>();
         writeln!(
             writer,
             "Fonts Directory: {}",
             pkg_dirs.fonts_dir().display(),
         )?;
-        writeln!(writer, "Installed Fonts ({}):", font_entries.len())?;
-        for font in &font_entries {
+        writeln!(writer, "Installed Fonts ({}):", pkg_fonts.len())?;
+        for font in &pkg_fonts {
             writeln!(writer, "  - {}", font.file_name().display())?;
         }
     }
@@ -151,26 +151,26 @@ mod tests {
     use super::*;
     use crate::{
         db::PackageDatabase,
-        package::FontEntry,
+        package::PackageFont,
         util::{macros::concat_line, path::FileName, testing},
     };
 
-    fn make_font_entries(entries: &[&str]) -> Vec<FontEntry> {
-        entries
+    fn make_pkg_fonts(pkg_fonts: &[&str]) -> Vec<PackageFont> {
+        pkg_fonts
             .iter()
             .copied()
-            .map(|file_name| FontEntry::new(FileName::new(file_name).unwrap()))
+            .map(|file_name| PackageFont::new(FileName::new(file_name).unwrap()))
             .collect()
     }
 
     fn mark_as_active_with_fonts(
         db: &mut PackageDatabase<'_>,
         pkg: &PackageDefinition,
-        font_entries: &[FontEntry],
+        pkg_fonts: &[PackageFont],
     ) {
         let mut tx = db.transaction();
         tx.begin_install(pkg);
-        tx.complete_install(&pkg.id, font_entries).unwrap();
+        tx.complete_install(&pkg.id, pkg_fonts).unwrap();
         tx.begin_activate(&pkg.id).unwrap();
         tx.complete_activate(&pkg.id).unwrap();
         tx.commit().unwrap();
@@ -199,11 +199,10 @@ fonts = [{ glob = "fonts/*.ttf" }]
 ignore = ["fonts/exclude.ttf"]
 "#,
         );
-        let font_entries =
-            make_font_entries(&["example-font-regular.ttf", "example-font-bold.ttf"]);
+        let pkg_fonts = make_pkg_fonts(&["example-font-regular.ttf", "example-font-bold.ttf"]);
 
         let (output, expected) = testing::with_db(|cx, db| {
-            mark_as_active_with_fonts(db, &pkg, &font_entries);
+            mark_as_active_with_fonts(db, &pkg, &pkg_fonts);
 
             let mut output = Vec::new();
             let entry = db.entry_by_id(&pkg.id).unwrap();

@@ -10,7 +10,7 @@ use crate::{
         },
     },
     engine::support::stage::extract::ExtractResult,
-    package::{ArchiveOptions, FontEntry, PackageDefinition, PackageDirs, PackageId},
+    package::{ArchiveOptions, PackageDefinition, PackageDirs, PackageFont, PackageId},
     util::path::FileName,
 };
 
@@ -84,7 +84,7 @@ pub(crate) async fn stage_package<'s, S>(
     cx: &ReportContext<S>,
     pkg_dirs: &PackageDirs,
     pkg: &'s PackageDefinition,
-) -> Result<(Vec<FontEntry>, Vec<ExtractDetail<'s>>), S::Error>
+) -> Result<(Vec<PackageFont>, Vec<ExtractDetail<'s>>), S::Error>
 where
     S: ReportScope,
 {
@@ -108,13 +108,13 @@ where
         extract_details.push(detail);
     }
 
-    let valid_entries =
+    let valid_pkg_fonts =
         validate::validate_and_prune_fonts(&cx, package_fonts_dir, &extracted_files)?;
     if cx.cancel_token().is_cancelled() {
         return Err(S::Error::cancelled());
     }
 
-    if valid_entries.is_empty() {
+    if valid_pkg_fonts.is_empty() {
         return Err(NoValidFontsSnafu { pkg_id: &pkg.id }
             .build()
             .report_error(&cx));
@@ -122,8 +122,8 @@ where
 
     reporter.report_info(format_args!(
         "{} valid font(s) found in package",
-        valid_entries.len()
+        valid_pkg_fonts.len()
     ));
 
-    Ok((valid_entries, extract_details))
+    Ok((valid_pkg_fonts, extract_details))
 }
