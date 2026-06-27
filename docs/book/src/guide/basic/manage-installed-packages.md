@@ -47,8 +47,10 @@ foton info <package-name>@<version>
 
 `info` prints the package ID, recorded states, and package metadata for
 matching packages recorded in the local package database.
-For packages in the `installed` state, it also shows the fonts directory and
-the recorded installed font files.
+For packages in the `installed` state, it also shows a summary of the
+installed font families.
+Use `--show-files` when you also want the fonts directory and installed font
+files for packages in the `installed` state.
 This can include packages left by incomplete operations.
 Use this command when you want to confirm exactly what is recorded in the local
 package database.

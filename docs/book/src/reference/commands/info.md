@@ -28,6 +28,10 @@ Exit immediately if the package database is locked by another operation.
 
 Treat warnings as errors, causing the command to fail if any warning is emitted.
 
+### `--show-files`
+
+For installed packages, also show the fonts directory and installed font files.
+
 ## Examples
 
 ```console
@@ -38,6 +42,10 @@ foton info <package-name>
 foton info <package-name>@<version>
 ```
 
+```console
+foton info --show-files <package-name>
+```
+
 ## Output
 
 `info` prints detailed information for matching packages recorded in the local package database, including:
@@ -45,7 +53,10 @@ foton info <package-name>@<version>
 - package ID and display name
 - installation state and activation state
 - description, aliases, homepage, repository, and license
-- for packages in the `installed` state, the fonts directory and the recorded installed font files
+- for packages in the `installed` state, a summary of the installed font families
+
+With `--show-files`, `info` also shows the fonts directory and the installed
+font files for packages in the `installed` state.
 
 If a package name matches multiple packages recorded in the local package
 database, `info` prints all of them.

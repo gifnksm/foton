@@ -1,4 +1,8 @@
-use std::io;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ffi::OsString,
+    io,
+};
 
 use snafu::{ResultExt as _, Snafu};
 
@@ -77,6 +81,7 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
     let InfoArgs {
         pkg_specs,
         exit_on_lock,
+        show_files,
     } = args;
 
     let cx = InfoScope::start(cx);
@@ -100,7 +105,7 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
 
         for entry in entries {
             let info = load_package_info(&cx, &entry, &inspector)?;
-            render_package_info(io::stdout().lock(), &info)
+            render_package_info(io::stdout().lock(), &info, *show_files)
                 .context(WriteInfoSnafu)
                 .report_error(&cx)?;
         }
@@ -126,16 +131,24 @@ struct PackageInfo {
 #[derive(Debug)]
 struct InstalledFontsInfo {
     fonts_dir: AbsolutePath,
-    fonts: Vec<InstalledFont>,
+    families: Vec<InstalledFontFamily>,
+    has_unavailable_fonts: bool,
+    font_files: Vec<InstalledFontFile>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct InstalledFontFamily {
+    family: OsString,
+    faces: BTreeSet<OsString>,
 }
 
 #[derive(Debug)]
-struct InstalledFont {
+struct InstalledFontFile {
     file_name: FileName,
     inspection: InstalledFontInspection,
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::IsVariant)]
 enum InstalledFontInspection {
     Available(InspectedFont),
     Unavailable,
@@ -167,7 +180,13 @@ fn load_package_info(
                 .fonts()
                 .map(|font| load_font_info(cx, &pkg_dirs, &font, inspector))
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(InstalledFontsInfo { fonts_dir, fonts })
+            let families = collect_family_info(&fonts);
+            Ok(InstalledFontsInfo {
+                fonts_dir,
+                families,
+                has_unavailable_fonts: fonts.iter().any(|font| !font.inspection.is_available()),
+                font_files: fonts,
+            })
         })
         .transpose()?;
     Ok(PackageInfo {
@@ -189,7 +208,7 @@ fn load_font_info(
     pkg_dirs: &PackageDirs,
     font: &PackageFont,
     inspector: &FontInspector,
-) -> Result<InstalledFont, InfoError> {
+) -> Result<InstalledFontFile, InfoError> {
     let path = &font.path(pkg_dirs);
     let res = inspector
         .inspect_font(path)
@@ -199,13 +218,33 @@ fn load_font_info(
         Some(inspected_font) => InstalledFontInspection::Available(inspected_font),
         None => InstalledFontInspection::Unavailable,
     };
-    Ok(InstalledFont {
+    Ok(InstalledFontFile {
         file_name: font.file_name().clone(),
         inspection,
     })
 }
 
-fn render_package_info<W>(mut writer: W, info: &PackageInfo) -> io::Result<()>
+fn collect_family_info(fonts: &[InstalledFontFile]) -> Vec<InstalledFontFamily> {
+    let mut families = BTreeMap::new();
+    for font in fonts {
+        if let InstalledFontInspection::Available(InspectedFont { faces }) = &font.inspection {
+            for face in faces {
+                let InspectedFontFace { family, face } = face;
+                let family_entry =
+                    families
+                        .entry(family.clone())
+                        .or_insert_with(|| InstalledFontFamily {
+                            family: family.clone(),
+                            faces: BTreeSet::new(),
+                        });
+                family_entry.faces.insert(face.clone());
+            }
+        }
+    }
+    families.into_values().collect()
+}
+
+fn render_package_info<W>(mut writer: W, info: &PackageInfo, show_files: bool) -> io::Result<()>
 where
     W: io::Write,
 {
@@ -247,24 +286,49 @@ where
         writeln!(writer, "License: {license}")?;
     }
     if let Some(installed_fonts) = installed_fonts {
-        let InstalledFontsInfo { fonts_dir, fonts } = installed_fonts;
-        writeln!(writer, "Fonts Directory: {}", fonts_dir.display())?;
-        writeln!(writer, "Installed Font Files ({}):", fonts.len())?;
-        for font in fonts {
-            let InstalledFont {
-                file_name,
-                inspection,
-            } = font;
-            writeln!(writer, "  - {}", file_name.display())?;
-            match inspection {
-                InstalledFontInspection::Available(InspectedFont { faces }) => {
-                    for face in faces {
-                        let InspectedFontFace { family, face } = face;
-                        writeln!(writer, "    - {} / {}", family.display(), face.display())?;
+        let InstalledFontsInfo {
+            fonts_dir,
+            font_files: fonts,
+            families,
+            has_unavailable_fonts,
+        } = installed_fonts;
+
+        writeln!(writer, "Installed Font Families ({}):", families.len())?;
+        for family_info in families {
+            let InstalledFontFamily { family, faces, .. } = family_info;
+            let faces = faces
+                .iter()
+                .map(|s| s.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            writeln!(writer, "  - {} ({faces})", family.display())?;
+        }
+        if *has_unavailable_fonts {
+            writeln!(
+                writer,
+                "  (some font files could not be inspected; see warnings)"
+            )?;
+        }
+
+        if show_files {
+            writeln!(writer, "Fonts Directory: {}", fonts_dir.display())?;
+            writeln!(writer, "Installed Font Files ({}):", fonts.len())?;
+            for font in fonts {
+                let InstalledFontFile {
+                    file_name,
+                    inspection,
+                } = font;
+                writeln!(writer, "  - {}", file_name.display())?;
+                match inspection {
+                    InstalledFontInspection::Available(InspectedFont { faces }) => {
+                        for face in faces {
+                            let InspectedFontFace { family, face } = face;
+                            writeln!(writer, "    - {} ({})", family.display(), face.display())?;
+                        }
                     }
-                }
-                InstalledFontInspection::Unavailable => {
-                    writeln!(writer, "    (failed to inspect font file; see warnings)")?;
+                    InstalledFontInspection::Unavailable => {
+                        writeln!(writer, "    (failed to inspect font file; see warnings)")?;
+                    }
                 }
             }
         }
@@ -275,10 +339,58 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsString;
 
     use super::*;
     use crate::util::{macros::concat_line, path::FileName};
+
+    #[track_caller]
+    fn check_rendered_output(info: &PackageInfo, expected: &str, show_files: bool) {
+        let mut output = vec![];
+        render_package_info(&mut output, info, show_files).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert_eq!(output, expected);
+    }
+
+    fn installed_font_family(family: &str, faces: &[&str]) -> InstalledFontFamily {
+        InstalledFontFamily {
+            family: family.into(),
+            faces: faces.iter().map(Into::into).collect(),
+        }
+    }
+
+    fn inspected_font_face(family: &str, face: &str) -> InspectedFontFace {
+        InspectedFontFace {
+            family: family.into(),
+            face: face.into(),
+        }
+    }
+
+    #[test]
+    fn collect_family_info_groups_faces_by_family() {
+        let fonts = [
+            InstalledFontFile {
+                file_name: FileName::new("example-font-collection.ttc").unwrap(),
+                inspection: InstalledFontInspection::Available(InspectedFont {
+                    faces: vec![
+                        inspected_font_face("Example Font", "Regular"),
+                        inspected_font_face("Example Font", "Bold"),
+                        inspected_font_face("Example Font UI", "Regular"),
+                    ],
+                }),
+            },
+            InstalledFontFile {
+                file_name: FileName::new("example-font-bold.ttf").unwrap(),
+                inspection: InstalledFontInspection::Unavailable,
+            },
+        ];
+        assert_eq!(
+            collect_family_info(&fonts),
+            vec![
+                installed_font_family("Example Font", &["Bold", "Regular"]),
+                installed_font_family("Example Font UI", &["Regular"]),
+            ]
+        );
+    }
 
     #[test]
     fn render_package_info_prints_installed_package_details_and_recorded_fonts() {
@@ -294,27 +406,34 @@ mod tests {
             license: Some("OFL-1.1".to_owned()),
             installed_fonts: Some(InstalledFontsInfo {
                 fonts_dir: AbsolutePath::new(r"C:\path\to\fonts").unwrap(),
-                fonts: vec![
-                    InstalledFont {
-                        file_name: FileName::new("example-font-regular.ttf").unwrap(),
+                families: vec![
+                    installed_font_family("Example Font", &["Regular", "Bold"]),
+                    installed_font_family("Example Font UI", &["Regular"]),
+                ],
+                has_unavailable_fonts: true,
+                font_files: vec![
+                    InstalledFontFile {
+                        file_name: FileName::new("example-font-collection.ttc").unwrap(),
                         inspection: InstalledFontInspection::Available(InspectedFont {
-                            faces: vec![InspectedFontFace {
-                                family: OsString::from("Example Font"),
-                                face: OsString::from("Regular"),
-                            }],
+                            faces: vec![
+                                inspected_font_face("Example Font", "Regular"),
+                                inspected_font_face("Example Font", "Bold"),
+                            ],
                         }),
                     },
-                    InstalledFont {
+                    InstalledFontFile {
+                        file_name: FileName::new("example-font-ui-regular.ttf").unwrap(),
+                        inspection: InstalledFontInspection::Available(InspectedFont {
+                            faces: vec![inspected_font_face("Example Font UI", "Regular")],
+                        }),
+                    },
+                    InstalledFontFile {
                         file_name: FileName::new("example-font-bold.ttf").unwrap(),
                         inspection: InstalledFontInspection::Unavailable,
                     },
                 ],
             }),
         };
-
-        let mut output = vec![];
-        render_package_info(&mut output, &info).unwrap();
-        let output = String::from_utf8(output).unwrap();
 
         let expected = concat_line!(
             "Package ID: example-font@0.1.0",
@@ -327,17 +446,43 @@ mod tests {
             "Homepage: https://example.com/example-font",
             "Repository: https://github.com/example/example-font",
             "License: OFL-1.1",
+            "Installed Font Families (2):",
+            "  - Example Font (Bold, Regular)",
+            "  - Example Font UI (Regular)",
+            "  (some font files could not be inspected; see warnings)",
             r"Fonts Directory: C:\path\to\fonts",
-            "Installed Font Files (2):",
-            "  - example-font-regular.ttf",
-            "    - Example Font / Regular",
+            "Installed Font Files (3):",
+            "  - example-font-collection.ttc",
+            "    - Example Font (Regular)",
+            "    - Example Font (Bold)",
+            "  - example-font-ui-regular.ttf",
+            "    - Example Font UI (Regular)",
             "  - example-font-bold.ttf",
             "    (failed to inspect font file; see warnings)",
             "",
             "",
         );
+        check_rendered_output(&info, expected, true);
 
-        assert_eq!(output, expected);
+        let expected = concat_line!(
+            "Package ID: example-font@0.1.0",
+            "Display Name: Example Font",
+            "Installation State: installed",
+            "Activation State: active",
+            "Description: Example font family for UI and coding",
+            "Aliases (1):",
+            "  - Example Font UI",
+            "Homepage: https://example.com/example-font",
+            "Repository: https://github.com/example/example-font",
+            "License: OFL-1.1",
+            "Installed Font Families (2):",
+            "  - Example Font (Bold, Regular)",
+            "  - Example Font UI (Regular)",
+            "  (some font files could not be inspected; see warnings)",
+            "",
+            "",
+        );
+        check_rendered_output(&info, expected, false);
     }
 
     #[test]
@@ -355,10 +500,6 @@ mod tests {
             installed_fonts: None,
         };
 
-        let mut output = vec![];
-        render_package_info(&mut output, &info).unwrap();
-        let output = String::from_utf8(output).unwrap();
-
         let expected = concat_line!(
             "Package ID: example-font@0.1.0",
             "Display Name: Example Font",
@@ -373,7 +514,7 @@ mod tests {
             "",
             "",
         );
-
-        assert_eq!(output, expected);
+        check_rendered_output(&info, expected, true);
+        check_rendered_output(&info, expected, false);
     }
 }
