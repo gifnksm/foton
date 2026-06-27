@@ -13,8 +13,6 @@ pub(crate) enum FsError {
     RemoveDirectory { path: PathBuf, source: io::Error },
     #[snafu(display("failed to create directory: {path}", path = path.display()))]
     CreateDirectory { path: PathBuf, source: io::Error },
-    #[snafu(display("failed to remove file: {path}", path = path.display()))]
-    RemoveFile { path: PathBuf, source: io::Error },
 }
 
 pub(crate) fn remove_dir_all_if_exists<P>(path: P) -> Result<(), FsError>
@@ -77,14 +75,5 @@ where
 {
     let path = path.as_ref();
     fs::create_dir(path).context(CreateDirectorySnafu { path })?;
-    Ok(())
-}
-
-pub(crate) fn remove_file<P>(path: P) -> Result<(), FsError>
-where
-    P: AsRef<Path>,
-{
-    let path = path.as_ref();
-    fs::remove_file(path).context(RemoveFileSnafu { path })?;
     Ok(())
 }

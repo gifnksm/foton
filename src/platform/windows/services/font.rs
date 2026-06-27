@@ -1,55 +1,108 @@
-use std::path::{Path, PathBuf};
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
 
 use snafu::{ResultExt as _, Snafu};
 
-use crate::platform::windows::primitives::direct_write::{DirectWriteError, DirectWriteFactory};
+use crate::platform::windows::primitives::{
+    direct_write::{
+        DirectWriteFactory, DirectWriteFactoryError, DirectWriteFontSet,
+        DirectWriteFontSetEntryError, DirectWriteFontSetError, DirectWriteLocalizedStringsError,
+    },
+    ui_languages::{PreferredUiLanguages, PreferredUiLanguagesError},
+};
 
 #[derive(Debug, Snafu)]
 pub(crate) enum FontInspectorError {
     #[snafu(display("failed to create DirectWrite factory for inspecting font"))]
-    CreateDirectWriteFactory { source: DirectWriteError },
-    #[snafu(display("failed to check if the font file is supported: {path}", path = path.display()))]
-    CheckFontSupported {
+    CreateDirectWriteFactory { source: DirectWriteFactoryError },
+    #[snafu(display("failed to get preferred UI languages for inspecting font"))]
+    GetPreferredUiLanguages { source: PreferredUiLanguagesError },
+    #[snafu(display("failed to create font set for font file: {path}", path = path.display()))]
+    CreateFontSet {
         path: PathBuf,
-        source: DirectWriteError,
+        source: DirectWriteFontSetError,
     },
+    #[snafu(display("failed to get font family name for font file: {path}", path = path.display()))]
+    GetFontFamilyName {
+        path: PathBuf,
+        source: DirectWriteFontSetEntryError,
+    },
+    #[snafu(display("failed to get font face name for font file: {path}", path = path.display()))]
+    GetFontFaceName {
+        path: PathBuf,
+        source: DirectWriteFontSetEntryError,
+    },
+    #[snafu(display("failed to pick localized font family name for font file: {path}", path = path.display()))]
+    PickLocalizedFontFamilyName {
+        path: PathBuf,
+        source: DirectWriteLocalizedStringsError,
+    },
+    #[snafu(display("failed to pick localized font face name for font file: {path}", path = path.display()))]
+    PickLocalizedFontFaceName {
+        path: PathBuf,
+        source: DirectWriteLocalizedStringsError,
+    },
+    #[snafu(display("no font face found in font file: {path}", path = path.display()))]
+    NoFontFace { path: PathBuf },
 }
 
 #[derive(Debug)]
 pub(crate) struct FontInspector {
     factory: DirectWriteFactory,
+    preferred_languages: PreferredUiLanguages,
 }
 
 #[derive(Debug)]
-pub(crate) struct InspectedFont {}
+pub(crate) struct InspectedFont {
+    pub(crate) faces: Vec<InspectedFontFace>,
+}
+
+#[derive(Debug)]
+pub(crate) struct InspectedFontFace {
+    pub(crate) family: OsString,
+    pub(crate) face: OsString,
+}
 
 impl FontInspector {
     pub(crate) fn new() -> Result<Self, FontInspectorError> {
         let factory = DirectWriteFactory::new().context(CreateDirectWriteFactorySnafu)?;
-        Ok(Self { factory })
+        let preferred_languages =
+            PreferredUiLanguages::get().context(GetPreferredUiLanguagesSnafu)?;
+        Ok(Self {
+            factory,
+            preferred_languages,
+        })
     }
 
-    pub(crate) fn inspect_font<P>(
-        &self,
-        path: P,
-    ) -> Result<Option<InspectedFont>, FontInspectorError>
+    pub(crate) fn inspect_font<P>(&self, path: P) -> Result<InspectedFont, FontInspectorError>
     where
         P: AsRef<Path>,
     {
         let path = path.as_ref();
-        if !self.is_supported_font_file(path)? {
-            return Ok(None);
+        let font_set =
+            DirectWriteFontSet::new(&self.factory, path).context(CreateFontSetSnafu { path })?;
+
+        let faces = font_set
+            .entries()
+            .map(|entry| {
+                let family = entry.family().context(GetFontFamilyNameSnafu { path })?;
+                let family = family
+                    .pick_localized_string(&self.preferred_languages)
+                    .context(PickLocalizedFontFamilyNameSnafu { path })?;
+                let face = entry.face().context(GetFontFaceNameSnafu { path })?;
+                let face = face
+                    .pick_localized_string(&self.preferred_languages)
+                    .context(PickLocalizedFontFaceNameSnafu { path })?;
+                Ok(InspectedFontFace { family, face })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if faces.is_empty() {
+            return Err(NoFontFaceSnafu { path }.build());
         }
-        Ok(Some(InspectedFont {}))
-    }
 
-    fn is_supported_font_file(&self, path: &Path) -> Result<bool, FontInspectorError> {
-        let analyze_result = (|| {
-            let font_file = self.factory.font_file(path)?;
-            font_file.analyze()
-        })()
-        .context(CheckFontSupportedSnafu { path })?;
-
-        Ok(analyze_result.is_supported)
+        Ok(InspectedFont { faces })
     }
 }

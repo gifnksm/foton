@@ -1,88 +1,242 @@
-use std::path::PathBuf;
+use std::{
+    ffi::OsString,
+    os::windows::ffi::OsStringExt as _,
+    path::{Path, PathBuf},
+};
 
-use snafu::{ResultExt as _, Snafu};
+use snafu::{OptionExt as _, ResultExt as _, Snafu};
 use windows::Win32::Graphics::DirectWrite::{
-    self, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_FACE_TYPE, DWRITE_FONT_FILE_TYPE, IDWriteFactory,
-    IDWriteFontFile,
+    self, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_PROPERTY_ID, DWRITE_FONT_PROPERTY_ID_FACE_NAME,
+    DWRITE_FONT_PROPERTY_ID_FAMILY_NAME, DWRITE_FONT_PROPERTY_ID_PREFERRED_FAMILY_NAME,
+    DWRITE_FONT_PROPERTY_ID_TYPOGRAPHIC_FACE_NAME, IDWriteFactory6, IDWriteFontSet,
+    IDWriteLocalizedStrings,
 };
 use windows_core::HSTRING;
 
+use crate::platform::windows::primitives::ui_languages::PreferredUiLanguages;
+
 #[derive(Debug, Snafu)]
-pub(crate) enum DirectWriteError {
+pub(crate) enum DirectWriteFactoryError {
     #[snafu(display("failed to create DirectWrite factory"))]
     CreateFactory { source: windows_core::Error },
-    #[snafu(display("failed to create reference for font file: {path}", path = path.display()))]
-    CreateFontFileReference {
-        path: PathBuf,
-        source: windows_core::Error,
-    },
-    #[snafu(display("failed to analyze font file: {path}", path = path.display()))]
-    AnalyzeFont {
-        path: PathBuf,
-        source: windows_core::Error,
-    },
 }
 
 #[derive(Debug)]
 pub(crate) struct DirectWriteFactory {
-    factory: IDWriteFactory,
+    factory: IDWriteFactory6,
 }
 
 impl DirectWriteFactory {
-    pub(crate) fn new() -> Result<Self, DirectWriteError> {
+    pub(crate) fn new() -> Result<Self, DirectWriteFactoryError> {
         // SAFETY: This is an unsafe FFI call. We pass only the constant factory type argument.
-        let factory: IDWriteFactory =
-            unsafe { DirectWrite::DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED) }
-                .context(CreateFactorySnafu)?;
+        let factory = unsafe { DirectWrite::DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED) }
+            .context(CreateFactorySnafu)?;
         Ok(Self { factory })
     }
+}
 
-    pub(crate) fn font_file<P>(&self, path: P) -> Result<DirectWriteFontFile, DirectWriteError>
-    where
-        P: Into<PathBuf>,
-    {
-        let path = path.into();
-        // SAFETY: This is an unsafe FFI call. We pass a valid path pointer derived from a temporary
-        // UTF-16 string that is kept alive for the duration of the call.
-        let font_file = unsafe {
-            self.factory
-                .CreateFontFileReference(&HSTRING::from(path.as_path()), None)
-        }
-        .context(CreateFontFileReferenceSnafu { path: &path })?;
-        Ok(DirectWriteFontFile { path, font_file })
-    }
+#[derive(Debug, Snafu)]
+pub(crate) enum DirectWriteFontSetError {
+    #[snafu(display("failed to create font set builder"))]
+    CreateFontSetBuilder { source: windows_core::Error },
+    #[snafu(display("failed to add font file to font set builder: {path}", path = path.display()))]
+    AddFontFile {
+        path: PathBuf,
+        source: windows_core::Error,
+    },
+    #[snafu(display("failed to create font set for font file: {path}", path = path.display()))]
+    CreateFontSet {
+        path: PathBuf,
+        source: windows_core::Error,
+    },
 }
 
 #[derive(Debug)]
-pub(crate) struct DirectWriteFontFile {
-    path: PathBuf,
-    font_file: IDWriteFontFile,
+pub(crate) struct DirectWriteFontSet {
+    font_set: IDWriteFontSet,
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct DirectWriteFontFileAnalyzeResult {
-    pub(crate) is_supported: bool,
+impl DirectWriteFontSet {
+    pub(crate) fn new<P>(
+        factory: &DirectWriteFactory,
+        path: P,
+    ) -> Result<DirectWriteFontSet, DirectWriteFontSetError>
+    where
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref();
+
+        // SAFETY: This is an unsafe FFI call.
+        let font_set_builder =
+            unsafe { factory.factory.CreateFontSetBuilder() }.context(CreateFontSetBuilderSnafu)?;
+
+        // SAFETY: This is an unsafe FFI call. We pass a valid path pointer derived from a temporary
+        // UTF-16 string that is kept alive for the duration of the call.
+        unsafe { font_set_builder.AddFontFile(&HSTRING::from(path)) }
+            .context(AddFontFileSnafu { path })?;
+
+        // SAFETY: This is an unsafe FFI call.
+        let font_set =
+            unsafe { font_set_builder.CreateFontSet() }.context(CreateFontSetSnafu { path })?;
+
+        Ok(DirectWriteFontSet { font_set })
+    }
+
+    pub(crate) fn entries(&self) -> impl Iterator<Item = DirectWriteFontSetEntry<'_>> {
+        // SAFETY: This is an unsafe FFI call.
+        let count = unsafe { self.font_set.GetFontCount() };
+        (0..count).map(|index| DirectWriteFontSetEntry {
+            font_set: self,
+            index,
+        })
+    }
 }
 
-impl DirectWriteFontFile {
-    pub(crate) fn analyze(&self) -> Result<DirectWriteFontFileAnalyzeResult, DirectWriteError> {
-        let mut is_supported = false.into();
-        let mut font_file_type = DWRITE_FONT_FILE_TYPE::default();
-        let mut font_face_type = DWRITE_FONT_FACE_TYPE::default();
-        let mut number_of_faces = 0;
-        // SAFETY: This is an unsafe FFI call. We pass valid pointers to local output variables that
-        // remain alive for the duration of the call.
+#[derive(Debug, Snafu)]
+pub(crate) enum DirectWriteFontSetEntryError {
+    #[snafu(display(
+        "failed to get font property values for index {index} and property ID {property_id}",
+        property_id = property_id.0,
+    ))]
+    GetFontPropertyValues {
+        index: u32,
+        property_id: DWRITE_FONT_PROPERTY_ID,
+        source: windows_core::Error,
+    },
+    #[snafu(display("font file is missing family name at index {index}"))]
+    MissingFontFamilyName { index: u32 },
+    #[snafu(display("font file is missing face name at index {index}"))]
+    MissingFontFaceName { index: u32 },
+}
+
+#[derive(Debug)]
+pub(crate) struct DirectWriteFontSetEntry<'a> {
+    font_set: &'a DirectWriteFontSet,
+    index: u32,
+}
+
+impl DirectWriteFontSetEntry<'_> {
+    pub(crate) fn family(
+        &self,
+    ) -> Result<DirectWriteLocalizedStrings, DirectWriteFontSetEntryError> {
+        self.get_property_string_with_fallback(&[
+            DWRITE_FONT_PROPERTY_ID_PREFERRED_FAMILY_NAME,
+            DWRITE_FONT_PROPERTY_ID_FAMILY_NAME,
+        ])?
+        .context(MissingFontFamilyNameSnafu { index: self.index })
+    }
+
+    pub(crate) fn face(&self) -> Result<DirectWriteLocalizedStrings, DirectWriteFontSetEntryError> {
+        self.get_property_string_with_fallback(&[
+            DWRITE_FONT_PROPERTY_ID_TYPOGRAPHIC_FACE_NAME,
+            DWRITE_FONT_PROPERTY_ID_FACE_NAME,
+        ])?
+        .context(MissingFontFaceNameSnafu { index: self.index })
+    }
+
+    fn get_property_string_with_fallback(
+        &self,
+        property_ids: &[DWRITE_FONT_PROPERTY_ID],
+    ) -> Result<Option<DirectWriteLocalizedStrings>, DirectWriteFontSetEntryError> {
+        for &property_id in property_ids {
+            if let Some(strings) = self.get_property_strings(property_id)? {
+                return Ok(Some(strings));
+            }
+        }
+        Ok(None)
+    }
+
+    fn get_property_strings(
+        &self,
+        property_id: DWRITE_FONT_PROPERTY_ID,
+    ) -> Result<Option<DirectWriteLocalizedStrings>, DirectWriteFontSetEntryError> {
+        let index = self.index;
+        let mut exists = false.into();
+        let mut strings = None;
+
+        // SAFETY: This is an unsafe FFI call. We pass valid pointers for the `exists` and `values` out parameters.
         unsafe {
-            self.font_file.Analyze(
-                &raw mut is_supported,
-                &raw mut font_file_type,
-                Some(&raw mut font_face_type),
-                &raw mut number_of_faces,
+            self.font_set.font_set.GetPropertyValues3(
+                index,
+                property_id,
+                &raw mut exists,
+                &raw mut strings,
             )
         }
-        .context(AnalyzeFontSnafu { path: &self.path })?;
-        Ok(DirectWriteFontFileAnalyzeResult {
-            is_supported: is_supported.as_bool(),
-        })
+        .context(GetFontPropertyValuesSnafu { index, property_id })?;
+
+        let Some(strings) = strings else {
+            return Ok(None);
+        };
+        if !exists.as_bool() {
+            return Ok(None);
+        }
+
+        Ok(Some(DirectWriteLocalizedStrings { strings }))
+    }
+}
+
+#[derive(Debug, Snafu)]
+pub(crate) enum DirectWriteLocalizedStringsError {
+    #[snafu(display("failed to query locale name '{locale_name}'", locale_name = locale_name.display()))]
+    FindLocaleName {
+        index: u32,
+        locale_name: OsString,
+        source: windows_core::Error,
+    },
+    #[snafu(display("failed to get string length at index {index}"))]
+    GetStringLength {
+        index: u32,
+        source: windows_core::Error,
+    },
+    #[snafu(display("failed to get string at index {index}"))]
+    GetString {
+        index: u32,
+        source: windows_core::Error,
+    },
+}
+
+#[derive(Debug)]
+pub(crate) struct DirectWriteLocalizedStrings {
+    strings: IDWriteLocalizedStrings,
+}
+
+impl DirectWriteLocalizedStrings {
+    pub(crate) fn pick_localized_string(
+        &self,
+        preferred_languages: &PreferredUiLanguages,
+    ) -> Result<OsString, DirectWriteLocalizedStringsError> {
+        for locale_name in preferred_languages.tags() {
+            let mut index = 0;
+            let mut exists = false.into();
+
+            // SAFETY: This is an unsafe FFI call. We pass valid pointers for the `index` and `exists` out parameters.
+            unsafe {
+                self.strings.FindLocaleName(
+                    &HSTRING::from(locale_name),
+                    &raw mut index,
+                    &raw mut exists,
+                )
+            }
+            .context(FindLocaleNameSnafu { index, locale_name })?;
+
+            if exists.as_bool() {
+                return self.get_string(index);
+            }
+        }
+
+        self.get_string(0)
+    }
+
+    fn get_string(&self, index: u32) -> Result<OsString, DirectWriteLocalizedStringsError> {
+        // SAFETY: This is an unsafe FFI call. We pass a valid pointer for the `length` out parameter.
+        let len = unsafe { self.strings.GetStringLength(index) }
+            .context(GetStringLengthSnafu { index })?;
+
+        let mut buf = vec![0u16; (len + 1) as usize];
+        // SAFETY: This is an unsafe FFI call. We pass a valid pointer to the buffer and its size.
+        unsafe { self.strings.GetString(index, &mut buf) }.context(GetStringSnafu { index })?;
+
+        Ok(OsString::from_wide(&buf[..len as usize]))
     }
 }
