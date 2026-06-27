@@ -183,6 +183,9 @@ pub(crate) struct InfoArgs {
     /// Exit immediately if the package database is locked by another operation.
     #[clap(long)]
     pub(crate) exit_on_lock: bool,
+    /// For installed packages, also show the fonts directory and installed font files.
+    #[clap(long)]
+    pub(crate) show_files: bool,
 }
 
 #[derive(Debug, clap::Args)]
