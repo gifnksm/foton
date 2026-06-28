@@ -118,9 +118,7 @@ struct PackageInfo {
     id: PackageId,
     installation_state: InstallationState,
     activation_state: ActivationState,
-    display_name: Option<String>,
     description: Option<String>,
-    aliases: Vec<String>,
     homepage: Option<String>,
     repository: Option<String>,
     license: Option<String>,
@@ -156,9 +154,7 @@ fn load_package_info(
     let activation_state = entry.activation_state();
     let PackageDefinition {
         id,
-        display_name,
         description,
-        aliases,
         homepage,
         repository,
         license,
@@ -186,9 +182,7 @@ fn load_package_info(
         id,
         installation_state,
         activation_state,
-        display_name,
         description,
-        aliases,
         homepage,
         repository,
         license,
@@ -244,9 +238,7 @@ where
         id,
         installation_state,
         activation_state,
-        display_name,
         description,
-        aliases,
         homepage,
         repository,
         license,
@@ -254,19 +246,10 @@ where
     } = info;
 
     writeln!(writer, "Package ID: {id}")?;
-    if let Some(display_name) = display_name {
-        writeln!(writer, "Display Name: {display_name}")?;
-    }
     writeln!(writer, "Installation State: {installation_state}")?;
     writeln!(writer, "Activation State: {activation_state}")?;
     if let Some(description) = description {
         writeln!(writer, "Description: {description}")?;
-    }
-    if !aliases.is_empty() {
-        writeln!(writer, "Aliases ({}):", aliases.len())?;
-        for alias in aliases {
-            writeln!(writer, "  - {alias}")?;
-        }
     }
     if let Some(homepage) = homepage {
         writeln!(writer, "Homepage: {homepage}")?;
@@ -379,9 +362,7 @@ mod tests {
             id: "example-font@0.1.0".parse().unwrap(),
             installation_state: InstallationState::Installed,
             activation_state: ActivationState::Active,
-            display_name: Some("Example Font".to_owned()),
             description: Some("Example font family for UI and coding".to_owned()),
-            aliases: vec!["Example Font UI".to_owned()],
             homepage: Some("https://example.com/example-font".to_owned()),
             repository: Some("https://github.com/example/example-font".to_owned()),
             license: Some("OFL-1.1".to_owned()),
@@ -417,12 +398,9 @@ mod tests {
 
         let expected = concat_line!(
             "Package ID: example-font@0.1.0",
-            "Display Name: Example Font",
             "Installation State: installed",
             "Activation State: active",
             "Description: Example font family for UI and coding",
-            "Aliases (1):",
-            "  - Example Font UI",
             "Homepage: https://example.com/example-font",
             "Repository: https://github.com/example/example-font",
             "License: OFL-1.1",
@@ -445,12 +423,9 @@ mod tests {
 
         let expected = concat_line!(
             "Package ID: example-font@0.1.0",
-            "Display Name: Example Font",
             "Installation State: installed",
             "Activation State: active",
             "Description: Example font family for UI and coding",
-            "Aliases (1):",
-            "  - Example Font UI",
             "Homepage: https://example.com/example-font",
             "Repository: https://github.com/example/example-font",
             "License: OFL-1.1",
@@ -470,9 +445,7 @@ mod tests {
             id: "example-font@0.1.0".parse().unwrap(),
             installation_state: InstallationState::IncompleteInstall,
             activation_state: ActivationState::Inactive,
-            display_name: Some("Example Font".to_owned()),
             description: Some("Example font family for UI and coding".to_owned()),
-            aliases: vec!["Example Font UI".to_owned()],
             homepage: Some("https://example.com/example-font".to_owned()),
             repository: Some("https://github.com/example/example-font".to_owned()),
             license: Some("OFL-1.1".to_owned()),
@@ -481,12 +454,9 @@ mod tests {
 
         let expected = concat_line!(
             "Package ID: example-font@0.1.0",
-            "Display Name: Example Font",
             "Installation State: incomplete-install",
             "Activation State: inactive",
             "Description: Example font family for UI and coding",
-            "Aliases (1):",
-            "  - Example Font UI",
             "Homepage: https://example.com/example-font",
             "Repository: https://github.com/example/example-font",
             "License: OFL-1.1",

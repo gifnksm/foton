@@ -17,13 +17,8 @@ A practical workflow for authoring a package is:
 
 ```toml
 name = "example-font"
-display-name = "Example Font"
 version = "1.2.3"
 description = "Example font family for UI and coding"
-aliases = [
-  "Example Font UI",
-  "Example Font Console",
-]
 homepage = "https://example.com/example-font"
 repository = "https://github.com/example/example-font"
 license = "OFL-1.1"
@@ -88,30 +83,28 @@ For the exact package-version syntax and ordering rules, see
 
 ## Recommended fields
 
-These fields are optional, but they are strongly recommended because they help
-users discover and understand the fonts provided by the package.
+These fields are optional, but strongly recommended because they help users
+understand the package and the fonts it provides. In particular,
+`description` appears in search results and is used by `foton search`.
 See [Package Manifest Reference](../../reference/package-manifest.md) for the
 complete field definitions and constraints.
 
 These fields are recommended:
 
-- `display-name`
 - `description`
 - `license`
-- `aliases`
 - `homepage`
 - `repository`
 
-These metadata fields describe the fonts provided by the package, not the
-package definition itself. In particular, `homepage`, `repository`, and
+These metadata fields describe the package and the fonts it provides, not the
+manifest structure itself. In particular, `homepage`, `repository`, and
 `license` should refer to the upstream font project or the upstream font files
 included in the package.
 
 If there is no suitable upstream homepage or repository, omit that field. Do
 not repeat `repository` in `homepage` just to fill both fields.
 
-`foton manifest check` warns if `display-name`, `description`, or `license` is
-missing.
+`foton manifest check` warns if `description` or `license` is missing.
 
 ## Choosing fonts from a source
 
@@ -182,8 +175,7 @@ It reads the manifest, stages the package, downloads the sources, and verifies
 that installation would succeed.
 It can also warn about issues such as:
 
-- missing `display-name`, `description`, or `license`
-- duplicated display names
+- missing `description` or `license`
 
 It can also warn specifically about source contents, for example:
 

@@ -50,9 +50,9 @@ foton info --show-files <package-name>
 
 `info` prints detailed information for matching packages recorded in the local package database, including:
 
-- package ID and display name
+- package ID
 - installation state and activation state
-- description, aliases, homepage, repository, and license
+- description, homepage, repository, and license
 - for packages in the `installed` state, a summary of the installed font families
 
 With `--show-files`, `info` also shows the fonts directory and the installed

@@ -19,9 +19,9 @@ Search with multiple query terms:
 foton search <query-word-1> <query-word-2>
 ```
 
-Each query term must match within the same package metadata field.
-In practice, this means `foton` can match package names, display names,
-aliases, and descriptions.
+All query terms must match within a single searchable field.
+In practice, a query can match either a package name or a description, but
+not a combination of both.
 
 ## Restrict the search to specific registries
 

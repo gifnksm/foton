@@ -419,11 +419,11 @@ mod tests {
     fn check_installability_returns_conflicting_definition_for_same_version_with_different_definition()
      {
         let mut state = new_state();
-        let installed_pkg = testing::make_package_definition_with_display_name(
+        let installed_pkg = testing::make_package_definition_with_description(
             "example-font@0.1.0",
             "Installed Definition",
         );
-        let manifest_pkg = testing::make_package_definition_with_display_name(
+        let manifest_pkg = testing::make_package_definition_with_description(
             "example-font@0.1.0",
             "Manifest Definition",
         );

@@ -11,9 +11,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct PackageDefinition {
     pub(crate) id: PackageId,
-    pub(crate) display_name: Option<String>,
     pub(crate) description: Option<String>,
-    pub(crate) aliases: Vec<String>,
     pub(crate) homepage: Option<String>,
     pub(crate) repository: Option<String>,
     pub(crate) license: Option<String>,
@@ -41,31 +39,6 @@ impl PackageDefinition {
         }
 
         if let Some(res) = self
-            .display_name
-            .as_deref()
-            .and_then(|display_name| matcher.match_text(display_name))
-        {
-            let res = Some(PackageMatchResult {
-                form: res.form,
-                kind: res.kind,
-                field: PackageDefinitionField::DisplayName,
-            });
-            max_res = Option::max(max_res, res);
-        }
-
-        for alias in &self.aliases {
-            let Some(res) = matcher.match_text(alias.as_str()) else {
-                continue;
-            };
-            let res = Some(PackageMatchResult {
-                form: res.form,
-                kind: res.kind,
-                field: PackageDefinitionField::Aliases,
-            });
-            max_res = Option::max(max_res, res);
-        }
-
-        if let Some(res) = self
             .description
             .as_deref()
             .and_then(|description| matcher.match_text(description))
@@ -85,8 +58,6 @@ impl PackageDefinition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum PackageDefinitionField {
     Description,
-    Aliases,
-    DisplayName,
     Name,
 }
 
@@ -117,7 +88,7 @@ mod tests {
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font-nerd"
-display-name = "Example Font"
+description = "Example Font"
 version = "0.1.0"
 
 [[sources]]
@@ -137,7 +108,7 @@ type = "archive"
             PackageMatchResult {
                 form: MatchForm::Separated,
                 kind: MatchKind::Exact,
-                field: PackageDefinitionField::DisplayName,
+                field: PackageDefinitionField::Description,
             }
         );
     }
@@ -147,7 +118,6 @@ type = "archive"
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "example-font"
-display-name = "Example Font"
 description = "Nerd variant"
 version = "0.1.0"
 
@@ -169,7 +139,6 @@ type = "archive"
         let pkg = testing::parse_manifest_to_definition(
             r#"
 name = "typeface"
-display-name = "Example Font Nerd"
 version = "0.1.0"
 
 [[sources]]
@@ -180,7 +149,7 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 type = "archive"
 "#,
         );
-        let text_matcher = make_matcher(&["example", "font"]);
+        let text_matcher = make_matcher(&["typeface", "face"]);
 
         let result = pkg.match_package(&text_matcher).unwrap();
 
@@ -189,7 +158,7 @@ type = "archive"
             PackageMatchResult {
                 form: MatchForm::Separated,
                 kind: MatchKind::Substring,
-                field: PackageDefinitionField::DisplayName,
+                field: PackageDefinitionField::Name,
             }
         );
     }

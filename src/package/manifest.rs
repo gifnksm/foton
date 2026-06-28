@@ -24,20 +24,6 @@ pub(crate) struct PackageManifest {
     /// This is the stable identifier for the package and is not intended to match every
     /// user-facing font name exactly.
     pub(crate) name: PackageName,
-    /// Human-friendly primary name for the font family, collection, or bundle provided by the
-    /// package, such as `HackGen`.
-    ///
-    /// For packages that primarily provide a single font family, this is usually that family
-    /// name. For packages that contain multiple families, use the family, collection, or bundle
-    /// name that best represents what users will install.
-    ///
-    /// Use this for the primary label shown to users in search results and other output.
-    #[serde(
-        default,
-        deserialize_with = "option_nonempty_string_without_surrounding_whitespaces::deserialize",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub(crate) display_name: Option<String>,
     /// Package version.
     ///
     /// This identifies a specific immutable release of the package.
@@ -49,18 +35,6 @@ pub(crate) struct PackageManifest {
         skip_serializing_if = "Option::is_none"
     )]
     pub(crate) description: Option<String>,
-    /// Alternative names and spellings for the font family, collection, or bundle used for
-    /// search.
-    ///
-    /// Use this for other names by which users may look for the fonts provided by the package,
-    /// such as common alternate spellings, abbreviations, or additional family names included in
-    /// a multi-family package.
-    #[serde(
-        default,
-        deserialize_with = "vec_nonempty_strings_without_surrounding_whitespaces::deserialize",
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub(crate) aliases: Vec<String>,
     /// Upstream homepage for the font project or distribution represented by the package.
     #[serde(
         default,
@@ -134,10 +108,8 @@ impl From<PackageManifest> for PackageDefinition {
     fn from(manifest: PackageManifest) -> Self {
         let PackageManifest {
             name,
-            display_name,
             version,
             description,
-            aliases,
             homepage,
             repository,
             license,
@@ -145,9 +117,7 @@ impl From<PackageManifest> for PackageDefinition {
         } = manifest;
         Self {
             id: PackageId::new(name, version),
-            display_name,
             description,
-            aliases,
             homepage: homepage.map(|url| url.to_string()),
             repository: repository.map(|url| url.to_string()),
             license: license.map(|expr| expr.to_string()),
@@ -222,20 +192,6 @@ pub(crate) mod option_nonempty_string_without_surrounding_whitespaces {
         Option::deserialize(deserializer)?
             .map(super::validate_nonempty_string_without_surrounding_whitespaces)
             .transpose()
-    }
-}
-
-mod vec_nonempty_strings_without_surrounding_whitespaces {
-    use serde::Deserialize as _;
-
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Vec::<String>::deserialize(deserializer)?
-            .into_iter()
-            .map(super::validate_nonempty_string_without_surrounding_whitespaces)
-            .collect()
     }
 }
 
@@ -389,10 +345,8 @@ mod tests {
         let manifest = testing::parse_manifest(minimal_manifest_toml());
 
         assert_eq!(manifest.name, "example-font");
-        assert_eq!(manifest.display_name, None);
         assert_eq!(manifest.version, "0.1.0".parse().unwrap());
         assert_eq!(manifest.description, None);
-        assert!(manifest.aliases.is_empty());
         assert_eq!(manifest.homepage, None);
         assert_eq!(manifest.repository, None);
         assert_eq!(manifest.license, None);
@@ -422,10 +376,8 @@ mod tests {
         let manifest = testing::parse_manifest(
             r#"
 name = "example-font"
-display-name = "Example Font"
 version = "0.1.0"
 description = "Example font family for UI and coding"
-aliases = ["Example Font UI"]
 homepage = "https://example.com/example-font"
 repository = "https://github.com/example/example-font"
 license = "OFL-1.1"
@@ -441,13 +393,11 @@ fonts = [{ glob = "*/*.ttf" }]
         );
 
         assert_eq!(manifest.name, "example-font");
-        assert_eq!(manifest.display_name.as_deref(), Some("Example Font"));
         assert_eq!(manifest.version, "0.1.0".parse().unwrap());
         assert_eq!(
             manifest.description.as_deref(),
             Some("Example font family for UI and coding")
         );
-        assert_eq!(manifest.aliases, ["Example Font UI"]);
         assert_eq!(
             manifest.homepage.as_ref().map(Url::as_str),
             Some("https://example.com/example-font")
@@ -559,60 +509,12 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     }
 
     #[test]
-    fn package_manifest_rejects_empty_display_name() {
-        let err = testing::try_parse_manifest(
-            r#"
-name = "example-font"
-version = "0.1.0"
-display-name = ""
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-[sources.contents]
-type = "archive"
-"#,
-        )
-        .unwrap_err();
-
-        assert!(
-            err.to_string()
-                .contains("a non-empty string without leading or trailing whitespace")
-        );
-    }
-
-    #[test]
     fn package_manifest_rejects_description_with_surrounding_whitespace() {
         let err = testing::try_parse_manifest(
             r#"
 name = "example-font"
 version = "0.1.0"
 description = " example-font "
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-[sources.contents]
-type = "archive"
-"#,
-        )
-        .unwrap_err();
-
-        assert!(
-            err.to_string()
-                .contains("a non-empty string without leading or trailing whitespace")
-        );
-    }
-
-    #[test]
-    fn package_manifest_rejects_aliases_with_surrounding_whitespace() {
-        let err = testing::try_parse_manifest(
-            r#"
-name = "example-font"
-version = "0.1.0"
-aliases = [" Example Font "]
 
 [[sources]]
 url = "https://example.com/example-font-0.1.0.zip"
