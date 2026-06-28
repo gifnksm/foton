@@ -237,9 +237,7 @@ impl From<ActivationState> for PersistedActivationState {
 impl From<&PackageDefinition> for PersistedPackageDefinition {
     fn from(value: &PackageDefinition) -> Self {
         Self {
-            display_name: value.display_name.clone(),
             description: value.description.clone(),
-            aliases: value.aliases.clone(),
             homepage: value.homepage.clone(),
             repository: value.repository.clone(),
             license: value.license.clone(),
@@ -252,9 +250,7 @@ impl PersistedPackageDefinition {
     pub(in crate::db::persist) fn make_definition(&self, pkg_id: PackageId) -> PackageDefinition {
         PackageDefinition {
             id: pkg_id,
-            display_name: self.display_name.clone(),
             description: self.description.clone(),
-            aliases: self.aliases.clone(),
             homepage: self.homepage.clone(),
             repository: self.repository.clone(),
             license: self.license.clone(),
@@ -352,18 +348,14 @@ impl From<&PersistedPackageFont> for PackageFont {
 impl PartialEq<PackageDefinition> for PersistedPackageDefinition {
     fn eq(&self, pkg: &PackageDefinition) -> bool {
         let Self {
-            display_name,
             description,
-            aliases,
             homepage,
             repository,
             license,
             sources,
         } = self;
 
-        *display_name == pkg.display_name
-            && *description == pkg.description
-            && *aliases == pkg.aliases
+        *description == pkg.description
             && *homepage == pkg.homepage
             && *repository == pkg.repository
             && *license == pkg.license

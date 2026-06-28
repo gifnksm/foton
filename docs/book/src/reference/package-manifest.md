@@ -16,13 +16,8 @@ At the top level, a manifest contains package metadata and a non-empty
 
 ```toml
 name = "example-font"
-display-name = "Example Font"
 version = "1.2.3"
 description = "Example font family for UI and coding"
-aliases = [
-  "Example Font UI",
-  "Example Font Console",
-]
 homepage = "https://example.com/example-font"
 repository = "https://github.com/example/example-font"
 license = "OFL-1.1"
@@ -45,9 +40,7 @@ Use `foton manifest check` to validate a manifest.
 The command checks both installation errors and quality issues.
 For example, it can report:
 
-- missing recommended fields such as `display-name`, `description`, or
-  `license`
-- duplicate display names after normalization
+- missing recommended fields such as `description` or `license`
 - source-content issues such as:
   - for sources with `contents.type = "archive"`:
     - `glob` entries in `fonts`
@@ -140,9 +133,10 @@ Versions are compared in this order:
 
 Field headings indicate whether a field is required or optional.
 Fields marked recommended are optional, but strongly recommended because they
-help users discover and understand the fonts provided by the package.
-Metadata fields such as `display-name`, `description`, `aliases`, `homepage`,
-`repository`, and `license` describe the fonts provided by the package.
+help users understand the package and the fonts it provides. In particular,
+`description` appears in search results and is used by `foton search`.
+Metadata fields such as `description`, `homepage`, `repository`, and `license`
+describe the package and the fonts it provides.
 Packaging fields such as `name`, `version`, and `sources` describe how `foton`
 identifies and installs the package.
 
@@ -159,24 +153,6 @@ This is the stable identifier for the package.
 
   ```toml
   name = "example-font"
-  ```
-
-### `display-name` (optional, recommended)
-
-A human-friendly primary name for the font family, collection, or bundle
-provided by the package.
-Use this for the primary label shown to users in search results and other
-output.
-
-- **Type**: string
-- **Constraints**: must be non-empty and must not have leading or trailing
-  whitespace
-- **Recommended because**: it gives users a clear primary name for the fonts
-  provided by the package
-- **Example**:
-
-  ```toml
-  display-name = "Example Font"
   ```
 
 ### `version` (required)
@@ -200,29 +176,12 @@ package.
 - **Type**: string
 - **Constraints**: must be non-empty and must not have leading or trailing
   whitespace
-- **Recommended because**: it appears in search results and package details
+- **Recommended because**: it appears in search results and can help users
+  find the package
 - **Example**:
 
   ```toml
   description = "Example font family for UI and coding"
-  ```
-
-### `aliases` (optional, recommended)
-
-Alternative names and spellings for the font family, collection, or bundle used
-for search.
-Use this for family or collection names, abbreviations, and alternate
-spellings.
-
-- **Type**: array of strings
-- **Constraints**: each entry must be non-empty and must not have leading or
-  trailing whitespace
-- **Recommended because**: it helps users find the package by alternate names
-  and spellings
-- **Example**:
-
-  ```toml
-  aliases = ["Example Font UI", "Example Font Console"]
   ```
 
 ### `homepage` (optional, recommended)

@@ -40,10 +40,8 @@ The command reports:
 
 Warnings can include:
 
-- missing `display-name`
 - missing `description`
 - missing `license`
-- duplicate display names after normalization
 - source-content issues such as:
   - for sources with `contents.type = "archive"`:
     - `glob` entries in `fonts`

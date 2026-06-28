@@ -197,16 +197,16 @@ where
     make_manifest(pkg_id).into()
 }
 
-pub(crate) fn make_package_definition_with_display_name<I, D>(
+pub(crate) fn make_package_definition_with_description<I, D>(
     pkg_id: I,
-    display_name: D,
+    description: D,
 ) -> PackageDefinition
 where
     I: TryInto<PackageId, Error: Debug>,
     D: Into<String>,
 {
     let mut manifest = make_manifest(pkg_id);
-    manifest.display_name = Some(display_name.into());
+    manifest.description = Some(description.into());
     manifest.into()
 }
 

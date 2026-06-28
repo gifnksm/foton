@@ -21,10 +21,7 @@ use crate::{
         self, FontRule, IgnoreRule, PackageDefinition, PackageDirs, PackageId, PackageManifest,
         PackageManifestError,
     },
-    util::{
-        fs::FsError, glob::PathGlob, macros::concat_line, path::AbsolutePath,
-        text::NormalizedString,
-    },
+    util::{fs::FsError, glob::PathGlob, macros::concat_line, path::AbsolutePath},
 };
 
 #[derive(Debug, Default)]
@@ -41,8 +38,6 @@ impl RootReportScope for CheckManifestScope {}
 
 #[derive(Debug, Snafu)]
 enum CheckManifestWarnReport {
-    #[snafu(display("`display-name` field is missing in manifest"))]
-    MissingDisplayName,
     #[snafu(display("`license` field is missing in manifest"))]
     MissingLicense,
     #[snafu(display("`description` field is missing in manifest"))]
@@ -55,19 +50,6 @@ enum CheckManifestWarnReport {
         url = url,
     ))]
     SameHomepageAndRepository { url: String },
-    #[snafu(display(
-        concat_line!(
-            "following fields have the same normalized display name: {normalized}",
-            "{values}",
-            "consider removing one of the values to avoid duplication",
-        ),
-        normalized = normalized,
-        values = BulletList(values),
-    ))]
-    DuplicatedDisplayName {
-        normalized: String,
-        values: Vec<ValueWithSource>,
-    },
     #[snafu(display(
         concat_line!(
             "`sources[{source_index}].contents.fonts` contains `glob` rule: {glob}",
@@ -150,13 +132,6 @@ enum CheckManifestWarnReport {
     },
 }
 
-#[derive(Debug, derive_more::Display)]
-#[display("`{value}` (from `{source_field}`)")]
-struct ValueWithSource {
-    value: String,
-    source_field: &'static str,
-}
-
 #[derive(Debug, Snafu)]
 enum CheckManifestErrorReport {
     #[snafu(transparent)]
@@ -231,7 +206,6 @@ fn check_fields(
 
     check_missing_fields(pkg, &mut reports);
     check_homepage_and_repository_url(pkg, &mut reports);
-    check_display_name_duplication(pkg, &mut reports);
     check_archive_fonts_extraction(pkg, extract_details, &mut reports);
     check_archive_ignore_extraction(pkg, extract_details, &mut reports);
     check_archive_suspicious_skips(extract_details, &mut reports);
@@ -249,9 +223,6 @@ fn check_fields(
 }
 
 fn check_missing_fields(pkg: &PackageDefinition, reports: &mut Vec<CheckManifestWarnReport>) {
-    if pkg.display_name.is_none() {
-        reports.push(MissingDisplayNameSnafu.build());
-    }
     if pkg.license.is_none() {
         reports.push(MissingLicenseSnafu.build());
     }
@@ -268,38 +239,6 @@ fn check_homepage_and_repository_url(
         && pkg.repository == pkg.homepage
     {
         reports.push(SameHomepageAndRepositorySnafu { url: url.clone() }.build());
-    }
-}
-
-fn check_display_name_duplication(
-    pkg: &PackageDefinition,
-    reports: &mut Vec<CheckManifestWarnReport>,
-) {
-    let mut display_names: BTreeMap<String, Vec<_>> = BTreeMap::new();
-    if let Some(display_name) = &pkg.display_name {
-        let normalized = NormalizedString::new(display_name).into_compact();
-        display_names
-            .entry(normalized)
-            .or_default()
-            .push(ValueWithSource {
-                value: display_name.clone(),
-                source_field: "display-name",
-            });
-    }
-    for alias in &pkg.aliases {
-        let normalized = NormalizedString::new(alias).into_compact();
-        display_names
-            .entry(normalized)
-            .or_default()
-            .push(ValueWithSource {
-                value: alias.clone(),
-                source_field: "aliases",
-            });
-    }
-    for (normalized, values) in display_names {
-        if values.len() > 1 {
-            reports.push(DuplicatedDisplayNameSnafu { normalized, values }.build());
-        }
     }
 }
 
@@ -507,7 +446,6 @@ type = "archive"
         assert_matches!(
             reports.as_slice(),
             [
-                CheckManifestWarnReport::MissingDisplayName,
                 CheckManifestWarnReport::MissingLicense,
                 CheckManifestWarnReport::MissingDescription,
             ]
@@ -538,34 +476,6 @@ type = "archive"
         assert_matches!(
             reports.as_slice(),
             [CheckManifestWarnReport::SameHomepageAndRepository { url }] if url.as_str() == "https://example.com/repo"
-        );
-    }
-
-    #[test]
-    fn check_display_name_duplication_reports_compact_duplicates() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-display-name = "UDPGothic"
-version = "0.1.0"
-aliases = ["UDP Gothic"]
-
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-[sources.contents]
-type = "archive"
-"#,
-        );
-        let mut reports = vec![];
-
-        check_display_name_duplication(&pkg, &mut reports);
-
-        assert_matches!(
-            reports.as_slice(),
-            [CheckManifestWarnReport::DuplicatedDisplayName { normalized, values }]
-                if normalized == "udpgothic" && values.len() == 2
         );
     }
 

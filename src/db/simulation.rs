@@ -110,11 +110,11 @@ mod tests {
 
     #[test]
     fn install_reinstalls_same_version_with_different_definition_and_resets_activation() {
-        let installed_pkg = testing::make_package_definition_with_display_name(
+        let installed_pkg = testing::make_package_definition_with_description(
             "example-font@0.1.0",
             "Installed Definition",
         );
-        let manifest_pkg = testing::make_package_definition_with_display_name(
+        let manifest_pkg = testing::make_package_definition_with_description(
             "example-font@0.1.0",
             "Manifest Definition",
         );

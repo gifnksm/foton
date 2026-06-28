@@ -14,7 +14,7 @@ foton search [OPTIONS] <QUERY>...
 
 Search query terms.
 
-All specified query terms must match within the same package metadata field.
+All specified query terms must match within the same searchable field.
 
 ## Options
 
@@ -73,7 +73,7 @@ example-font@1.2.3 [example]
 - By default, `search` looks at the latest version of each package in each
   selected package registry without considering pre-release versions.
   Use `--pre-release` if you want pre-release versions to be included.
-- Search can match package names, display names, aliases, and descriptions.
+- Search matches package names and descriptions only.
 - If no matching packages are found, the command fails.
 
 ## Related pages
