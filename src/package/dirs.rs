@@ -1,5 +1,7 @@
+use std::path::{Path, PathBuf};
+
 use crate::{
-    package::PackageId,
+    package::{PackageId, PackageName, PackageVersion},
     util::{
         app_dirs::AppDirs,
         fs::{self as fs_util, FsError},
@@ -17,7 +19,7 @@ pub(crate) struct PackageDirs {
 
 impl PackageDirs {
     pub(crate) fn new(app_dirs: &AppDirs, pkg_id: &PackageId) -> Self {
-        let package_base_dir = app_dirs.data_local_dir().join("packages");
+        let package_base_dir = package_base_dir(app_dirs);
         Self::new_in(&package_base_dir, pkg_id)
     }
 
@@ -31,6 +33,28 @@ impl PackageDirs {
             version_dir,
             fonts_dir,
         }
+    }
+
+    pub(crate) fn from_font_path<P>(app_dirs: &AppDirs, path: P) -> Option<Self>
+    where
+        P: AsRef<Path>,
+    {
+        // Canonicalize both paths here so callers do not need to remember Windows
+        // casing/normalization quirks when mapping DirectWrite-returned paths back to foton
+        // package directories.
+        let path = canonicalize_path(path);
+        let package_base_dir = canonicalize_path(package_base_dir(app_dirs));
+        let Ok(sub_path) = path.strip_prefix(&package_base_dir) else {
+            return None;
+        };
+        let mut components = sub_path.components();
+        let pkg_name: PackageName = components.next()?.as_os_str().to_str()?.parse().ok()?;
+        let pkg_version: PackageVersion = components.next()?.as_os_str().to_str()?.parse().ok()?;
+        let pkg_id = PackageId::new(pkg_name, pkg_version);
+        if components.next()?.as_os_str().to_str()? != "fonts" {
+            return None;
+        }
+        Some(Self::new(app_dirs, &pkg_id))
     }
 
     pub(crate) fn pkg_id(&self) -> &PackageId {
@@ -48,6 +72,18 @@ impl PackageDirs {
     pub(crate) fn fonts_dir(&self) -> &AbsolutePath {
         &self.fonts_dir
     }
+}
+
+fn package_base_dir(app_dirs: &AppDirs) -> AbsolutePath {
+    app_dirs.data_local_dir().join("packages")
+}
+
+fn canonicalize_path<P>(path: P) -> PathBuf
+where
+    P: AsRef<Path>,
+{
+    let path = path.as_ref();
+    dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 pub(crate) fn create_new_package_dirs(pkg_dirs: &PackageDirs) -> Result<(), FsError> {

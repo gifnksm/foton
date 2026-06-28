@@ -5,7 +5,7 @@ use windows::Win32::Globalization::{self, MUI_LANGUAGE_NAME};
 use windows_core::PWSTR;
 
 #[derive(Debug, Snafu)]
-pub(crate) enum PreferredUiLanguagesError {
+pub(crate) enum UiLanguagesError {
     #[snafu(display("failed to get user preferred UI languages"))]
     GetUserPreferredUILanguages { source: windows_core::Error },
     #[snafu(display(
@@ -16,16 +16,19 @@ pub(crate) enum PreferredUiLanguagesError {
 }
 
 #[derive(Debug)]
-pub(crate) struct PreferredUiLanguages {
+pub(crate) struct UiLanguages {
     languages: Vec<String>,
 }
 
-impl PreferredUiLanguages {
-    pub(crate) fn get() -> Result<Self, PreferredUiLanguagesError> {
+impl UiLanguages {
+    pub(crate) fn get_preferred() -> Result<Self, UiLanguagesError> {
         let mut count = 0;
         let mut buffer_size = 0;
 
-        // SAFETY: This is an unsafe FFI call. We pass null pointers to get the required buffer size and count of languages.
+        // SAFETY: `GetUserPreferredUILanguages` writes to the `count` and `buffer_size`
+        // out-parameters. Both are valid mutable locals for the duration of the call, and passing
+        // `None` for the buffer is the documented probe mode used to obtain the required buffer
+        // size.
         unsafe {
             Globalization::GetUserPreferredUILanguages(
                 MUI_LANGUAGE_NAME,
@@ -41,7 +44,11 @@ impl PreferredUiLanguages {
         }
 
         let mut buffer = vec![0u16; buffer_size as usize];
-        // SAFETY: This is an unsafe FFI call. We pass a valid pointer to the buffer and its size to retrieve the preferred UI languages.
+        // SAFETY: `GetUserPreferredUILanguages` writes UTF-16 data into `buffer` and updates the
+        // `count` and `buffer_size` out-parameters. `buffer` is allocated with exactly the size
+        // reported by the preceding probe call, `buffer.as_mut_ptr()` is valid for that many
+        // code units for the duration of the call, and the API writes at most `buffer_size`
+        // characters including the trailing double NUL.
         unsafe {
             Globalization::GetUserPreferredUILanguages(
                 MUI_LANGUAGE_NAME,
@@ -88,8 +95,8 @@ impl PreferredUiLanguages {
 mod tests {
     use super::*;
 
-    fn make_languages(tags: &[&str]) -> PreferredUiLanguages {
-        PreferredUiLanguages {
+    fn make_languages(tags: &[&str]) -> UiLanguages {
+        UiLanguages {
             languages: tags.iter().map(|s| (*s).to_owned()).collect(),
         }
     }

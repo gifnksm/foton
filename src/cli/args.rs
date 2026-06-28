@@ -48,6 +48,9 @@ pub(crate) enum Command {
     /// Work with package manifest files.
     #[clap(subcommand)]
     Manifest(ManifestCommand),
+    /// Work with fonts managed by foton.
+    #[clap(subcommand)]
+    Font(FontCommand),
 }
 
 #[derive(Debug, clap::Args)]
@@ -221,6 +224,22 @@ pub(crate) struct CheckManifestArgs {
     /// Path to the manifest file to validate.
     #[clap(value_name = "MANIFEST", required = true)]
     pub(crate) manifest_path: PathBuf,
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub(crate) enum FontCommand {
+    /// List fonts managed by foton.
+    List(ListFontArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct ListFontArgs {
+    /// Include all system fonts recognized by Windows.
+    #[clap(long)]
+    pub(crate) show_system_fonts: bool,
+    /// Include all user fonts recognized by Windows.
+    #[clap(long)]
+    pub(crate) show_user_fonts: bool,
 }
 
 fn parse_positive_usize(s: &str) -> Result<usize, String> {
