@@ -132,11 +132,11 @@ struct InstalledFontsInfo {
     fonts_dir: AbsolutePath,
     families: Vec<FontFamilyInfo>,
     has_unavailable_fonts: bool,
-    font_files: Vec<FontFamilyInfoFile>,
+    font_files: Vec<InstalledFontFile>,
 }
 
 #[derive(Debug)]
-struct FontFamilyInfoFile {
+struct InstalledFontFile {
     file_name: FileName,
     inspection: InstalledFontInspection,
 }
@@ -201,7 +201,7 @@ fn load_font_info(
     pkg_dirs: &PackageDirs,
     font: &PackageFont,
     inspector: &FontInspector,
-) -> Result<FontFamilyInfoFile, InfoError> {
+) -> Result<InstalledFontFile, InfoError> {
     let path = &font.path(pkg_dirs);
     let res = inspector
         .inspect_font(path)
@@ -218,13 +218,13 @@ fn load_font_info(
         }
         None => InstalledFontInspection::Unavailable,
     };
-    Ok(FontFamilyInfoFile {
+    Ok(InstalledFontFile {
         file_name: font.file_name().clone(),
         inspection,
     })
 }
 
-fn collect_families_from_files(fonts: &[FontFamilyInfoFile]) -> Vec<FontFamilyInfo> {
+fn collect_families_from_files(fonts: &[InstalledFontFile]) -> Vec<FontFamilyInfo> {
     let mut accum = FontFamilyAccumulator::default();
     for font in fonts {
         if let InstalledFontInspection::Available(inspection) = &font.inspection {
@@ -300,7 +300,7 @@ where
             writeln!(writer, "Fonts Directory: {}", fonts_dir.display())?;
             writeln!(writer, "Installed Font Files ({}):", fonts.len())?;
             for font in fonts {
-                let FontFamilyInfoFile {
+                let InstalledFontFile {
                     file_name,
                     inspection,
                 } = font;
@@ -345,21 +345,21 @@ mod tests {
     #[test]
     fn collect_families_from_files_groups_faces_by_family_across_files() {
         let fonts = [
-            FontFamilyInfoFile {
+            InstalledFontFile {
                 file_name: FileName::new("example-font-collection.ttc").unwrap(),
                 inspection: InstalledFontInspection::Available(vec![
                     font_family_info("Example Font", &["Regular", "Bold"]),
                     font_family_info("Example Font UI", &["Regular"]),
                 ]),
             },
-            FontFamilyInfoFile {
+            InstalledFontFile {
                 file_name: FileName::new("example-font-italic.ttf").unwrap(),
                 inspection: InstalledFontInspection::Available(vec![font_family_info(
                     "Example Font",
                     &["Italic"],
                 )]),
             },
-            FontFamilyInfoFile {
+            InstalledFontFile {
                 file_name: FileName::new("example-font-bold.ttf").unwrap(),
                 inspection: InstalledFontInspection::Unavailable,
             },
@@ -393,21 +393,21 @@ mod tests {
                 ],
                 has_unavailable_fonts: true,
                 font_files: vec![
-                    FontFamilyInfoFile {
+                    InstalledFontFile {
                         file_name: FileName::new("example-font-collection.ttc").unwrap(),
                         inspection: InstalledFontInspection::Available(vec![font_family_info(
                             "Example Font",
                             &["Regular", "Bold"],
                         )]),
                     },
-                    FontFamilyInfoFile {
+                    InstalledFontFile {
                         file_name: FileName::new("example-font-ui-regular.ttf").unwrap(),
                         inspection: InstalledFontInspection::Available(vec![font_family_info(
                             "Example Font UI",
                             &["Regular"],
                         )]),
                     },
-                    FontFamilyInfoFile {
+                    InstalledFontFile {
                         file_name: FileName::new("example-font-bold.ttf").unwrap(),
                         inspection: InstalledFontInspection::Unavailable,
                     },
