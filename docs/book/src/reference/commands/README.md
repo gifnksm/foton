@@ -36,3 +36,4 @@ Treat warnings as errors, causing the command to fail if any warning is emitted.
 - [`info`](info.md)
 - [`search`](search.md)
 - [`manifest`](manifest/README.md)
+- [`font`](font/README.md)

@@ -33,3 +33,5 @@
   - [search](reference/commands/search.md)
   - [manifest](reference/commands/manifest/README.md)
     - [manifest check](reference/commands/manifest/check.md)
+  - [font](reference/commands/font/README.md)
+    - [font list](reference/commands/font/list.md)

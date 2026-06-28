@@ -1,19 +1,26 @@
 use std::{
     ffi::OsString,
+    iter::FusedIterator,
     os::windows::ffi::OsStringExt as _,
     path::{Path, PathBuf},
+    ptr,
+    range::{Range, RangeIter},
 };
 
-use snafu::{OptionExt as _, ResultExt as _, Snafu};
-use windows::Win32::Graphics::DirectWrite::{
-    self, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_PROPERTY_ID, DWRITE_FONT_PROPERTY_ID_FACE_NAME,
-    DWRITE_FONT_PROPERTY_ID_FAMILY_NAME, DWRITE_FONT_PROPERTY_ID_PREFERRED_FAMILY_NAME,
-    DWRITE_FONT_PROPERTY_ID_TYPOGRAPHIC_FACE_NAME, IDWriteFactory6, IDWriteFontSet,
-    IDWriteLocalizedStrings,
+use snafu::{IntoError as _, OptionExt as _, ResultExt as _, Snafu};
+use windows::Win32::{
+    Foundation::E_NOINTERFACE,
+    Graphics::DirectWrite::{
+        self, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_PROPERTY_ID,
+        DWRITE_FONT_PROPERTY_ID_FACE_NAME, DWRITE_FONT_PROPERTY_ID_FAMILY_NAME,
+        DWRITE_FONT_PROPERTY_ID_PREFERRED_FAMILY_NAME,
+        DWRITE_FONT_PROPERTY_ID_TYPOGRAPHIC_FACE_NAME, IDWriteFactory6, IDWriteFontSet1,
+        IDWriteLocalFontFileLoader, IDWriteLocalizedStrings,
+    },
 };
-use windows_core::HSTRING;
+use windows_core::{HSTRING, Interface as _};
 
-use crate::platform::windows::primitives::ui_languages::PreferredUiLanguages;
+use crate::platform::windows::primitives::ui_languages::UiLanguages;
 
 #[derive(Debug, Snafu)]
 pub(crate) enum DirectWriteFactoryError {
@@ -28,7 +35,10 @@ pub(crate) struct DirectWriteFactory {
 
 impl DirectWriteFactory {
     pub(crate) fn new() -> Result<Self, DirectWriteFactoryError> {
-        // SAFETY: This is an unsafe FFI call. We pass only the constant factory type argument.
+        // SAFETY: `DWriteCreateFactory` is unsafe because it crosses the FFI boundary.
+        // We pass no raw pointers, only the valid constant `DWRITE_FACTORY_TYPE_SHARED`, and
+        // the returned value is an owned COM interface managed by `windows`, so no borrowed
+        // data can outlive the call.
         let factory = unsafe { DirectWrite::DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED) }
             .context(CreateFactorySnafu)?;
         Ok(Self { factory })
@@ -49,15 +59,22 @@ pub(crate) enum DirectWriteFontSetError {
         path: PathBuf,
         source: windows_core::Error,
     },
+    #[snafu(display("failed to cast font set for font file: {path}", path = path.display()))]
+    CastFontSet {
+        path: PathBuf,
+        source: windows_core::Error,
+    },
+    #[snafu(display("failed to get system font set"))]
+    GetSystemFontSet { source: windows_core::Error },
 }
 
 #[derive(Debug)]
 pub(crate) struct DirectWriteFontSet {
-    font_set: IDWriteFontSet,
+    font_set: IDWriteFontSet1,
 }
 
 impl DirectWriteFontSet {
-    pub(crate) fn new<P>(
+    pub(crate) fn from_file<P>(
         factory: &DirectWriteFactory,
         path: P,
     ) -> Result<DirectWriteFontSet, DirectWriteFontSetError>
@@ -66,36 +83,97 @@ impl DirectWriteFontSet {
     {
         let path = path.as_ref();
 
-        // SAFETY: This is an unsafe FFI call.
+        // SAFETY: `CreateFontSetBuilder` is an FFI call on a valid `IDWriteFactory6`
+        // interface stored by `DirectWriteFactory`. The returned builder is an owned COM
+        // interface managed by `windows`, so no borrowed data escapes this call.
         let font_set_builder =
             unsafe { factory.factory.CreateFontSetBuilder() }.context(CreateFontSetBuilderSnafu)?;
 
-        // SAFETY: This is an unsafe FFI call. We pass a valid path pointer derived from a temporary
-        // UTF-16 string that is kept alive for the duration of the call.
+        // SAFETY: `AddFontFile` is unsafe because it reads a caller-provided UTF-16 path through
+        // the FFI boundary. `HSTRING::from(path)` produces a NUL-terminated buffer, and the
+        // temporary `HSTRING` is kept alive for the entire call expression, so the pointer
+        // passed to DirectWrite remains valid for the duration of the call.
         unsafe { font_set_builder.AddFontFile(&HSTRING::from(path)) }
             .context(AddFontFileSnafu { path })?;
 
-        // SAFETY: This is an unsafe FFI call.
-        let font_set =
-            unsafe { font_set_builder.CreateFontSet() }.context(CreateFontSetSnafu { path })?;
+        // SAFETY: `CreateFontSet` is an FFI call on a valid builder interface. The returned font
+        // set is an owned COM interface managed by `windows`, so it does not borrow from
+        // `font_set_builder`.
+        let font_set = unsafe { font_set_builder.CreateFontSet() }
+            .context(CreateFontSetSnafu { path })?
+            .cast()
+            .context(CastFontSetSnafu { path })?;
 
         Ok(DirectWriteFontSet { font_set })
     }
 
-    pub(crate) fn entries(&self) -> impl Iterator<Item = DirectWriteFontSetEntry<'_>> {
-        // SAFETY: This is an unsafe FFI call.
-        let count = unsafe { self.font_set.GetFontCount() };
-        (0..count).map(|index| DirectWriteFontSetEntry {
+    pub(crate) fn system_font_set(
+        factory: &DirectWriteFactory,
+    ) -> Result<DirectWriteFontSet, DirectWriteFontSetError> {
+        // SAFETY: `GetSystemFontSet` is an FFI call on a valid factory interface. The returned
+        // font set is an owned COM interface managed by `windows`, so it remains valid
+        // independently of the factory value used to obtain it.
+        let font_set =
+            unsafe { factory.factory.GetSystemFontSet(false) }.context(GetSystemFontSetSnafu)?;
+
+        Ok(DirectWriteFontSet { font_set })
+    }
+
+    pub(crate) fn entry_count(&self) -> u32 {
+        // SAFETY: `GetFontCount` is an FFI call on a valid `IDWriteFontSet1` interface and takes
+        // no raw pointers.
+        unsafe { self.font_set.GetFontCount() }
+    }
+
+    pub(crate) fn entry_at(&self, index: u32) -> DirectWriteFontSetEntry<'_> {
+        DirectWriteFontSetEntry {
             font_set: self,
             index,
-        })
+        }
+    }
+
+    pub(crate) fn entries(&self) -> impl Iterator<Item = DirectWriteFontSetEntry<'_>> {
+        let count = self.entry_count();
+        DirectWriteFontSetEntries {
+            font_set: self,
+            index: Range::from(0..count).into_iter(),
+        }
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct DirectWriteFontSetEntries<'a> {
+    font_set: &'a DirectWriteFontSet,
+    index: RangeIter<u32>,
+}
+
+impl<'a> Iterator for DirectWriteFontSetEntries<'a> {
+    type Item = DirectWriteFontSetEntry<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.index.next().map(|index| self.font_set.entry_at(index))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.index.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for DirectWriteFontSetEntries<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.index
+            .next_back()
+            .map(|index| self.font_set.entry_at(index))
+    }
+}
+
+impl ExactSizeIterator for DirectWriteFontSetEntries<'_> {}
+impl FusedIterator for DirectWriteFontSetEntries<'_> {}
 
 #[derive(Debug, Snafu)]
 pub(crate) enum DirectWriteFontSetEntryError {
     #[snafu(display(
-        "failed to get font property values for index {index} and property ID {property_id}",
+        "failed to get font property values for font set entry at index {index} and property ID {property_id}",
         property_id = property_id.0,
     ))]
     GetFontPropertyValues {
@@ -103,10 +181,49 @@ pub(crate) enum DirectWriteFontSetEntryError {
         property_id: DWRITE_FONT_PROPERTY_ID,
         source: windows_core::Error,
     },
-    #[snafu(display("font file is missing family name at index {index}"))]
+    #[snafu(display("font file is missing family name at font set entry at index {index}"))]
     MissingFontFamilyName { index: u32 },
-    #[snafu(display("font file is missing face name at index {index}"))]
+    #[snafu(display("font file is missing face name at font set entry at index {index}"))]
     MissingFontFaceName { index: u32 },
+    #[snafu(display("failed to get font face reference for font set entry at index {index}"))]
+    GetFontFaceReference {
+        index: u32,
+        source: windows_core::Error,
+    },
+    #[snafu(display("failed to get font file for font set entry at index {index}"))]
+    GetFontFile {
+        index: u32,
+        source: windows_core::Error,
+    },
+    #[snafu(display("failed to get font loader for font set entry at index {index}"))]
+    GetFontFileLoader {
+        index: u32,
+        source: windows_core::Error,
+    },
+    #[snafu(display(
+        "failed to cast font loader to local file loader for font set entry at index {index}"
+    ))]
+    CastFontFileLoader {
+        index: u32,
+        source: windows_core::Error,
+    },
+    #[snafu(display("failed to get font file reference key for font set entry at index {index}"))]
+    GetFontFileReferenceKey {
+        index: u32,
+        source: windows_core::Error,
+    },
+    #[snafu(display("failed to get font file path length for font set entry at index {index}"))]
+    GetFontFilePathLength {
+        index: u32,
+        source: windows_core::Error,
+    },
+    #[snafu(display(
+        "failed to get font file path from reference key for font set entry at index {index}"
+    ))]
+    GetFontFilePathFromKey {
+        index: u32,
+        source: windows_core::Error,
+    },
 }
 
 #[derive(Debug)]
@@ -134,6 +251,64 @@ impl DirectWriteFontSetEntry<'_> {
         .context(MissingFontFaceNameSnafu { index: self.index })
     }
 
+    pub(crate) fn path(&self) -> Result<Option<PathBuf>, DirectWriteFontSetEntryError> {
+        // SAFETY: `GetFontFaceReference` is an FFI call on a valid `IDWriteFontSet1` interface.
+        // The returned font face reference is an owned COM interface managed by `windows`.
+        let face_ref = unsafe { self.font_set.font_set.GetFontFaceReference(self.index) }
+            .context(GetFontFaceReferenceSnafu { index: self.index })?;
+        // SAFETY: `GetFontFile` is an FFI call on a valid font face reference. The returned font
+        // file is an owned COM interface managed by `windows`.
+        let font_file =
+            unsafe { face_ref.GetFontFile() }.context(GetFontFileSnafu { index: self.index })?;
+
+        // SAFETY: `GetLoader` is an FFI call on a valid font file. The returned loader is an
+        // owned COM interface managed by `windows`.
+        let loader = unsafe { font_file.GetLoader() }
+            .context(GetFontFileLoaderSnafu { index: self.index })?;
+        let local_loader = match loader.cast::<IDWriteLocalFontFileLoader>() {
+            Ok(local_loader) => local_loader,
+            Err(e) if e.code() == E_NOINTERFACE => {
+                // The loader is not a local file loader, so we cannot get a path.
+                return Ok(None);
+            }
+            Err(e) => return Err(CastFontFileLoaderSnafu { index: self.index }.into_error(e)),
+        };
+
+        let mut path_buf;
+        let path_len;
+        // SAFETY: The key returned by `GetReferenceKey` is valid only while `font_file` is alive,
+        // so obtaining the key and consuming it through `local_loader` must be treated as one
+        // unsafe unit. `font_file` is kept alive for this entire block, and `local_loader` was
+        // cast from the exact loader returned by `font_file.GetLoader()`, so the loader/key pair
+        // matches.
+        unsafe {
+            let mut ref_key = ptr::null_mut();
+            let mut ref_key_size = 0;
+            // SAFETY: `GetReferenceKey` writes the key pointer and size to these out-parameters,
+            // and both locals are valid for the duration of the call.
+            font_file
+                .GetReferenceKey(&raw mut ref_key, &raw mut ref_key_size)
+                .context(GetFontFileReferenceKeySnafu { index: self.index })?;
+
+            // SAFETY: `ref_key` and `ref_key_size` came from `GetReferenceKey` on `font_file`,
+            // and are still valid because `font_file` is kept alive for this whole block.
+            path_len = local_loader
+                .GetFilePathLengthFromKey(ref_key, ref_key_size)
+                .context(GetFontFilePathLengthSnafu { index: self.index })?;
+
+            path_buf = vec![0; (path_len + 1) as usize];
+            // SAFETY: `path_buf` has `path_len + 1` UTF-16 code units, where `path_len` came
+            // from `GetFilePathLengthFromKey`, so there is room for the path and its terminating
+            // NUL.
+            local_loader
+                .GetFilePathFromKey(ref_key, ref_key_size, &mut path_buf)
+                .context(GetFontFilePathFromKeySnafu { index: self.index })?;
+        };
+
+        let path_str = OsString::from_wide(&path_buf[..path_len as usize]);
+        Ok(Some(PathBuf::from(path_str)))
+    }
+
     fn get_property_string_with_fallback(
         &self,
         property_ids: &[DWRITE_FONT_PROPERTY_ID],
@@ -154,7 +329,10 @@ impl DirectWriteFontSetEntry<'_> {
         let mut exists = false.into();
         let mut strings = None;
 
-        // SAFETY: This is an unsafe FFI call. We pass valid pointers for the `exists` and `values` out parameters.
+        // SAFETY: `GetPropertyValues3` writes to the provided out-parameters. `exists` and
+        // `strings` are valid mutable locals for the duration of the call. On success, any
+        // returned `IDWriteLocalizedStrings` is an owned COM interface managed by `windows`, not
+        // a borrowed pointer into `font_set`.
         unsafe {
             self.font_set.font_set.GetPropertyValues3(
                 index,
@@ -204,13 +382,16 @@ pub(crate) struct DirectWriteLocalizedStrings {
 impl DirectWriteLocalizedStrings {
     pub(crate) fn pick_localized_string(
         &self,
-        preferred_languages: &PreferredUiLanguages,
+        preferred_languages: &UiLanguages,
     ) -> Result<OsString, DirectWriteLocalizedStringsError> {
         for locale_name in preferred_languages.tags() {
             let mut index = 0;
             let mut exists = false.into();
 
-            // SAFETY: This is an unsafe FFI call. We pass valid pointers for the `index` and `exists` out parameters.
+            // SAFETY: `FindLocaleName` reads the provided locale name and writes to the `index`
+            // and `exists` out-parameters. `HSTRING::from(locale_name)` stays alive for the full
+            // call expression, and both out-parameters are valid mutable locals for the duration
+            // of the call.
             unsafe {
                 self.strings.FindLocaleName(
                     &HSTRING::from(locale_name),
@@ -229,12 +410,15 @@ impl DirectWriteLocalizedStrings {
     }
 
     fn get_string(&self, index: u32) -> Result<OsString, DirectWriteLocalizedStringsError> {
-        // SAFETY: This is an unsafe FFI call. We pass a valid pointer for the `length` out parameter.
+        // SAFETY: `GetStringLength` is an FFI call on a valid `IDWriteLocalizedStrings`
+        // interface and takes no raw pointers.
         let len = unsafe { self.strings.GetStringLength(index) }
             .context(GetStringLengthSnafu { index })?;
 
         let mut buf = vec![0u16; (len + 1) as usize];
-        // SAFETY: This is an unsafe FFI call. We pass a valid pointer to the buffer and its size.
+        // SAFETY: `GetString` writes UTF-16 data into `buf`. `buf` is a valid mutable slice, and
+        // its length is `len + 1`, where `len` came from `GetStringLength(index)`, so there is
+        // enough space for the string plus the terminating NUL required by the API.
         unsafe { self.strings.GetString(index, &mut buf) }.context(GetStringSnafu { index })?;
 
         Ok(OsString::from_wide(&buf[..len as usize]))

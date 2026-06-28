@@ -21,8 +21,10 @@ where
     P: AsRef<Path>,
 {
     let font_path = font_path.as_ref();
-    // SAFETY: This is an unsafe FFI call. We pass a valid path pointer derived from a temporary
-    // UTF-16 string that is kept alive for the duration of the call.
+    // SAFETY: `AddFontResourceW` reads a caller-provided NUL-terminated UTF-16 path through the
+    // FFI boundary. `HSTRING::from(font_path)` provides such a buffer, and the temporary
+    // `HSTRING` remains alive for the full call expression, so the pointer stays valid for the
+    // duration of the call.
     let added = unsafe { Gdi::AddFontResourceW(&HSTRING::from(font_path)) };
     snafu::ensure!(added > 0, LoadFontSnafu { path: font_path });
     Ok(())
@@ -36,8 +38,10 @@ where
 
     let font_path = font_path.as_ref();
     for _ in 0..MAX_TRIES {
-        // SAFETY: This is an unsafe FFI call. We pass a valid path pointer derived from a
-        // temporary UTF-16 string that is kept alive for the duration of the call.
+        // SAFETY: `RemoveFontResourceW` reads a caller-provided NUL-terminated UTF-16 path
+        // through the FFI boundary. `HSTRING::from(font_path)` provides such a buffer, and the
+        // temporary `HSTRING` remains alive for the full call expression, so the pointer stays
+        // valid for the duration of the call.
         let removed = unsafe { Gdi::RemoveFontResourceW(&HSTRING::from(font_path)) }.as_bool();
         if !removed {
             return;
@@ -46,7 +50,9 @@ where
 }
 
 pub(crate) fn broadcast_font_change() -> Result<(), SessionError> {
-    // SAFETY: This is an unsafe FFI call. We pass only constant scalar arguments.
+    // SAFETY: `SendNotifyMessageW` is an FFI call with only plain scalar arguments. We send the
+    // system-defined `WM_FONTCHANGE` message with null payload values, so no borrowed pointers or
+    // buffers need to remain valid after the call returns.
     unsafe {
         WindowsAndMessaging::SendNotifyMessageW(HWND_BROADCAST, WM_FONTCHANGE, WPARAM(0), LPARAM(0))
     }

@@ -10,15 +10,15 @@ use crate::platform::windows::primitives::{
         DirectWriteFactory, DirectWriteFactoryError, DirectWriteFontSet,
         DirectWriteFontSetEntryError, DirectWriteFontSetError, DirectWriteLocalizedStringsError,
     },
-    ui_languages::{PreferredUiLanguages, PreferredUiLanguagesError},
+    ui_languages::{UiLanguages, UiLanguagesError},
 };
 
 #[derive(Debug, Snafu)]
 pub(crate) enum FontInspectorError {
-    #[snafu(display("failed to create DirectWrite factory for inspecting font"))]
+    #[snafu(display("failed to create DirectWrite factory"))]
     CreateDirectWriteFactory { source: DirectWriteFactoryError },
-    #[snafu(display("failed to get preferred UI languages for inspecting font"))]
-    GetPreferredUiLanguages { source: PreferredUiLanguagesError },
+    #[snafu(display("failed to get preferred UI languages"))]
+    GetPreferredUiLanguages { source: UiLanguagesError },
     #[snafu(display("failed to create font set for font file: {path}", path = path.display()))]
     CreateFontSet {
         path: PathBuf,
@@ -51,7 +51,7 @@ pub(crate) enum FontInspectorError {
 #[derive(Debug)]
 pub(crate) struct FontInspector {
     factory: DirectWriteFactory,
-    preferred_languages: PreferredUiLanguages,
+    preferred_languages: UiLanguages,
 }
 
 #[derive(Debug)]
@@ -69,7 +69,7 @@ impl FontInspector {
     pub(crate) fn new() -> Result<Self, FontInspectorError> {
         let factory = DirectWriteFactory::new().context(CreateDirectWriteFactorySnafu)?;
         let preferred_languages =
-            PreferredUiLanguages::get().context(GetPreferredUiLanguagesSnafu)?;
+            UiLanguages::get_preferred().context(GetPreferredUiLanguagesSnafu)?;
         Ok(Self {
             factory,
             preferred_languages,
@@ -81,8 +81,8 @@ impl FontInspector {
         P: AsRef<Path>,
     {
         let path = path.as_ref();
-        let font_set =
-            DirectWriteFontSet::new(&self.factory, path).context(CreateFontSetSnafu { path })?;
+        let font_set = DirectWriteFontSet::from_file(&self.factory, path)
+            .context(CreateFontSetSnafu { path })?;
 
         let faces = font_set
             .entries()

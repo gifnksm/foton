@@ -1,5 +1,6 @@
 pub(crate) mod app_dirs;
 pub(crate) mod error;
+pub(crate) mod font_family;
 pub(crate) mod fs;
 pub(crate) mod glob;
 pub(crate) mod hash;

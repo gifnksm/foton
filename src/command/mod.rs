@@ -4,19 +4,20 @@ use snafu::Snafu;
 
 use crate::{
     cli::{
-        args::{Command, ManifestCommand},
+        args::{Command, FontCommand, ManifestCommand},
         context::RootContext,
     },
     command::{
-        activate::ActivateError, deactivate::DeactivateError, generate_man::GenerateManError,
-        info::InfoError, install::InstallError, list::ListError, manifest::CheckManifestError,
-        print_completion::PrintCompletionError, repair::RepairError, search::SearchError,
-        uninstall::UninstallError, update::UpdateError,
+        activate::ActivateError, deactivate::DeactivateError, font::ListFontsError,
+        generate_man::GenerateManError, info::InfoError, install::InstallError, list::ListError,
+        manifest::CheckManifestError, print_completion::PrintCompletionError, repair::RepairError,
+        search::SearchError, uninstall::UninstallError, update::UpdateError,
     },
 };
 
 mod activate;
 mod deactivate;
+mod font;
 mod generate_man;
 mod info;
 mod install;
@@ -58,6 +59,8 @@ pub(crate) enum CommandError {
     Search { source: SearchError },
     #[snafu(transparent)]
     CheckManifest { source: CheckManifestError },
+    #[snafu(transparent)]
+    ListFonts { source: ListFontsError },
 }
 
 pub(crate) fn run_special_command() -> Result<(), SpecialCommandError> {
@@ -90,6 +93,9 @@ pub(crate) async fn run_command(cx: &RootContext, command: Command) -> Result<()
         Command::Search(args) => search::search_packages(cx, &args)?,
         Command::Manifest(command) => match command {
             ManifestCommand::Check(args) => manifest::check_manifest(cx, &args).await?,
+        },
+        Command::Font(command) => match command {
+            FontCommand::List(args) => font::list_fonts(cx, &args)?,
         },
     }
     Ok(())
