@@ -1,1 +1,1 @@
-pub(crate) mod font;
+pub(crate) mod font_inspector;

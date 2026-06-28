@@ -22,7 +22,7 @@ use crate::{
         ActivationState, InstallationState, PackageDefinition, PackageDirs, PackageFont, PackageId,
         PackageSpec,
     },
-    platform::windows::services::font::{
+    platform::windows::services::font_inspector::{
         FontInspector, FontInspectorError, InspectedFont, InspectedFontFace,
     },
     util::path::{AbsolutePath, FileName},

@@ -9,7 +9,9 @@ use crate::{
     },
     engine::ExtractedFile,
     package::PackageFont,
-    platform::windows::services::font::{FontInspector, FontInspectorError, InspectedFont},
+    platform::windows::services::font_inspector::{
+        FontInspector, FontInspectorError, InspectedFont,
+    },
     util::path::{AbsolutePath, FileName},
 };
 
