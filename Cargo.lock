@@ -695,6 +695,7 @@ dependencies = [
  "tokio-util",
  "toml",
  "url",
+ "wild",
  "windows",
  "windows-core",
  "windows-registry",
@@ -2539,6 +2540,15 @@ checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "wild"
+version = "2.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3131afc8c575281e1e80f36ed6a092aa502c08b18ed7524e86fbbb12bb410e1"
+dependencies = [
+ "glob",
 ]
 
 [[package]]

@@ -74,7 +74,7 @@ fn run() -> Result<(), FotonError> {
     let Args {
         global_args,
         command,
-    } = Args::parse();
+    } = Args::parse_from(wild::args_os());
     let cx = init_context(global_args).context(InitializationSnafu)?;
     start_task(&cx, async move |cx| command::run_command(cx, command).await)?;
 
