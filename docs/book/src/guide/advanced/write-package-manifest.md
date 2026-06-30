@@ -174,6 +174,13 @@ By default, `manifest check` does more than syntax validation.
 It reads the manifest, stages the package, downloads the sources, and verifies
 that installation would succeed.
 Use `--no-source-checks` to skip those source-dependent checks.
+This can be useful when validating many manifests at once, such as the manifests
+in a package registry:
+
+```console
+foton manifest check --no-source-checks <registry-root>\packages\**\manifest.toml
+```
+
 It can also warn about issues such as:
 
 - missing `description` or `license`

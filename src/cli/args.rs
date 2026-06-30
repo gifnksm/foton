@@ -215,15 +215,15 @@ pub(crate) struct SearchArgs {
 
 #[derive(Debug, clap::Subcommand)]
 pub(crate) enum ManifestCommand {
-    /// Validate a manifest file for installation errors and quality warnings.
+    /// Validate manifest files for installation errors and quality warnings.
     Check(CheckManifestArgs),
 }
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct CheckManifestArgs {
-    /// Path to the manifest file to validate.
+    /// Paths to the manifest files to validate.
     #[clap(value_name = "MANIFEST", required = true)]
-    pub(crate) manifest_path: PathBuf,
+    pub(crate) manifests: Vec<PathBuf>,
     /// Skip checks that require downloading and examining the source archives or files.
     #[clap(long)]
     pub(crate) no_source_checks: bool,

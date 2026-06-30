@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     io,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use snafu::{OptionExt as _, ResultExt as _, Snafu};
@@ -167,17 +167,41 @@ pub(crate) async fn check_manifest(
     args: &CheckManifestArgs,
 ) -> Result<(), CheckManifestError> {
     let CheckManifestArgs {
-        manifest_path,
+        manifests,
         no_source_checks,
     } = args;
-    let cx = CheckManifestScope::start_with_report(cx, format_args!("Checking manifest..."));
+
+    let mut err = None;
+    for manifest in manifests {
+        if cx.cancel_token().is_cancelled() {
+            return Err(CheckManifestError::Cancelled);
+        }
+        if let Err(e) = check_manifest_impl(cx, manifest, *no_source_checks).await {
+            err.get_or_insert(e);
+        }
+    }
+    if let Some(err) = err {
+        return Err(err);
+    }
+    Ok(())
+}
+
+async fn check_manifest_impl(
+    cx: &RootContext,
+    manifest_path: &Path,
+    no_source_checks: bool,
+) -> Result<(), CheckManifestError> {
+    let cx = CheckManifestScope::start_with_report(
+        cx,
+        format_args!("Checking manifest at {}...", manifest_path.display()),
+    );
 
     let manifest = PackageManifest::read(manifest_path)
         .map_err(CheckManifestErrorReport::from)
         .report_error(&cx)?;
     let pkg = manifest.into();
 
-    let extract_details = if *no_source_checks {
+    let extract_details = if no_source_checks {
         None
     } else {
         Some(extract_package_details(&cx, &pkg).await?)
