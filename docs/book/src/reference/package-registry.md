@@ -10,6 +10,7 @@ A registry is organized by package name and package version:
 
 ```text
 <registry-root>/
+  .foton-registry-root
   packages/
     <package-name>/
       <version>/
@@ -20,6 +21,7 @@ Example:
 
 ```text
 registry/
+  .foton-registry-root
   packages/
     example-font/
       1.2.3/
@@ -32,6 +34,11 @@ registry/
 The package ID in the manifest must match the directory that contains it.
 In other words, the manifest at
 `packages/example-font/1.2.3/manifest.toml` must describe `example-font@1.2.3`.
+
+The `.foton-registry-root` file is recommended and marks the directory as a
+registry root explicitly.
+It also helps `foton manifest check` detect the registry root automatically
+when validating manifests by file path.
 
 When `foton` scans the registry layout:
 

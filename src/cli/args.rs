@@ -227,6 +227,9 @@ pub(crate) struct CheckManifestArgs {
     /// Skip checks that require downloading and examining the source archives or files.
     #[clap(long)]
     pub(crate) no_source_checks: bool,
+    /// Treat the given manifest files as belonging to the package registry rooted at this directory.
+    #[clap(long, value_name = "REGISTRY_ROOT")]
+    pub(crate) registry_root: Option<PathBuf>,
 }
 
 #[derive(Debug, clap::Subcommand)]
