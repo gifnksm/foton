@@ -224,6 +224,9 @@ pub(crate) struct CheckManifestArgs {
     /// Path to the manifest file to validate.
     #[clap(value_name = "MANIFEST", required = true)]
     pub(crate) manifest_path: PathBuf,
+    /// Skip checks that require downloading and examining the source archives or files.
+    #[clap(long)]
+    pub(crate) no_source_checks: bool,
 }
 
 #[derive(Debug, clap::Subcommand)]

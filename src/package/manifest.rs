@@ -142,6 +142,7 @@ impl From<PackageManifestSource> for PackageSource {
 }
 
 impl PackageManifest {
+    #[cfg(test)]
     pub(crate) fn id(&self) -> PackageId {
         PackageId::new(self.name.clone(), self.version.clone())
     }

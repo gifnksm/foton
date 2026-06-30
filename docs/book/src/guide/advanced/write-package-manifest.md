@@ -170,9 +170,10 @@ Run:
 foton manifest check <manifest-path>
 ```
 
-`manifest check` does more than syntax validation.
+By default, `manifest check` does more than syntax validation.
 It reads the manifest, stages the package, downloads the sources, and verifies
 that installation would succeed.
+Use `--no-source-checks` to skip those source-dependent checks.
 It can also warn about issues such as:
 
 - missing `description` or `license`

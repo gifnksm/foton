@@ -166,49 +166,66 @@ pub(crate) async fn check_manifest(
     cx: &RootContext,
     args: &CheckManifestArgs,
 ) -> Result<(), CheckManifestError> {
-    let CheckManifestArgs { manifest_path } = args;
+    let CheckManifestArgs {
+        manifest_path,
+        no_source_checks,
+    } = args;
     let cx = CheckManifestScope::start_with_report(cx, format_args!("Checking manifest..."));
 
     let manifest = PackageManifest::read(manifest_path)
         .map_err(CheckManifestErrorReport::from)
         .report_error(&cx)?;
-    let pkg_id = manifest.id();
+    let pkg = manifest.into();
 
+    let extract_details = if *no_source_checks {
+        None
+    } else {
+        Some(extract_package_details(&cx, &pkg).await?)
+    };
+    check_fields(&cx, &pkg, extract_details.as_deref())?;
+
+    Ok(())
+}
+
+async fn extract_package_details<'pkg>(
+    cx: &ReportContext<CheckManifestScope>,
+    pkg: &'pkg PackageDefinition,
+) -> Result<Vec<ExtractDetail<'pkg>>, CheckManifestError> {
     let tempdir = tempfile::tempdir()
         .context(CreateTempDirSnafu)
-        .report_error(&cx)?;
+        .report_error(cx)?;
 
     let tempdir_path = AbsolutePath::new(tempdir.path())
         .with_context(|| NonAbsoluteTempDirSnafu {
             path: tempdir.path(),
         })
-        .report_error(&cx)?;
+        .report_error(cx)?;
 
-    let pkg_dirs = PackageDirs::new_in(&tempdir_path, &pkg_id);
-    let pkg = manifest.into();
+    let pkg_dirs = PackageDirs::new_in(&tempdir_path, &pkg.id);
 
     package::create_new_package_dirs(&pkg_dirs)
-        .context(CreatePackageDirsSnafu { pkg_id })
-        .report_error(&cx)?;
+        .context(CreatePackageDirsSnafu { pkg_id: &pkg.id })
+        .report_error(cx)?;
 
-    let (_pkg_fonts, extract_details) = engine::stage_package(&cx, &pkg_dirs, &pkg).await?;
-    check_fields(&cx, &pkg, &extract_details)?;
-
-    Ok(())
+    let (_pkg_fonts, extract_details) = engine::stage_package(cx, &pkg_dirs, pkg).await?;
+    Ok(extract_details)
 }
 
 fn check_fields(
     cx: &ReportContext<CheckManifestScope>,
     pkg: &PackageDefinition,
-    extract_details: &[ExtractDetail<'_>],
+    extract_details: Option<&[ExtractDetail<'_>]>,
 ) -> Result<(), CheckManifestError> {
     let mut reports = vec![];
 
     check_missing_fields(pkg, &mut reports);
     check_homepage_and_repository_url(pkg, &mut reports);
-    check_archive_fonts_extraction(pkg, extract_details, &mut reports);
-    check_archive_ignore_extraction(pkg, extract_details, &mut reports);
-    check_archive_suspicious_skips(extract_details, &mut reports);
+
+    if let Some(extract_details) = extract_details {
+        check_archive_fonts_extraction(pkg, extract_details, &mut reports);
+        check_archive_ignore_extraction(pkg, extract_details, &mut reports);
+        check_archive_suspicious_skips(extract_details, &mut reports);
+    }
 
     let mut err = None;
     for report in reports {

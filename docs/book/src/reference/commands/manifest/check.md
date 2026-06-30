@@ -20,16 +20,21 @@ Path to the manifest file to validate.
 
 Skip interactive confirmation prompts.
 
+### `--no-source-checks`
+
+Skip checks that require downloading and examining the source archives or files.
+
 ### `--warnings-as-errors`
 
 Treat warnings as errors, causing the command to fail if any warning is emitted.
 
 ## What the command checks
 
-`manifest check` reads the manifest and then stages it as if it were going to be
-installed.
+By default, `manifest check` reads the manifest and then stages it as if it
+were going to be installed.
 This includes downloading and examining the source archives or files described
 by the manifest.
+Use `--no-source-checks` to skip those source-dependent checks.
 
 The command reports:
 
@@ -63,7 +68,7 @@ foton --warnings-as-errors manifest check <manifest-path>
 ## Notes
 
 - This command is primarily intended for package authors.
-- Because the command fetches sources, network access may be required.
+- Because the command fetches sources by default, network access may be required.
 - A manifest that parses successfully can still fail `manifest check` if the
   sources are invalid or the selected fonts do not install correctly.
 
