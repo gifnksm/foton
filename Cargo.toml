@@ -109,6 +109,7 @@ tokio = { version = "1.52.3", features = ["fs", "rt-multi-thread", "signal"] }
 tokio-util = "0.7.18"
 toml = "1.1.2"
 url = { version = "2.5.8", features = ["serde"] }
+wild = "2.2.1"
 windows = {
   version = "0.62.2",
   features = [
