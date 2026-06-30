@@ -181,16 +181,16 @@ in a package registry:
 foton manifest check --no-source-checks <registry-root>\packages\**\manifest.toml
 ```
 
-It can also warn about issues such as:
+Warnings can include:
 
 - missing `description` or `license`
-
-It can also warn specifically about source contents, for example:
-
-- for sources with `contents.type = "archive"`:
-  - `glob` entries in `fonts`
-  - `fonts` or `ignore` rules that match nothing
-  - font-like files that match neither `fonts` nor `ignore`
+- for manifests treated as part of a package registry, a path that does not
+  match the registry path for the manifest's package ID
+- source-content issues such as:
+  - for sources with `contents.type = "archive"`:
+    - `glob` entries in `fonts`
+    - `fonts` or `ignore` rules that match nothing
+    - font-like files that match neither `fonts` nor `ignore`
 
 If you want warnings to fail the command, use the global
 `--warnings-as-errors` option.

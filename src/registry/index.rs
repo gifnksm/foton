@@ -13,7 +13,7 @@ use crate::{
         PackageDefinition, PackageId, PackageManifest, PackageManifestError, PackageName,
         PackageSpec, PackageVersion, ParsePackageNameError, ParsePackageVersionError,
     },
-    registry::RegistryId,
+    registry::{self, RegistryId},
 };
 
 #[derive(Debug, Snafu)]
@@ -77,16 +77,23 @@ impl RegistryIndex {
     }
 
     fn package_root_path(&self) -> PathBuf {
-        self.root_path.join("packages")
+        self.root_path
+            .join(registry::package_root_path_in_registry())
     }
 
     fn package_versions_path(&self, name: &PackageName) -> PathBuf {
-        self.package_root_path().join(name)
+        self.root_path
+            .join(registry::package_versions_path_in_registry(name))
     }
 
     fn package_dir_path(&self, pkg_id: &PackageId) -> PathBuf {
-        self.package_versions_path(pkg_id.name())
-            .join(pkg_id.version().to_string())
+        self.root_path
+            .join(registry::package_dir_path_in_registry(pkg_id))
+    }
+
+    fn package_manifest_path(&self, pkg_id: &PackageId) -> PathBuf {
+        self.root_path
+            .join(registry::package_manifest_path_in_registry(pkg_id))
     }
 
     pub(crate) fn find_latest_package_by_spec(
@@ -108,7 +115,7 @@ impl RegistryIndex {
         if check_dir_presence(&package_dir)?.is_not_found() {
             return Ok(None);
         }
-        let manifest_path = package_dir.join("manifest.toml");
+        let manifest_path = self.package_manifest_path(pkg_id);
         let manifest =
             PackageManifest::read(&manifest_path).context(ReadManifestSnafu { pkg_id })?;
         let pkg = PackageDefinition::from(manifest);

@@ -21,6 +21,7 @@ use crate::{
         self, FontRule, IgnoreRule, PackageDefinition, PackageDirs, PackageId, PackageManifest,
         PackageManifestError,
     },
+    registry::{self, ROOT_MARKER_FILE_NAME},
     util::{fs::FsError, glob::PathGlob, macros::concat_line, path::AbsolutePath},
 };
 
@@ -38,6 +39,22 @@ impl RootReportScope for CheckManifestScope {}
 
 #[derive(Debug, Snafu)]
 enum CheckManifestWarnReport {
+    #[snafu(display(
+        concat_line!(
+            "manifest path does not match the registry path for package {pkg_id}:",
+            "expected: {expected}",
+            "actual: {actual}",
+            "ensure the manifest is stored at the registry path for its package ID, or update the package ID to match the path",
+        ),
+        pkg_id = pkg_id,
+        expected = expected.display(),
+        actual = actual.display(),
+    ))]
+    InvalidManifestPath {
+        pkg_id: PackageId,
+        expected: PathBuf,
+        actual: PathBuf,
+    },
     #[snafu(display("`license` field is missing in manifest"))]
     MissingLicense,
     #[snafu(display("`description` field is missing in manifest"))]
@@ -134,6 +151,8 @@ enum CheckManifestWarnReport {
 
 #[derive(Debug, Snafu)]
 enum CheckManifestErrorReport {
+    #[snafu(display("failed to canonicalize registry root path: {path}", path = path.display()))]
+    InvalidRegistryRoot { source: io::Error, path: PathBuf },
     #[snafu(transparent)]
     ReadManifest { source: PackageManifestError },
     #[snafu(display("failed to create temporary directory for manifest checking"))]
@@ -169,15 +188,40 @@ pub(crate) async fn check_manifest(
     let CheckManifestArgs {
         manifests,
         no_source_checks,
+        registry_root,
     } = args;
+
+    let cx = CheckManifestScope::start(cx);
+
+    let registry_root = registry_root
+        .as_ref()
+        .map(|path| dunce::canonicalize(path).context(InvalidRegistryRootSnafu { path }))
+        .transpose()
+        .report_error(&cx)?;
 
     let mut err = None;
     for manifest in manifests {
         if cx.cancel_token().is_cancelled() {
             return Err(CheckManifestError::Cancelled);
         }
-        if let Err(e) = check_manifest_impl(cx, manifest, *no_source_checks).await {
+
+        let mut reports = vec![];
+
+        if let Err(e) = check_manifest_impl(
+            &cx,
+            manifest,
+            registry_root.as_deref(),
+            *no_source_checks,
+            &mut reports,
+        )
+        .await
+        {
             err.get_or_insert(e);
+        }
+        for report in reports {
+            if let Err(e) = report.report_warn(&cx) {
+                err.get_or_insert(e);
+            }
         }
     }
     if let Some(err) = err {
@@ -187,26 +231,29 @@ pub(crate) async fn check_manifest(
 }
 
 async fn check_manifest_impl(
-    cx: &RootContext,
+    cx: &ReportContext<CheckManifestScope>,
     manifest_path: &Path,
+    registry_root: Option<&Path>,
     no_source_checks: bool,
+    reports: &mut Vec<CheckManifestWarnReport>,
 ) -> Result<(), CheckManifestError> {
-    let cx = CheckManifestScope::start_with_report(
-        cx,
-        format_args!("Checking manifest at {}...", manifest_path.display()),
-    );
+    cx.reporter().report_scope(format_args!(
+        "Checking manifest at {}...",
+        manifest_path.display()
+    ));
 
     let manifest = PackageManifest::read(manifest_path)
         .map_err(CheckManifestErrorReport::from)
-        .report_error(&cx)?;
-    let pkg = manifest.into();
+        .report_error(cx)?;
+    let pkg = PackageDefinition::from(manifest);
 
-    let extract_details = if no_source_checks {
-        None
-    } else {
-        Some(extract_package_details(&cx, &pkg).await?)
-    };
-    check_fields(&cx, &pkg, extract_details.as_deref())?;
+    check_manifest_path(manifest_path, registry_root, &pkg.id, reports);
+    check_fields(&pkg, reports);
+
+    if !no_source_checks {
+        let extract_details = extract_package_details(cx, &pkg).await?;
+        check_source_fields(&pkg, &extract_details, reports);
+    }
 
     Ok(())
 }
@@ -235,32 +282,86 @@ async fn extract_package_details<'pkg>(
     Ok(extract_details)
 }
 
-fn check_fields(
-    cx: &ReportContext<CheckManifestScope>,
-    pkg: &PackageDefinition,
-    extract_details: Option<&[ExtractDetail<'_>]>,
-) -> Result<(), CheckManifestError> {
-    let mut reports = vec![];
+fn canonicalize_path(path: &Path) -> PathBuf {
+    dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
 
-    check_missing_fields(pkg, &mut reports);
-    check_homepage_and_repository_url(pkg, &mut reports);
+fn check_manifest_path(
+    manifest_path: &Path,
+    registry_root: Option<&Path>,
+    pkg_id: &PackageId,
+    reports: &mut Vec<CheckManifestWarnReport>,
+) {
+    if let Some(registry_root) = registry_root {
+        let expected_path = registry_root.join(registry::package_manifest_path_in_registry(pkg_id));
 
-    if let Some(extract_details) = extract_details {
-        check_archive_fonts_extraction(pkg, extract_details, &mut reports);
-        check_archive_ignore_extraction(pkg, extract_details, &mut reports);
-        check_archive_suspicious_skips(extract_details, &mut reports);
-    }
+        // canonicalize paths to handle cases where the path contains symlinks
+        let expected_path = canonicalize_path(&expected_path);
+        let actual_path = canonicalize_path(manifest_path);
 
-    let mut err = None;
-    for report in reports {
-        if let Err(e) = report.report_warn(&cx) {
-            err = Some(e);
+        if actual_path != expected_path {
+            reports.push(
+                InvalidManifestPathSnafu {
+                    pkg_id,
+                    expected: expected_path,
+                    actual: actual_path,
+                }
+                .build(),
+            );
         }
+        return;
     }
-    if let Some(err) = err {
-        return Err(err);
+
+    let Some(relative_path) =
+        find_manifest_relative_path_from_detected_registry_root(manifest_path)
+    else {
+        return;
+    };
+    let expected_path = registry::package_manifest_path_in_registry(pkg_id);
+    if relative_path != expected_path {
+        reports.push(
+            InvalidManifestPathSnafu {
+                pkg_id,
+                expected: expected_path,
+                actual: relative_path,
+            }
+            .build(),
+        );
     }
-    Ok(())
+}
+
+fn find_manifest_relative_path_from_detected_registry_root(
+    manifest_path: &Path,
+) -> Option<PathBuf> {
+    // Auto-detection intentionally follows the canonicalized path only.
+    // If a symlinked alias path should be checked against a specific registry,
+    // use `--registry-root`.
+    let manifest_path = canonicalize_path(manifest_path);
+    let registry_root = manifest_path
+        .ancestors()
+        .skip(1)
+        .find(|dir| dir.join(ROOT_MARKER_FILE_NAME).exists())?;
+    Some(
+        manifest_path
+            .strip_prefix(registry_root)
+            .unwrap()
+            .to_path_buf(),
+    )
+}
+
+fn check_fields(pkg: &PackageDefinition, reports: &mut Vec<CheckManifestWarnReport>) {
+    check_missing_fields(pkg, reports);
+    check_homepage_and_repository_url(pkg, reports);
+}
+
+fn check_source_fields(
+    pkg: &PackageDefinition,
+    extract_details: &[ExtractDetail<'_>],
+    reports: &mut Vec<CheckManifestWarnReport>,
+) {
+    check_archive_fonts_extraction(pkg, extract_details, reports);
+    check_archive_ignore_extraction(pkg, extract_details, reports);
+    check_archive_suspicious_skips(extract_details, reports);
 }
 
 fn check_missing_fields(pkg: &PackageDefinition, reports: &mut Vec<CheckManifestWarnReport>) {
@@ -436,10 +537,25 @@ fn check_archive_suspicious_skips(
 
 #[cfg(test)]
 mod tests {
-    use std::assert_matches;
+    use std::{assert_matches, fs, sync::LazyLock};
+
+    use tempfile::TempDir;
 
     use super::*;
-    use crate::{engine::ExtractEntry, package::ArchiveOptions, util::testing};
+    use crate::{
+        engine::ExtractEntry, package::ArchiveOptions, registry::MANIFEST_FILE_NAME, util::testing,
+    };
+
+    static PKG_ID: LazyLock<PackageId> = LazyLock::new(|| "example-font@0.1.0".parse().unwrap());
+
+    fn write_file(path: &Path) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"").unwrap();
+    }
+
+    fn expected_relative_manifest_path() -> PathBuf {
+        registry::package_manifest_path_in_registry(&PKG_ID)
+    }
 
     fn to_extract_entries(paths: &[&str]) -> Vec<ExtractEntry> {
         paths
@@ -463,6 +579,138 @@ mod tests {
             excluded: to_extract_entries(excluded),
             suspicious_skips: to_extract_entries(suspicious_skips),
         })
+    }
+
+    #[test]
+    fn find_manifest_relative_path_from_detected_registry_root_returns_none_without_marker() {
+        let tempdir = TempDir::new().unwrap();
+        let manifest_path = tempdir.path().join("drafts").join(MANIFEST_FILE_NAME);
+        write_file(&manifest_path);
+
+        let relative_path = find_manifest_relative_path_from_detected_registry_root(&manifest_path);
+
+        assert_eq!(relative_path, None);
+    }
+
+    #[test]
+    fn find_manifest_relative_path_from_detected_registry_root_returns_relative_path() {
+        let (_tempdir, registry_root) = testing::make_registry_root_dir();
+        testing::write_manifest(&registry_root, &*PKG_ID);
+        let manifest_path =
+            registry_root.join(registry::package_manifest_path_in_registry(&PKG_ID));
+
+        let relative_path = find_manifest_relative_path_from_detected_registry_root(&manifest_path);
+
+        assert_eq!(relative_path, Some(expected_relative_manifest_path()));
+    }
+
+    #[test]
+    fn find_manifest_relative_path_from_detected_registry_root_returns_none_for_canonicalized_path_outside_registry()
+     {
+        let tempdir = TempDir::new().unwrap();
+        let registry_root = tempdir.path().join("registry");
+        testing::write_registry_root_marker(&registry_root);
+        let manifest_path = tempdir.path().join("drafts").join(MANIFEST_FILE_NAME);
+        write_file(&manifest_path);
+
+        let path_with_parent_component = tempdir
+            .path()
+            .join("registry")
+            .join("..")
+            .join("drafts")
+            .join(MANIFEST_FILE_NAME);
+
+        let relative_path =
+            find_manifest_relative_path_from_detected_registry_root(&path_with_parent_component);
+
+        assert_eq!(relative_path, None);
+    }
+
+    #[test]
+    fn find_manifest_relative_path_from_detected_registry_root_canonicalizes_path_before_searching()
+    {
+        let (_tempdir, registry_root) = testing::make_registry_root_dir();
+        testing::write_manifest(&registry_root, &*PKG_ID);
+
+        let manifest_path = registry_root
+            .join(registry::PACKAGES_DIR_NAME)
+            .join("example-font")
+            .join(".")
+            .join("0.1.0")
+            .join(MANIFEST_FILE_NAME);
+
+        let relative_path = find_manifest_relative_path_from_detected_registry_root(&manifest_path);
+
+        assert_eq!(relative_path, Some(expected_relative_manifest_path()));
+    }
+
+    #[test]
+    fn check_manifest_path_with_detected_registry_root_reports_invalid_manifest_path() {
+        let (_tempdir, registry_root) = testing::make_registry_root_dir();
+        let actual_pkg_id: PackageId = "different-font@0.1.0".try_into().unwrap();
+        let manifest_path =
+            registry_root.join(registry::package_manifest_path_in_registry(&actual_pkg_id));
+        write_file(&manifest_path);
+        let mut reports = vec![];
+
+        check_manifest_path(&manifest_path, None, &PKG_ID, &mut reports);
+
+        assert_matches!(
+            reports.as_slice(),
+            [CheckManifestWarnReport::InvalidManifestPath { pkg_id, expected, actual }]
+                if pkg_id == &*PKG_ID
+                    && expected == &expected_relative_manifest_path()
+                    && actual == &registry::package_manifest_path_in_registry(&actual_pkg_id)
+        );
+    }
+
+    #[test]
+    fn check_manifest_path_with_detected_registry_root_accepts_expected_path() {
+        let (_tempdir, registry_root) = testing::make_registry_root_dir();
+        testing::write_manifest(&registry_root, &*PKG_ID);
+        let manifest_path =
+            registry_root.join(registry::package_manifest_path_in_registry(&PKG_ID));
+        let mut reports = vec![];
+
+        check_manifest_path(&manifest_path, None, &PKG_ID, &mut reports);
+
+        assert!(reports.is_empty());
+    }
+
+    #[test]
+    fn check_manifest_path_with_explicit_registry_root_reports_invalid_manifest_path() {
+        let (_tempdir, registry_root) = testing::make_registry_root_dir();
+        testing::write_manifest(&registry_root, &*PKG_ID);
+        let expected_path =
+            registry_root.join(registry::package_manifest_path_in_registry(&PKG_ID));
+        let manifest_path = registry_root.join("drafts").join(MANIFEST_FILE_NAME);
+        write_file(&manifest_path);
+        let registry_root = dunce::canonicalize(&registry_root).unwrap();
+        let mut reports = vec![];
+
+        check_manifest_path(&manifest_path, Some(&registry_root), &PKG_ID, &mut reports);
+
+        assert_matches!(
+            reports.as_slice(),
+            [CheckManifestWarnReport::InvalidManifestPath { pkg_id, expected, actual }]
+                if pkg_id == &*PKG_ID
+                    && expected == &dunce::canonicalize(&expected_path).unwrap()
+                    && actual == &dunce::canonicalize(&manifest_path).unwrap()
+        );
+    }
+
+    #[test]
+    fn check_manifest_path_with_explicit_registry_root_accepts_expected_path() {
+        let (_tempdir, registry_root) = testing::make_registry_root_dir();
+        testing::write_manifest(&registry_root, &*PKG_ID);
+        let manifest_path =
+            registry_root.join(registry::package_manifest_path_in_registry(&PKG_ID));
+        let registry_root = dunce::canonicalize(&registry_root).unwrap();
+        let mut reports = vec![];
+
+        check_manifest_path(&manifest_path, Some(&registry_root), &PKG_ID, &mut reports);
+
+        assert!(reports.is_empty());
     }
 
     #[test]

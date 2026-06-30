@@ -24,6 +24,10 @@ Skip interactive confirmation prompts.
 
 Skip checks that require downloading and examining the source archives or files.
 
+### `--registry-root <REGISTRY_ROOT>`
+
+Treat the given manifest files as belonging to the package registry rooted at this directory.
+
 ### `--warnings-as-errors`
 
 Treat warnings as errors, causing the command to fail if any warning is emitted.
@@ -45,8 +49,9 @@ The command reports:
 
 Warnings can include:
 
-- missing `description`
-- missing `license`
+- missing `description` or `license`
+- for manifests treated as part of a package registry, a path that does not
+  match the registry path for the manifest's package ID
 - source-content issues such as:
   - for sources with `contents.type = "archive"`:
     - `glob` entries in `fonts`
@@ -63,6 +68,12 @@ Skip source-dependent checks when validating many manifests, for example in a re
 
 ```console
 foton manifest check --no-source-checks <registry-root>\packages\**\manifest.toml
+```
+
+Validate a manifest as part of a package registry rooted at a known directory:
+
+```console
+foton manifest check --registry-root <registry-root> <manifest-path>
 ```
 
 Treat warnings as errors:

@@ -2,7 +2,7 @@ use std::{
     fmt::Debug,
     fs,
     ops::Deref,
-    path::Path,
+    path::{Path, PathBuf},
     process,
     sync::{
         Arc,
@@ -25,7 +25,9 @@ use crate::{
     db::PackageDatabase,
     engine,
     package::{InstallationState, PackageDefinition, PackageDirs, PackageId, PackageManifest},
-    registry::{RegistryId, RegistryIndex, RegistrySource, RegistrySpec},
+    registry::{
+        self, ROOT_MARKER_FILE_NAME, RegistryId, RegistryIndex, RegistrySource, RegistrySpec,
+    },
     util::{app_dirs::AppDirs, path::AbsolutePath},
 };
 
@@ -148,6 +150,22 @@ where
     (tempdir, registry)
 }
 
+pub(crate) fn make_registry_root_dir() -> (TempDir, PathBuf) {
+    let tempdir = TempDir::new().unwrap();
+    let registry_root = tempdir.path().join("registry");
+    write_registry_root_marker(&registry_root);
+    (tempdir, registry_root)
+}
+
+pub(crate) fn write_registry_root_marker<P>(registry_dir: P)
+where
+    P: AsRef<Path>,
+{
+    let registry_dir = registry_dir.as_ref();
+    fs::create_dir_all(registry_dir).unwrap();
+    fs::write(registry_dir.join(ROOT_MARKER_FILE_NAME), b"marker").unwrap();
+}
+
 pub(crate) fn make_manifest_str<I>(pkg_id: I) -> String
 where
     I: TryInto<PackageId, Error: Debug>,
@@ -227,12 +245,9 @@ where
 {
     let registry_dir = registry_dir.as_ref();
     let pkg_id = pkg_id.try_into().unwrap();
-    let dir = registry_dir
-        .join("packages")
-        .join(pkg_id.name())
-        .join(pkg_id.version().to_string());
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("manifest.toml"), manifest_str).unwrap();
+    let manifest_path = registry_dir.join(registry::package_manifest_path_in_registry(&pkg_id));
+    fs::create_dir_all(manifest_path.parent().unwrap()).unwrap();
+    fs::write(manifest_path, manifest_str).unwrap();
 }
 
 pub(crate) fn mark_as_state(
