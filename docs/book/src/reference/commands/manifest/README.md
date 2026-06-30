@@ -10,7 +10,7 @@ foton manifest <COMMAND>
 
 ## Commands
 
-- [`check`](check.md): validate a manifest file for installation errors and
+- [`check`](check.md): validate manifest files for installation errors and
   quality warnings
 
 ## Typical usage

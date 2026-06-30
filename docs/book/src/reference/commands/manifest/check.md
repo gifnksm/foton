@@ -1,18 +1,18 @@
 # manifest check
 
-Validate a manifest file for installation errors and quality warnings.
+Validate manifest files for installation errors and quality warnings.
 
 ## Usage
 
 ```text
-foton manifest check [OPTIONS] <MANIFEST>
+foton manifest check [OPTIONS] <MANIFEST>...
 ```
 
 ## Arguments
 
 ### `<MANIFEST>`
 
-Path to the manifest file to validate.
+Paths to the manifest files to validate.
 
 ## Options
 
@@ -57,6 +57,12 @@ Warnings can include:
 
 ```console
 foton manifest check <manifest-path>
+```
+
+Skip source-dependent checks when validating many manifests, for example in a registry:
+
+```console
+foton manifest check --no-source-checks <registry-root>\packages\**\manifest.toml
 ```
 
 Treat warnings as errors:
