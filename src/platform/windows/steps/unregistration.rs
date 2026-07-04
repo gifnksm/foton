@@ -79,7 +79,7 @@ where
         }
     };
 
-    let entries = registry::list_registered_package_fonts(cx.app_id(), pkg_id)
+    let entries = registry::list_registered_valid_package_fonts(cx.app_id(), pkg_id)
         .context(ListInstalledFontsSnafu)
         .report_notice(&cx);
 

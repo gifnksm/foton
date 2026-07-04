@@ -51,6 +51,10 @@ impl PackageVersion {
     pub(crate) fn is_pre_release(&self) -> bool {
         self.0.contains('-')
     }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl FromStr for PackageVersion {
