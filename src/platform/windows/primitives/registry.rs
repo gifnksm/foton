@@ -67,19 +67,27 @@ pub(crate) enum RegistryError {
     },
 }
 
-fn assert_value_name_segment(kind: &str, segment: &str) {
+fn assert_value_name_prefix_segment(kind: &str, segment: &str) {
     assert!(
         !segment.contains(['\\', '\0', '@']) && !segment.chars().any(char::is_control),
-        "invalid registry value name segment for {kind}: {segment:?}"
+        "invalid {kind} for registry value name segment: {segment:?}"
+    );
+}
+
+fn assert_value_name_file_name(file_name: &str) {
+    assert!(
+        !file_name.contains(['\\', '\0']) && !file_name.chars().any(char::is_control),
+        "invalid file name for registry value: {file_name:?}"
     );
 }
 
 fn reg_value_name(app_id: &str, pkg_id: &PackageId, file_name: &str) -> String {
-    let name = pkg_id.name();
-    let version = pkg_id.version();
-    assert_value_name_segment("app id", app_id);
-    assert_value_name_segment("package name", name.as_str());
-    assert_value_name_segment("package version", version.as_str());
+    let name = pkg_id.name().as_str();
+    let version = pkg_id.version().as_str();
+    assert_value_name_prefix_segment("app id", app_id);
+    assert_value_name_prefix_segment("package name", name);
+    assert_value_name_prefix_segment("package version", version);
+    assert_value_name_file_name(file_name);
 
     format!(r"{app_id}@{name}@{version}@{file_name}")
 }
@@ -91,9 +99,9 @@ fn strip_value_name_prefix<'a>(
 ) -> Option<&'a str> {
     let name = pkg_id.name().as_str();
     let version = pkg_id.version().as_str();
-    assert_value_name_segment("app id", app_id);
-    assert_value_name_segment("package name", name);
-    assert_value_name_segment("package version", version);
+    assert_value_name_prefix_segment("app id", app_id);
+    assert_value_name_prefix_segment("package name", name);
+    assert_value_name_prefix_segment("package version", version);
 
     value_name
         .strip_prefix(app_id)?
