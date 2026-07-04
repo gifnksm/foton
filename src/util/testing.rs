@@ -365,7 +365,7 @@ where
     })
 }
 
-fn with_db_in_context<S, F, T>(cx: &ReportContext<S>, f: F) -> T
+pub(crate) fn with_db_in_context<S, F, T>(cx: &ReportContext<S>, f: F) -> T
 where
     S: ReportScope,
     F: FnOnce(&mut PackageDatabase<'_>) -> T,

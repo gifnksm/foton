@@ -1,6 +1,6 @@
 # list
 
-List installed packages.
+List packages recorded in the local package database.
 
 ## Usage
 
@@ -9,15 +9,6 @@ foton list [OPTIONS]
 ```
 
 ## Options
-
-### `--include-incomplete`
-
-Include packages left by incomplete installs, uninstalls, or updates.
-
-Without this option, only packages in the `installed` state are shown, and each
-line includes the activation state.
-With this option, each line includes the installation state, and installed
-packages also include the activation state.
 
 ### `--no-confirm`
 
@@ -31,37 +22,39 @@ Exit immediately if the package database is locked by another operation.
 
 Treat warnings as errors, causing the command to fail if any warning is emitted.
 
+### `--format <FORMAT>`
+
+Select the output format.
+
+- **Default**: `text`
+- **Possible Values**: `text`, `jsonl`
+
 ## Examples
 
-Show installed packages:
+Show packages recorded in the local package database:
 
 ```console
 foton list
 ```
 
-Show installed packages together with leftover packages from incomplete
-installs, uninstalls, or updates, and their states:
+Show packages as JSON Lines:
 
 ```console
-foton list --include-incomplete
+foton list --format jsonl
 ```
 
 ## Output
 
-Without `--include-incomplete`, each line contains a package name, version, and
-activation state:
-
-```text
-example-font@1.2.3 (active)
-```
-
-With `--include-incomplete`, each line includes the installation state, and
-installed packages also include the activation state:
+`list` prints packages recorded in the local package database.
+In text output, each line contains a package name, version, installation state,
+and activation state:
 
 ```text
 example-font@1.2.3 (installed, active)
-another-font@0.1.0 (incomplete-install)
 ```
+
+With `--format jsonl`, `list` writes one JSON object per listed package
+in JSON Lines format.
 
 ## Notes
 

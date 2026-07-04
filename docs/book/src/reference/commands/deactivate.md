@@ -53,8 +53,8 @@ foton deactivate <package-name-1> <package-name-2>
 - If a package name matches multiple installed versions, `deactivate` does not
   choose one automatically; specify an exact package ID such as
   `<package-name>@<version>`.
-- Use `repair` when you need to clean up packages left by incomplete
-  install, uninstall, activation, or deactivation work.
+- Use `repair` when a package command such as `install` or `activate` does
+  not complete cleanly and leaves packages in incomplete states.
 
 ## Related pages
 

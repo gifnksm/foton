@@ -48,7 +48,7 @@ enum ListFontsErrorReport {
     EnumerateSystemFonts { source: FontEnumeratorError },
     #[snafu(display("failed to serialize font information"))]
     SerializeToJsonl { source: serde_json::Error },
-    #[snafu(display("failed to render fonts to stdout"))]
+    #[snafu(display("failed to render font information to stdout"))]
     RenderToStdout { source: io::Error },
 }
 

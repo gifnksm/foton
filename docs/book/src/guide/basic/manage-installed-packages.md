@@ -7,31 +7,25 @@ It also explains how to recover from incomplete operations with `repair`.
 In the examples below, replace placeholders such as `<package-name>` and
 `<version>` with real values.
 
-## List installed packages
+## List packages
 
-Show installed packages:
+Show packages recorded in the local package database:
 
 ```console
 foton list
 ```
 
-By default, `list` shows packages in the `installed` state together with each
-package's activation state.
+`list` shows packages recorded in the local package database.
 
-If you also want to see packages left by incomplete operations, pass
-`--include-incomplete`.
+If you see packages in incomplete states, inspect them with `foton info`, then
+clean them up with `foton repair`.
+Most of the time, you will work only with `installed` packages.
+
+If you want machine-readable output, use JSON Lines:
 
 ```console
-foton list --include-incomplete
+foton list --format jsonl
 ```
-
-With `--include-incomplete`, each entry includes its installation state, such as
-`installed`, `incomplete-install`, or `incomplete-uninstall`. Installed
-packages also include their activation state.
-
-If you see such packages, inspect them with `foton info`, then clean them up
-with `foton repair`.
-Most of the time, you will work only with `installed` packages.
 
 ## Inspect a package in detail
 
@@ -103,10 +97,11 @@ Like other commands that change installed packages, `activate` and
 `deactivate` ask for confirmation before applying changes.
 Use the global `--no-confirm` option if you want to skip the prompt.
 
-## Recover from incomplete operations
+## Recover from operations that did not complete cleanly
 
-If `list --include-incomplete` shows packages left by incomplete operations, use
-`repair` to clean them up:
+Sometimes a package command such as `install` or `activate` does not complete
+cleanly. It may leave packages in incomplete states. If `list` shows such
+packages, use `repair` to clean them up:
 
 ```console
 foton repair
@@ -122,8 +117,8 @@ foton repair <package-name>
 foton repair <package-name>@<version>
 ```
 
-`repair` cleans up those packages. It does not resume an interrupted install
-or update.
+`repair` cleans up those packages. It does not retry or resume the command
+that left them in those states.
 
 ## Remove a package
 

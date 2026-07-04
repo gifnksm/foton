@@ -41,11 +41,11 @@ pub(super) fn run(
         let Some(version_state) = line.strip_prefix("hackgen@") else {
             continue;
         };
-        if let Some(version) = version_state.strip_suffix(" (active)") {
+        if let Some(version) = version_state.strip_suffix(" (installed, active)") {
             assert!(active_version.is_none());
             active_version = Some(version.to_owned());
         }
-        if let Some(version) = version_state.strip_suffix(" (inactive)") {
+        if let Some(version) = version_state.strip_suffix(" (installed, inactive)") {
             assert!(inactive_version.is_none());
             inactive_version = Some(version.to_owned());
         }
