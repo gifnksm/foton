@@ -33,13 +33,13 @@ pub(crate) enum Command {
     Activate(ActivateArgs),
     /// Deactivate installed packages.
     Deactivate(DeactivateArgs),
-    /// Clean up packages in the local package database that were left by
-    /// incomplete installs, uninstalls, updates, activations, or deactivations.
+    /// Clean up packages left in incomplete states when commands such as
+    /// `install` or `activate` do not complete cleanly.
     ///
-    /// `repair` only performs cleanup; it does not resume an interrupted
-    /// install, update, activation, or deactivation.
+    /// `repair` only performs cleanup. It does not retry or resume those
+    /// commands.
     Repair(RepairArgs),
-    /// List installed packages.
+    /// List packages recorded in the local package database.
     List(ListArgs),
     /// Show detailed information about packages recorded in the local package database.
     Info(InfoArgs),
@@ -165,17 +165,19 @@ pub(crate) struct RepairArgs {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct ListArgs {
-    /// Include packages left by incomplete installs, uninstalls, or updates.
-    ///
-    /// Without this option, only packages in the `installed` state are shown,
-    /// and each line includes the activation state.
-    /// With this option, each line includes the installation state, and
-    /// installed packages also include the activation state.
-    #[clap(long)]
-    pub(crate) include_incomplete: bool,
     /// Exit immediately if the package database is locked by another operation.
     #[clap(long)]
     pub(crate) exit_on_lock: bool,
+    /// Select the output format.
+    #[clap(long, default_value_t, value_enum)]
+    pub(crate) format: ListFormat,
+}
+
+#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
+pub(crate) enum ListFormat {
+    #[default]
+    Text,
+    Jsonl,
 }
 
 #[derive(Debug, clap::Args)]
