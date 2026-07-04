@@ -76,12 +76,7 @@ where
     let pkg_dirs = PackageDirs::new(cx.app_dirs(), pkg_id);
     let registered_fonts = pkg_fonts
         .into_iter()
-        .map(|pkg_font| {
-            RegisteredFont::new(
-                pkg_font.file_name().to_os_string(),
-                pkg_font.path(&pkg_dirs),
-            )
-        })
+        .map(|pkg_font| RegisteredFont::new(pkg_font.path(&pkg_dirs)))
         .collect::<Result<Vec<_>, _>>()
         .map_err(Into::into)
         .report_error(&cx)?;
@@ -93,9 +88,10 @@ where
         .context(RegisterFontsInRegistrySnafu)
         .report_error(&cx)?;
 
-    for entry in &registered_fonts {
-        session::load_font(entry.path())
-            .context(LoadFontSnafu { path: entry.path() })
+    for font in &registered_fonts {
+        let path = font.path();
+        session::load_font(path)
+            .context(LoadFontSnafu { path })
             .report_notice(&cx);
     }
 

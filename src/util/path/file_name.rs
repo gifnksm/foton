@@ -25,10 +25,6 @@ impl FileName {
         Some(Self(name))
     }
 
-    pub(crate) fn to_os_string(&self) -> OsString {
-        self.0.clone()
-    }
-
     pub(crate) fn display(&self) -> os_str::Display<'_> {
         self.0.display()
     }

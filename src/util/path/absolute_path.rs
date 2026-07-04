@@ -80,6 +80,22 @@ impl From<AbsolutePath> for PathBuf {
     }
 }
 
+impl TryFrom<&str> for AbsolutePath {
+    type Error = AbsolutePathError;
+
+    fn try_from(path: &str) -> Result<Self, Self::Error> {
+        AbsolutePath::try_new(path)
+    }
+}
+
+impl TryFrom<String> for AbsolutePath {
+    type Error = AbsolutePathError;
+
+    fn try_from(path: String) -> Result<Self, Self::Error> {
+        AbsolutePath::try_new(path)
+    }
+}
+
 impl TryFrom<&Path> for AbsolutePath {
     type Error = AbsolutePathError;
 
