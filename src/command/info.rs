@@ -80,7 +80,7 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
     let InfoArgs {
         pkg_specs,
         exit_on_lock,
-        show_files,
+        include_files,
     } = args;
 
     let cx = InfoScope::start(cx);
@@ -104,7 +104,7 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
 
         for entry in entries {
             let info = load_package_info(&cx, &entry, &inspector)?;
-            render_package_info(io::stdout().lock(), &info, *show_files)
+            render_package_info(io::stdout().lock(), &info, *include_files)
                 .context(WriteInfoSnafu)
                 .report_error(&cx)?;
         }
@@ -230,7 +230,7 @@ fn collect_families_from_files(fonts: &[InstalledFontFile]) -> Vec<FontFamilyInf
     accum.into_families()
 }
 
-fn render_package_info<W>(mut writer: W, info: &PackageInfo, show_files: bool) -> io::Result<()>
+fn render_package_info<W>(mut writer: W, info: &PackageInfo, include_files: bool) -> io::Result<()>
 where
     W: io::Write,
 {
@@ -279,7 +279,7 @@ where
             )?;
         }
 
-        if show_files {
+        if include_files {
             writeln!(writer, "Fonts Directory: {}", fonts_dir.display())?;
             writeln!(writer, "Installed Font Files ({}):", fonts.len())?;
             for font in fonts {
@@ -311,9 +311,9 @@ mod tests {
     use crate::util::{macros::concat_line, path::FileName};
 
     #[track_caller]
-    fn check_rendered_output(info: &PackageInfo, expected: &str, show_files: bool) {
+    fn check_rendered_output(info: &PackageInfo, expected: &str, include_files: bool) {
         let mut output = vec![];
-        render_package_info(&mut output, info, show_files).unwrap();
+        render_package_info(&mut output, info, include_files).unwrap();
         let output = String::from_utf8(output).unwrap();
         assert_eq!(output, expected);
     }

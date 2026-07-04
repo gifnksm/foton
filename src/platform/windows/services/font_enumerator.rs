@@ -129,27 +129,30 @@ impl Iterator for SystemFontIter<'_, '_> {
             let path = entry.path().context(GetFontFilePathSnafu { index })?;
             let path = path.map(canonicalize_path);
 
-            let source = match &path {
+            let location = match path {
                 // Windows system fonts are installed under the system font directory, so the file
                 // path alone is enough to distinguish them from user fonts here.
-                Some(path) if path.starts_with(self.system_fonts_dir) => SystemFontSource::System,
-                Some(path) => match PackageDirs::from_font_path(self.app_dirs, path) {
-                    Some(pkg_dirs) => SystemFontSource::FotonPackage {
+                Some(path) if path.starts_with(self.system_fonts_dir) => {
+                    FontLocation::SystemDir { path }
+                }
+                Some(path) => match PackageDirs::from_font_path(self.app_dirs, &path) {
+                    Some(pkg_dirs) => FontLocation::PackageDir {
                         pkg_id: pkg_dirs.pkg_id().clone(),
+                        path,
                     },
                     // Windows system fonts live under the system font directory. Any other local
                     // font that is visible here and not owned by foton is treated as a user font.
-                    None => SystemFontSource::User,
+                    None => FontLocation::UserDir { path },
                 },
                 // Some DirectWrite entries are not backed by a local file path, so they cannot be
                 // attributed to system, user, or foton-managed storage.
-                None => SystemFontSource::Unknown,
+                None => FontLocation::Unknown,
             };
 
             Ok(SystemFont {
                 family,
                 face,
-                source,
+                location,
             })
         })
     }
@@ -159,14 +162,14 @@ impl Iterator for SystemFontIter<'_, '_> {
 pub(crate) struct SystemFont {
     pub(crate) family: OsString,
     pub(crate) face: OsString,
-    pub(crate) source: SystemFontSource,
+    pub(crate) location: FontLocation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum SystemFontSource {
-    FotonPackage { pkg_id: PackageId },
-    System,
-    User,
+pub(crate) enum FontLocation {
+    PackageDir { path: PathBuf, pkg_id: PackageId },
+    SystemDir { path: PathBuf },
+    UserDir { path: PathBuf },
     Unknown,
 }
 

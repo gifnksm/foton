@@ -19,13 +19,13 @@ By default, `list` shows packages in the `installed` state together with each
 package's activation state.
 
 If you also want to see packages left by incomplete operations, pass
-`--show-incomplete`.
+`--include-incomplete`.
 
 ```console
-foton list --show-incomplete
+foton list --include-incomplete
 ```
 
-With `--show-incomplete`, each entry includes its installation state, such as
+With `--include-incomplete`, each entry includes its installation state, such as
 `installed`, `incomplete-install`, or `incomplete-uninstall`. Installed
 packages also include their activation state.
 
@@ -49,7 +49,7 @@ foton info <package-name>@<version>
 matching packages recorded in the local package database.
 For packages in the `installed` state, it also shows a summary of the
 installed font families.
-Use `--show-files` when you also want the fonts directory and installed font
+Use `--include-files` when you also want the fonts directory and installed font
 files for packages in the `installed` state.
 This can include packages left by incomplete operations.
 Use this command when you want to confirm exactly what is recorded in the local
@@ -105,7 +105,7 @@ Use the global `--no-confirm` option if you want to skip the prompt.
 
 ## Recover from incomplete operations
 
-If `list --show-incomplete` shows packages left by incomplete operations, use
+If `list --include-incomplete` shows packages left by incomplete operations, use
 `repair` to clean them up:
 
 ```console

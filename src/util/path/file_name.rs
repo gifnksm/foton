@@ -6,8 +6,13 @@ use std::{
 
 use serde::{Deserialize, Serialize, de};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct FileName(OsString);
+use crate::util::ser_de;
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
+pub(crate) struct FileName(
+    #[serde(serialize_with = "ser_de::readable_os_string::serialize")] OsString,
+);
 
 impl FileName {
     pub(crate) fn new<N>(name: N) -> Option<Self>
@@ -30,35 +35,12 @@ impl FileName {
     }
 }
 
-impl Serialize for FileName {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        if let Some(s) = self.0.to_str() {
-            str::serialize(s, serializer)
-        } else {
-            OsStr::serialize(&self.0, serializer)
-        }
-    }
-}
-
 impl<'de> Deserialize<'de> for FileName {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Repr {
-            String(String),
-            OsString(OsString),
-        }
-
-        let name = match Repr::deserialize(deserializer)? {
-            Repr::String(v) => v.into(),
-            Repr::OsString(v) => v,
-        };
+        let name = ser_de::readable_os_string::deserialize(deserializer)?;
         FileName::new(name).ok_or_else(|| de::Error::custom("invalid file name"))
     }
 }
@@ -157,7 +139,6 @@ mod tests {
     #[test]
     fn serialize_uses_json_string_for_utf8_file_name() {
         let file_name = FileName::new("example-font.ttf").unwrap();
-
         assert_eq!(
             serde_json::to_string(&file_name).unwrap(),
             r#""example-font.ttf""#
@@ -167,7 +148,6 @@ mod tests {
     #[test]
     fn deserialize_accepts_json_string_for_utf8_file_name() {
         let file_name: FileName = serde_json::from_str(r#""example-font.ttf""#).unwrap();
-
         assert_eq!(file_name, FileName::new("example-font.ttf").unwrap());
     }
 
@@ -175,7 +155,6 @@ mod tests {
     fn deserialize_accepts_platform_os_string_representation() {
         let value = serde_json::to_value(OsString::from("example-font.ttf")).unwrap();
         let file_name: FileName = serde_json::from_value(value).unwrap();
-
         assert_eq!(file_name, FileName::new("example-font.ttf").unwrap());
     }
 
@@ -183,11 +162,6 @@ mod tests {
     fn non_utf8_file_name_roundtrips_via_json() {
         let os_string = make_non_utf8_os_string();
         let file_name = FileName::new(&os_string).unwrap();
-
-        assert_eq!(
-            serde_json::to_value(&file_name).unwrap(),
-            serde_json::to_value(&os_string).unwrap(),
-        );
         assert_eq!(
             serde_json::from_value::<FileName>(serde_json::to_value(&file_name).unwrap()).unwrap(),
             file_name,

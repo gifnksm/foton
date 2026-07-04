@@ -52,7 +52,7 @@ impl OperationError for ListError {
 
 pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), ListError> {
     let ListArgs {
-        show_incomplete,
+        include_incomplete,
         exit_on_lock,
     } = args;
 
@@ -61,7 +61,7 @@ pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), List
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
     let db = engine::load_database(&cx, &mut db_lock_file, *exit_on_lock)?;
 
-    let renderer = if *show_incomplete {
+    let renderer = if *include_incomplete {
         (&AllEntryRender {}) as &dyn EntryRender
     } else {
         &InstalledEntryRender {} as &dyn EntryRender
