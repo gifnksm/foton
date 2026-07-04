@@ -10,7 +10,7 @@ foton list [OPTIONS]
 
 ## Options
 
-### `--show-incomplete`
+### `--include-incomplete`
 
 Include packages left by incomplete installs, uninstalls, or updates.
 
@@ -43,19 +43,19 @@ Show installed packages together with leftover packages from incomplete
 installs, uninstalls, or updates, and their states:
 
 ```console
-foton list --show-incomplete
+foton list --include-incomplete
 ```
 
 ## Output
 
-Without `--show-incomplete`, each line contains a package name, version, and
+Without `--include-incomplete`, each line contains a package name, version, and
 activation state:
 
 ```text
 example-font@1.2.3 (active)
 ```
 
-With `--show-incomplete`, each line includes the installation state, and
+With `--include-incomplete`, each line includes the installation state, and
 installed packages also include the activation state:
 
 ```text

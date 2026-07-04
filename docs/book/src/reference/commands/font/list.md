@@ -14,18 +14,25 @@ foton font list [OPTIONS]
 
 Skip interactive confirmation prompts.
 
-### `--show-system-fonts`
+### `--include-system-fonts`
 
-Include all system fonts recognized by Windows.
+Also include all system fonts recognized by Windows.
 
-### `--show-user-fonts`
+### `--include-user-fonts`
 
-Include all user fonts recognized by Windows.
+Also include all user fonts recognized by Windows.
 
 ### `--warnings-as-errors`
 
 Treat warnings as errors, causing the command to fail if any warning is
 emitted.
+
+### `--format <FORMAT>`
+
+Select the output format.
+
+- **Default**: `text`
+- **Possible Values**: `text`, `jsonl`
 
 ## Examples
 
@@ -38,43 +45,52 @@ foton font list
 Also show system fonts recognized by Windows:
 
 ```console
-foton font list --show-system-fonts
+foton font list --include-system-fonts
 ```
 
 Also show user fonts recognized by Windows:
 
 ```console
-foton font list --show-user-fonts
+foton font list --include-user-fonts
 ```
 
-Show fonts from all supported sources:
+Also show system and user fonts:
 
 ```console
-foton font list --show-system-fonts --show-user-fonts
+foton font list --include-system-fonts --include-user-fonts
+```
+
+Show fonts as JSON Lines:
+
+```console
+foton font list --format jsonl
 ```
 
 ## Output
 
-`font list` groups fonts by source.
-Within each source, each line shows a font family followed by the faces
+By default, `font list` prints text output grouped by font locations.
+Within each group, each line shows a font family followed by the faces
 recognized for that family.
 
 Example:
 
 ```text
-Package example-font@1.2.3:
+Fonts from Package example-font@1.2.3:
   - Example Font (Bold, Regular)
-System Fonts:
+Fonts from System Font Directory:
   - Example Sans (Regular)
-User Fonts:
+Fonts from User Font Directories:
   - Example Serif (Italic)
 ```
+
+With `--format jsonl`, `font list` writes one JSON object per visible font face
+in JSON Lines format.
 
 ## Notes
 
 - By default, `font list` shows fonts attributed to foton-managed packages.
-- `--show-system-fonts` adds system fonts recognized by Windows.
-- `--show-user-fonts` adds user fonts recognized by Windows.
+- `--include-system-fonts` adds system fonts recognized by Windows.
+- `--include-user-fonts` adds user fonts recognized by Windows.
 - `font list` reads the font set recognized by Windows and classifies each
   visible font by the location of its backing file when possible.
 

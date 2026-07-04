@@ -336,13 +336,22 @@ pub(crate) fn mark_as_incomplete_uninstall(db: &mut PackageDatabase<'_>, pkg: &P
     assert!(entry.activation_state().is_inactive());
 }
 
+pub(crate) fn with_root_context<F, T>(f: F) -> T
+where
+    F: FnOnce(&RootContext) -> T,
+{
+    let cx = TempdirContext::new();
+    f(&cx)
+}
+
 pub(crate) fn with_context<F, T>(f: F) -> T
 where
     F: FnOnce(&ReportContext<TestScope>) -> T,
 {
-    let cx = TempdirContext::new();
-    let cx = TestScope::start(&cx);
-    f(&cx)
+    with_root_context(|cx| {
+        let cx = TestScope::start(cx);
+        f(&cx)
+    })
 }
 
 pub(crate) fn with_scoped_context<S, F, T>(f: F) -> T

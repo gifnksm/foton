@@ -172,7 +172,7 @@ pub(crate) struct ListArgs {
     /// With this option, each line includes the installation state, and
     /// installed packages also include the activation state.
     #[clap(long)]
-    pub(crate) show_incomplete: bool,
+    pub(crate) include_incomplete: bool,
     /// Exit immediately if the package database is locked by another operation.
     #[clap(long)]
     pub(crate) exit_on_lock: bool,
@@ -186,9 +186,9 @@ pub(crate) struct InfoArgs {
     /// Exit immediately if the package database is locked by another operation.
     #[clap(long)]
     pub(crate) exit_on_lock: bool,
-    /// For installed packages, also show the fonts directory and installed font files.
+    /// For installed packages, also include the fonts directory and installed font files.
     #[clap(long)]
-    pub(crate) show_files: bool,
+    pub(crate) include_files: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -240,12 +240,22 @@ pub(crate) enum FontCommand {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct ListFontArgs {
-    /// Include all system fonts recognized by Windows.
+    /// Also include all system fonts recognized by Windows.
     #[clap(long)]
-    pub(crate) show_system_fonts: bool,
-    /// Include all user fonts recognized by Windows.
+    pub(crate) include_system_fonts: bool,
+    /// Also include all user fonts recognized by Windows.
     #[clap(long)]
-    pub(crate) show_user_fonts: bool,
+    pub(crate) include_user_fonts: bool,
+    /// Select the output format.
+    #[clap(long, default_value_t, value_enum)]
+    pub(crate) format: ListFontFormat,
+}
+
+#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
+pub(crate) enum ListFontFormat {
+    #[default]
+    Text,
+    Jsonl,
 }
 
 fn parse_positive_usize(s: &str) -> Result<usize, String> {

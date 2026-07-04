@@ -28,9 +28,9 @@ Exit immediately if the package database is locked by another operation.
 
 Treat warnings as errors, causing the command to fail if any warning is emitted.
 
-### `--show-files`
+### `--include-files`
 
-For installed packages, also show the fonts directory and installed font files.
+For installed packages, also include the fonts directory and installed font files.
 
 ## Examples
 
@@ -43,7 +43,7 @@ foton info <package-name>@<version>
 ```
 
 ```console
-foton info --show-files <package-name>
+foton info --include-files <package-name>
 ```
 
 ## Output
@@ -55,7 +55,7 @@ foton info --show-files <package-name>
 - description, homepage, repository, and license
 - for packages in the `installed` state, a summary of the installed font families
 
-With `--show-files`, `info` also shows the fonts directory and the installed
+With `--include-files`, `info` also shows the fonts directory and the installed
 font files for packages in the `installed` state.
 
 If a package name matches multiple packages recorded in the local package
