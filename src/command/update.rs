@@ -44,7 +44,6 @@ pub(crate) async fn update_package(cx: &RootContext, args: &UpdateArgs) -> Resul
         registries,
         pkg_specs,
         pre_release,
-        exit_on_lock,
     } = args;
 
     let report = if pkg_specs.is_empty() {
@@ -58,7 +57,7 @@ pub(crate) async fn update_package(cx: &RootContext, args: &UpdateArgs) -> Resul
     engine::ensure_non_empty_registries(&cx, &registries)?;
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
-    let mut db = engine::load_database(&cx, &mut db_lock_file, *exit_on_lock)?;
+    let mut db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let targets = engine::resolve_update_targets(&cx, &db, &registries, pkg_specs, *pre_release)?;
     let plan = engine::plan_install(&db, &targets);

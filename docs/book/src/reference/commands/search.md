@@ -28,6 +28,18 @@ Use a comma-separated list such as `--registry local,foton`.
 
 Maximum number of matching packages to show.
 
+### `--pre-release`
+
+Allow matching pre-release versions when searching packages in registries.
+
+Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored.
+
+## Global options
+
+### `--exit-on-lock`
+
+Exit immediately if the package database is locked by another operation.
+
 ### `--no-confirm`
 
 Skip interactive confirmation prompts.
@@ -35,12 +47,6 @@ Skip interactive confirmation prompts.
 ### `--warnings-as-errors`
 
 Treat warnings as errors, causing the command to fail if any warning is emitted.
-
-### `--pre-release`
-
-Allow matching pre-release versions when searching packages in registries.
-
-Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored.
 
 ## Examples
 

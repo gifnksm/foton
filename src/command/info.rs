@@ -79,14 +79,13 @@ impl OperationError for InfoError {
 pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), InfoError> {
     let InfoArgs {
         pkg_specs,
-        exit_on_lock,
         include_files,
     } = args;
 
     let cx = InfoScope::start(cx);
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
-    let db = engine::load_database(&cx, &mut db_lock_file, *exit_on_lock)?;
+    let db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let inspector = FontInspector::new()
         .context(CreateFontInspectorSnafu)

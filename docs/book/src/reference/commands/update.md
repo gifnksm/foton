@@ -27,23 +27,25 @@ Package registry IDs to resolve packages from.
 
 Use a comma-separated list such as `--registry local,foton`.
 
-### `--no-confirm`
-
-Skip interactive confirmation prompts.
-
-### `--exit-on-lock`
-
-Exit immediately if the package database is locked by another operation.
-
-### `--warnings-as-errors`
-
-Treat warnings as errors, causing the command to fail if any warning is emitted.
-
 ### `--pre-release`
 
 Allow updating to pre-release versions when resolving packages from registries.
 
 Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored.
+
+## Global options
+
+### `--exit-on-lock`
+
+Exit immediately if the package database is locked by another operation.
+
+### `--no-confirm`
+
+Skip interactive confirmation prompts.
+
+### `--warnings-as-errors`
+
+Treat warnings as errors, causing the command to fail if any warning is emitted.
 
 ## Examples
 

@@ -1,7 +1,7 @@
 use std::process::Command;
 
 use cargo_metadata::camino::Utf8PathBuf;
-use color_eyre::eyre::{self, WrapErr as _, eyre};
+use color_eyre::eyre::{self, WrapErr as _, ensure, eyre};
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator as _;
 use tempfile::TempDir;
@@ -161,6 +161,167 @@ where
 {
     let mut cmd = Command::new(&params.foton_exe);
     f(&mut cmd);
-    let res = crate::util::process::exec_command("foton", &params.output_dir, &mut cmd)?;
-    Ok(exec_results.push_mut(res))
+    crate::util::process::exec_command("foton", &params.output_dir, &mut cmd, exec_results)
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, derive_more::Display, derive_more::IsVariant, Deserialize,
+)]
+#[display(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum InstallationState {
+    Installed,
+    IncompleteInstall,
+    IncompleteUninstall,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, derive_more::Display, derive_more::IsVariant, Deserialize,
+)]
+#[display(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ActivationState {
+    Active,
+    Inactive,
+    IncompleteActivation,
+    IncompleteDeactivation,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct ListPackageEntry {
+    #[serde(rename = "package-id")]
+    pkg_id: String,
+    installation_state: InstallationState,
+    activation_state: ActivationState,
+}
+
+impl ListPackageEntry {
+    fn name(&self) -> &str {
+        let (name, _version) = self.pkg_id.split_once('@').unwrap();
+        name
+    }
+
+    fn version(&self) -> &str {
+        let (_name, version) = self.pkg_id.split_once('@').unwrap();
+        version
+    }
+
+    #[track_caller]
+    fn ensure_name<P>(&self, predicate: P) -> eyre::Result<&Self>
+    where
+        P: FnOnce(&str) -> bool,
+    {
+        let name = self.name();
+        ensure!(
+            predicate(name),
+            "package `{}` name did not satisfy the expected condition: `{}`",
+            self.pkg_id,
+            name,
+        );
+        Ok(self)
+    }
+
+    #[track_caller]
+    fn ensure_version<P>(&self, predicate: P) -> eyre::Result<&Self>
+    where
+        P: FnOnce(&str) -> bool,
+    {
+        let version = self.version();
+        ensure!(
+            predicate(version),
+            "package `{}` version did not satisfy the expected condition: `{}`",
+            self.pkg_id,
+            version,
+        );
+        Ok(self)
+    }
+
+    #[track_caller]
+    fn ensure_installation_state<P>(&self, predicate: P) -> eyre::Result<&Self>
+    where
+        P: FnOnce(InstallationState) -> bool,
+    {
+        ensure!(
+            predicate(self.installation_state),
+            "package `{}` installation state did not satisfy the expected condition: `{}`",
+            self.pkg_id,
+            self.installation_state,
+        );
+        Ok(self)
+    }
+
+    #[track_caller]
+    fn ensure_activation_state<P>(&self, predicate: P) -> eyre::Result<&Self>
+    where
+        P: FnOnce(ActivationState) -> bool,
+    {
+        ensure!(
+            predicate(self.activation_state),
+            "package `{}` activation state did not satisfy the expected condition: `{}`",
+            self.pkg_id,
+            self.activation_state,
+        );
+        Ok(self)
+    }
+}
+
+fn list_packages(
+    params: &ScenarioParameters,
+    exec_results: &mut Vec<ExecResult>,
+) -> eyre::Result<Vec<ListPackageEntry>> {
+    exec_foton(params, exec_results, |cmd| {
+        cmd.args(["list", "--exit-on-lock", "--format", "jsonl"]);
+    })?
+    .ensure_success()?
+    .deserialize_stdout_as_jsonl()
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct ListFontEntry {
+    location: FontLocation,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, derive_more::Display, derive_more::IsVariant, Deserialize,
+)]
+#[display(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", rename_all_fields = "kebab-case")]
+enum FontLocationType {
+    PackageDir,
+    SystemDir,
+    UserDir,
+    Unknown,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct FontLocation {
+    #[serde(rename = "type")]
+    ty: FontLocationType,
+    #[serde(rename = "package-id", default)]
+    pkg_id: Option<String>,
+}
+
+fn list_fonts(
+    params: &ScenarioParameters,
+    exec_results: &mut Vec<ExecResult>,
+) -> eyre::Result<Vec<ListFontEntry>> {
+    exec_foton(params, exec_results, |cmd| {
+        cmd.args(["font", "list", "--exit-on-lock", "--format", "jsonl"]);
+    })?
+    .ensure_success()?
+    .deserialize_stdout_as_jsonl()
+}
+
+fn list_package_fonts(
+    params: &ScenarioParameters,
+    exec_results: &mut Vec<ExecResult>,
+) -> eyre::Result<Vec<ListFontEntry>> {
+    let fonts = list_fonts(params, exec_results)?
+        .into_iter()
+        .filter(|font| font.location.ty.is_package_dir())
+        .collect();
+    Ok(fonts)
 }

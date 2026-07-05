@@ -4,7 +4,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use color_eyre::eyre::{self, ensure};
+use color_eyre::eyre::{self, WrapErr as _, ensure};
 use serde::{Deserialize, Serialize};
 
 use crate::scenario::Scenario;
@@ -133,6 +133,23 @@ impl ExecResult {
             self.stderr
         );
         Ok(self)
+    }
+
+    #[track_caller]
+    pub(crate) fn deserialize_stdout_as_jsonl<T>(&self) -> eyre::Result<Vec<T>>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        self.stdout
+            .lines()
+            .map(serde_json::from_str)
+            .collect::<Result<Vec<_>, _>>()
+            .wrap_err_with(|| {
+                format!(
+                    "{} stdout is not valid JSONL. stdout:\n{}",
+                    self.name, self.stdout
+                )
+            })
     }
 }
 

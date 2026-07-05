@@ -16,10 +16,6 @@ Paths to the manifest files to validate.
 
 ## Options
 
-### `--no-confirm`
-
-Skip interactive confirmation prompts.
-
 ### `--no-source-checks`
 
 Skip checks that require downloading and examining the source archives or files.
@@ -27,6 +23,16 @@ Skip checks that require downloading and examining the source archives or files.
 ### `--registry-root <REGISTRY_ROOT>`
 
 Treat the given manifest files as belonging to the package registry rooted at this directory.
+
+## Global options
+
+### `--exit-on-lock`
+
+Exit immediately if the package database is locked by another operation.
+
+### `--no-confirm`
+
+Skip interactive confirmation prompts.
 
 ### `--warnings-as-errors`
 

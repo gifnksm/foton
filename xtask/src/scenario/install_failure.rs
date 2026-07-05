@@ -1,4 +1,4 @@
-use color_eyre::eyre;
+use color_eyre::eyre::{self, ensure};
 
 use crate::{
     report::{self, ExecResult},
@@ -29,6 +29,11 @@ pub(super) fn run(
             .lines()
             .any(|line| line.contains("failed to install"))
     })?;
+
+    let managed_packages = super::list_packages(params, exec_results)?;
+    ensure!(managed_packages.is_empty());
+    let installed_fonts = super::list_package_fonts(params, exec_results)?;
+    ensure!(installed_fonts.is_empty());
 
     Ok(())
 }

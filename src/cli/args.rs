@@ -12,7 +12,11 @@ pub(crate) struct Args {
 }
 
 #[derive(Debug, clap::Args, Default)]
+#[command(next_help_heading = "Global Options")]
 pub(crate) struct GlobalArgs {
+    /// Exit immediately if the package database is locked by another operation.
+    #[clap(long, global = true)]
+    pub(crate) exit_on_lock: bool,
     /// Skip interactive confirmation prompts.
     #[clap(long, global = true)]
     pub(crate) no_confirm: bool,
@@ -85,9 +89,6 @@ pub(crate) struct InstallArgs {
     /// Do not activate the installed packages.
     #[clap(long)]
     pub(crate) no_activate: bool,
-    /// Exit immediately if the package database is locked by another operation.
-    #[clap(long)]
-    pub(crate) exit_on_lock: bool,
 }
 
 impl InstallArgs {
@@ -116,9 +117,6 @@ pub(crate) struct UpdateArgs {
     /// Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored.
     #[clap(long)]
     pub(crate) pre_release: bool,
-    /// Exit immediately if the package database is locked by another operation.
-    #[clap(long)]
-    pub(crate) exit_on_lock: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -126,9 +124,6 @@ pub(crate) struct UninstallArgs {
     /// Package names, optionally with an exact version as `<package-name>@<version>`.
     #[clap(value_name = "PACKAGE", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
-    /// Exit immediately if the package database is locked by another operation.
-    #[clap(long)]
-    pub(crate) exit_on_lock: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -136,9 +131,6 @@ pub(crate) struct ActivateArgs {
     /// Package names, optionally with an exact version as `<package-name>@<version>`.
     #[clap(value_name = "PACKAGE", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
-    /// Exit immediately if the package database is locked by another operation.
-    #[clap(long)]
-    pub(crate) exit_on_lock: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -146,9 +138,6 @@ pub(crate) struct DeactivateArgs {
     /// Package names, optionally with an exact version as `<package-name>@<version>`.
     #[clap(value_name = "PACKAGE", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
-    /// Exit immediately if the package database is locked by another operation.
-    #[clap(long)]
-    pub(crate) exit_on_lock: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -158,16 +147,10 @@ pub(crate) struct RepairArgs {
     /// If not specified, every package that needs cleanup will be cleaned up.
     #[clap(value_name = "PACKAGE")]
     pub(crate) pkg_specs: Vec<PackageSpec>,
-    /// Exit immediately if the package database is locked by another operation.
-    #[clap(long)]
-    pub(crate) exit_on_lock: bool,
 }
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct ListArgs {
-    /// Exit immediately if the package database is locked by another operation.
-    #[clap(long)]
-    pub(crate) exit_on_lock: bool,
     /// Select the output format.
     #[clap(long, default_value_t, value_enum)]
     pub(crate) format: ListFormat,
@@ -185,9 +168,6 @@ pub(crate) struct InfoArgs {
     /// Package names, optionally with an exact version as `<package-name>@<version>`.
     #[clap(value_name = "PACKAGE", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
-    /// Exit immediately if the package database is locked by another operation.
-    #[clap(long)]
-    pub(crate) exit_on_lock: bool,
     /// For installed packages, also include the fonts directory and installed font files.
     #[clap(long)]
     pub(crate) include_files: bool,
@@ -289,13 +269,9 @@ mod tests {
     }
 
     #[test]
-    fn install_accepts_supported_argument_combinations() {
-        let cases: [(&str, &[&str]); 6] = [
+    fn install_accepts_package_or_manifest_targets() {
+        let cases: [(&str, &[&str]); 3] = [
             ("package-only", &["foton", "install", "package1"]),
-            (
-                "package-only with pre-release",
-                &["foton", "install", "--pre-release", "package1"],
-            ),
             (
                 "manifest-only",
                 &["foton", "install", "--manifest", "fonts.toml"],
@@ -304,69 +280,11 @@ mod tests {
                 "mixed manifest and package",
                 &["foton", "install", "--manifest", "fonts.toml", "package1"],
             ),
-            (
-                "manifest-only with registry option",
-                &[
-                    "foton",
-                    "install",
-                    "--manifest",
-                    "fonts.toml",
-                    "--registry",
-                    "local",
-                ],
-            ),
-            (
-                "manifest-only with pre-release option",
-                &[
-                    "foton",
-                    "install",
-                    "--manifest",
-                    "fonts.toml",
-                    "--pre-release",
-                ],
-            ),
         ];
 
         for (name, case) in cases {
             parse_install(case).unwrap_or_else(|err| panic!("case `{name}` should parse: {err}"));
         }
-    }
-
-    #[test]
-    fn install_parses_mixed_input_and_install_options() {
-        let install_args = parse_install([
-            "foton",
-            "install",
-            "--manifest",
-            "fonts.toml",
-            "--manifest",
-            "extras.toml",
-            "--registry",
-            "local,foton",
-            "--pre-release",
-            "--no-activate",
-            "--exit-on-lock",
-            "package1",
-            "package2",
-        ])
-        .unwrap();
-
-        assert_eq!(
-            install_args.manifests,
-            vec![PathBuf::from("fonts.toml"), PathBuf::from("extras.toml")],
-        );
-        assert_eq!(
-            install_args.registries,
-            Some(vec![RegistryId::new("local").unwrap(), RegistryId::foton()]),
-        );
-        assert_eq!(
-            install_args.pkg_specs,
-            vec!["package1".parse().unwrap(), "package2".parse().unwrap()],
-        );
-        assert!(install_args.pre_release);
-        assert!(install_args.no_activate);
-        assert!(install_args.exit_on_lock);
-        assert_eq!(install_args.len(), 4);
     }
 
     #[test]

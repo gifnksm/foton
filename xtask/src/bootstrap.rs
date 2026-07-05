@@ -138,8 +138,7 @@ fn run_test(
     for test_exe in test_exes {
         let mut cmd = Command::new(test_exe);
         let name = test_exe.file_stem().unwrap_or("test");
-        let res = process_util::exec_command(name, output_dir, &mut cmd)?;
-        let res = exec_results.push_mut(res);
+        let res = process_util::exec_command(name, output_dir, &mut cmd, exec_results)?;
         if !res.success {
             bail!(
                 "test executable `{test_exe}` failed with status {}",

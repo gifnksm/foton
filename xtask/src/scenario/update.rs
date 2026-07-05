@@ -1,64 +1,80 @@
-use color_eyre::eyre;
+use color_eyre::eyre::{self, ensure};
 
 use crate::{report::ExecResult, scenario::ScenarioParameters};
 
-const PKG_SPEC_OLD: &str = "hackgen@2.9.1";
+const PKG_NAME: &str = "hackgen";
+const OLD_PKG_VERSION: &str = "2.9.1";
+const OLD_PKG_ID: &str = "hackgen@2.9.1";
 
 pub(super) fn run(
     params: &ScenarioParameters,
     exec_results: &mut Vec<ExecResult>,
 ) -> eyre::Result<()> {
-    super::exec_foton(params, exec_results, |cmd| {
-        cmd.args(["list", "--exit-on-lock"]);
-    })?
-    .ensure_success()?
-    .ensure_stdout(str::is_empty)?;
+    let managed_packages = super::list_packages(params, exec_results)?;
+    ensure!(managed_packages.is_empty());
+    let installed_fonts = super::list_package_fonts(params, exec_results)?;
+    ensure!(installed_fonts.is_empty());
 
     super::exec_foton(params, exec_results, |cmd| {
-        cmd.args(["install", "--no-confirm", "--exit-on-lock", PKG_SPEC_OLD]);
+        cmd.args(["install", "--no-confirm", "--exit-on-lock", OLD_PKG_ID]);
     })?
     .ensure_success()?;
 
-    super::exec_foton(params, exec_results, |cmd| {
-        cmd.args(["list", "--exit-on-lock"]);
-    })?
-    .ensure_success()?
-    .ensure_stdout(|stdout| stdout.lines().any(|line| line.starts_with("hackgen@2.9.1")))?;
+    let managed_packages = super::list_packages(params, exec_results)?;
+    ensure!(managed_packages.len() == 1);
+    managed_packages[0]
+        .ensure_name(|name| name == PKG_NAME)?
+        .ensure_version(|version| version == OLD_PKG_VERSION)?
+        .ensure_installation_state(|state| state.is_installed())?
+        .ensure_activation_state(|state| state.is_active())?;
+    let installed_fonts = super::list_package_fonts(params, exec_results)?;
+    ensure!(!installed_fonts.is_empty());
+    ensure!(
+        installed_fonts
+            .iter()
+            .all(|font| font.location.pkg_id.as_deref() == Some(OLD_PKG_ID))
+    );
 
     super::exec_foton(params, exec_results, |cmd| {
         cmd.args(["update", "--no-confirm", "--exit-on-lock"]);
     })?
     .ensure_success()?;
 
-    let res = super::exec_foton(params, exec_results, |cmd| {
-        cmd.args(["list", "--exit-on-lock"]);
-    })?
-    .ensure_success()?;
+    let managed_packages = super::list_packages(params, exec_results)?;
+    ensure!(managed_packages.len() == 2);
+    let (old_pkg, new_pkg) = if managed_packages[0].pkg_id == OLD_PKG_ID {
+        (&managed_packages[0], &managed_packages[1])
+    } else {
+        ensure!(managed_packages[1].pkg_id == OLD_PKG_ID);
+        (&managed_packages[1], &managed_packages[0])
+    };
+    old_pkg
+        .ensure_installation_state(|state| state.is_installed())?
+        .ensure_activation_state(|state| state.is_inactive())?;
+    new_pkg
+        .ensure_version(|version| version != OLD_PKG_VERSION)?
+        .ensure_installation_state(|state| state.is_installed())?
+        .ensure_activation_state(|state| state.is_active())?;
 
-    let mut active_version = None;
-    let mut inactive_version = None;
-    for line in res.stdout.lines() {
-        let Some(version_state) = line.strip_prefix("hackgen@") else {
-            continue;
-        };
-        if let Some(version) = version_state.strip_suffix(" (installed, active)") {
-            assert!(active_version.is_none());
-            active_version = Some(version.to_owned());
-        }
-        if let Some(version) = version_state.strip_suffix(" (installed, inactive)") {
-            assert!(inactive_version.is_none());
-            inactive_version = Some(version.to_owned());
-        }
-    }
-    let active_version = active_version.unwrap();
-    let inactive_version = inactive_version.unwrap();
-    assert_eq!(inactive_version, "2.9.1");
+    let installed_fonts = super::list_package_fonts(params, exec_results)?;
+    ensure!(!installed_fonts.is_empty());
+
+    // DirectWrite can continue to report fonts from the old package
+    // immediately after unregistration, so we do not require all
+    // visible package fonts to belong to the newly active package.
+    // Instead, we only check that at least one visible package font
+    // belongs to the new package.
+    ensure!(
+        installed_fonts
+            .iter()
+            .any(|font| font.location.pkg_id.as_deref() == Some(&new_pkg.pkg_id))
+    );
 
     super::exec_foton(params, exec_results, |cmd| {
         cmd.args(["uninstall", "--no-confirm", "--exit-on-lock"]);
         cmd.args([
-            format!("hackgen@{active_version}"),
-            format!("hackgen@{inactive_version}"),
+            format!("{PKG_NAME}@{OLD_PKG_VERSION}"),
+            format!("{PKG_NAME}@{}", new_pkg.version()),
         ]);
     })?
     .ensure_success()?;
