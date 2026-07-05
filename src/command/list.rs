@@ -200,10 +200,7 @@ impl EntryRender for JsonlRender {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        db::PackageDatabase,
-        util::{macros::concat_line, testing},
-    };
+    use crate::{db::PackageDatabase, util::testing};
 
     fn make_entries<'db>(
         db: &'db mut PackageDatabase<'_>,
@@ -243,18 +240,15 @@ mod tests {
                 render_entries(&cx, &mut output, entries, &TextRender {}).unwrap();
 
                 let output = String::from_utf8(output).unwrap();
-                assert_eq!(
-                    output,
-                    concat_line!(
-                        "active-font@1.0.0 (installed, active)",
-                        "incomplete-activate-font@1.0.0 (installed, incomplete-activation)",
-                        "incomplete-deactivate-font@1.0.0 (installed, incomplete-deactivation)",
-                        "incomplete-install-font@1.1.0 (incomplete-install, inactive)",
-                        "incomplete-uninstall-font@1.2.0 (incomplete-uninstall, inactive)",
-                        "installed-font@1.0.0 (installed, inactive)",
-                        "",
-                    )
-                );
+                let expected = indoc::indoc! {r"
+                    active-font@1.0.0 (installed, active)
+                    incomplete-activate-font@1.0.0 (installed, incomplete-activation)
+                    incomplete-deactivate-font@1.0.0 (installed, incomplete-deactivation)
+                    incomplete-install-font@1.1.0 (incomplete-install, inactive)
+                    incomplete-uninstall-font@1.2.0 (incomplete-uninstall, inactive)
+                    installed-font@1.0.0 (installed, inactive)
+                "};
+                assert_eq!(output, expected);
             });
         });
     }

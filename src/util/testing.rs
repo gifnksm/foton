@@ -173,19 +173,17 @@ where
     let pkg_id = pkg_id.try_into().unwrap();
     let name = pkg_id.name();
     let version = pkg_id.version();
-    format!(
-        r#"
-name = "{name}"
-version = "{version}"
+    indoc::formatdoc! { r#"
+        name = "{name}"
+        version = "{version}"
 
-[[sources]]
-url = "https://example.com/{name}-{version}.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        [[sources]]
+        url = "https://example.com/{name}-{version}.zip"
+        hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-"#
-    )
+        [sources.contents]
+        type = "archive"
+    "# }
 }
 
 pub(crate) fn make_manifest<I>(pkg_id: I) -> PackageManifest

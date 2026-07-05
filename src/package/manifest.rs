@@ -4,7 +4,7 @@ use std::{
 };
 
 use reqwest::Url;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use snafu::{IntoError as _, ResultExt as _, Snafu};
 
 use crate::{
@@ -12,10 +12,10 @@ use crate::{
         FontRule, IgnoreRule, PackageDefinition, PackageId, PackageName, PackageSource,
         PackageVersion,
     },
-    util::{glob::PathGlob, hash::GenericDigest, path::FileName},
+    util::{glob::PathGlob, hash::GenericDigest, path::FileName, ser_de},
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct PackageManifest {
@@ -29,51 +29,35 @@ pub(crate) struct PackageManifest {
     /// This identifies a specific immutable release of the package.
     pub(crate) version: PackageVersion,
     /// Short description of the font family, collection, or bundle provided by the package.
-    #[serde(
-        default,
-        deserialize_with = "option_nonempty_string_without_surrounding_whitespaces::deserialize",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, with = "optional_description")]
     pub(crate) description: Option<String>,
     /// Upstream homepage for the font project or distribution represented by the package.
-    #[serde(
-        default,
-        deserialize_with = "optional_http_url::deserialize",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, with = "optional_http_url")]
     pub(crate) homepage: Option<Url>,
     /// Upstream source repository for the font project represented by the package.
-    #[serde(
-        default,
-        deserialize_with = "optional_http_url::deserialize",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, with = "optional_http_url")]
     pub(crate) repository: Option<Url>,
     /// SPDX license expression for the upstream font files included in the package.
-    #[serde(
-        default,
-        with = "optional_spdx_expression",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, with = "optional_spdx_expression")]
     pub(crate) license: Option<spdx::Expression>,
     /// Download sources from which the package's font files can be installed.
-    #[serde(deserialize_with = "non_empty_vec::deserialize")]
+    #[serde(with = "ser_de::non_empty_vec")]
     pub(crate) sources: Vec<PackageManifestSource>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct PackageManifestSource {
     /// URL of the downloadable archive or file that contains the package contents.
-    #[serde(deserialize_with = "http_url::deserialize")]
+    #[serde(with = "ser_de::http_url")]
     pub(crate) url: Url,
     /// Expected digest of the downloaded source used to verify integrity.
     pub(crate) hash: GenericDigest,
     pub(crate) contents: PackageSourceContents,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "kebab-case")]
 #[serde(tag = "type")]
@@ -82,25 +66,21 @@ pub(crate) enum PackageSourceContents {
     Archive(#[serde(default)] ArchiveOptions),
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct FontFileOptions {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub(crate) file_name: Option<FileName>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct ArchiveOptions {
-    #[serde(
-        default = "default_archive_fonts",
-        deserialize_with = "non_empty_vec::deserialize",
-        skip_serializing_if = "Vec::is_empty"
-    )]
+    #[serde(default = "default_archive_fonts", with = "ser_de::non_empty_vec")]
     pub(crate) fonts: Vec<FontRule>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub(crate) ignore: Vec<IgnoreRule>,
 }
 
@@ -167,51 +147,16 @@ fn default_archive_fonts() -> Vec<FontRule> {
     ]
 }
 
-pub(crate) fn validate_nonempty_string_without_surrounding_whitespaces<E>(
-    s: String,
-) -> Result<String, E>
-where
-    E: serde::de::Error,
-{
-    let t = s.trim();
-    if t.is_empty() || t != s {
-        return Err(E::invalid_value(
-            serde::de::Unexpected::Str(&s),
-            &"a non-empty string without leading or trailing whitespace",
-        ));
-    }
-    Ok(s)
-}
-
-pub(crate) mod option_nonempty_string_without_surrounding_whitespaces {
+pub(crate) mod optional_description {
     use serde::Deserialize as _;
+
+    use crate::util::ser_de;
 
     pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        Option::deserialize(deserializer)?
-            .map(super::validate_nonempty_string_without_surrounding_whitespaces)
-            .transpose()
-    }
-}
-
-mod non_empty_vec {
-    use serde::Deserialize;
-
-    pub(super) fn deserialize<'de, T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
-    where
-        T: Deserialize<'de>,
-        D: serde::Deserializer<'de>,
-    {
-        let vec: Vec<T> = Vec::deserialize(deserializer)?;
-        if vec.is_empty() {
-            return Err(serde::de::Error::invalid_value(
-                serde::de::Unexpected::Seq,
-                &"a non-empty array",
-            ));
-        }
-        Ok(vec)
+        Ok(Option::<ser_de::description::Proxy>::deserialize(deserializer)?.map(Into::into))
     }
 }
 
@@ -219,65 +164,30 @@ mod optional_http_url {
     use serde::Deserialize as _;
     use url::Url;
 
+    use crate::util::ser_de;
+
     pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Option<Url>, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        let opt_url: Option<Url> = Option::deserialize(deserializer)?;
-        if let Some(ref url) = opt_url
-            && url.scheme() != "http"
-            && url.scheme() != "https"
-        {
-            return Err(serde::de::Error::invalid_value(
-                serde::de::Unexpected::Str(url.as_str()),
-                &"a URL with http or https scheme",
-            ));
-        }
-        Ok(opt_url)
+        let url = Option::<ser_de::http_url::Proxy>::deserialize(deserializer)?.map(Into::into);
+        Ok(url)
     }
 }
 
 mod optional_spdx_expression {
-    use std::string::ToString;
-
-    use serde::{Deserialize as _, Serialize as _};
+    use serde::{Deserialize as _, Deserializer};
     use spdx::Expression;
 
-    #[expect(clippy::ref_option)]
-    pub(super) fn serialize<S>(expr: &Option<Expression>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        expr.as_ref().map(ToString::to_string).serialize(serializer)
-    }
+    use crate::util::ser_de;
 
     pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Option<Expression>, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
-        let expr: Option<String> = Option::deserialize(deserializer)?;
-        expr.map(|s| s.parse::<Expression>())
-            .transpose()
-            .map_err(|e| serde::de::Error::custom(format!("invalid SPDX expression: {e}")))
-    }
-}
-
-mod http_url {
-    use serde::Deserialize as _;
-    use url::Url;
-
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Url, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let url: Url = Url::deserialize(deserializer)?;
-        if url.scheme() != "http" && url.scheme() != "https" {
-            return Err(serde::de::Error::invalid_value(
-                serde::de::Unexpected::Str(url.as_str()),
-                &"a URL with http or https scheme",
-            ));
-        }
-        Ok(url)
+        let expr =
+            Option::<ser_de::spdx_expression::Proxy>::deserialize(deserializer)?.map(Into::into);
+        Ok(expr)
     }
 }
 
@@ -327,18 +237,18 @@ mod tests {
     use crate::util::testing;
 
     fn minimal_manifest_toml() -> &'static str {
-        r#"
-    name = "example-font"
-    version = "0.1.0"
+        indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
 
-    [[sources]]
-    url = "https://example.com/example-font-0.1.0.zip"
-    hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-    [sources.contents]
-    type = "archive"
-    fonts = [{ glob = "*/*.ttf" }]
-    "#
+            [sources.contents]
+            type = "archive"
+            fonts = [{ glob = "*/*.ttf" }]
+        "#}
     }
 
     #[test]
@@ -374,24 +284,22 @@ mod tests {
 
     #[test]
     fn package_manifest_deserializes_manifest_with_all_metadata_fields() {
-        let manifest = testing::parse_manifest(
-            r#"
-name = "example-font"
-version = "0.1.0"
-description = "Example font family for UI and coding"
-homepage = "https://example.com/example-font"
-repository = "https://github.com/example/example-font"
-license = "OFL-1.1"
+        let manifest = testing::parse_manifest(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
+            description = "Example font family for UI and coding"
+            homepage = "https://example.com/example-font"
+            repository = "https://github.com/example/example-font"
+            license = "OFL-1.1"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-fonts = [{ glob = "*/*.ttf" }]
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+            fonts = [{ glob = "*/*.ttf" }]
+        "#});
 
         assert_eq!(manifest.name, "example-font");
         assert_eq!(manifest.version, "0.1.0".parse().unwrap());
@@ -433,20 +341,18 @@ fonts = [{ glob = "*/*.ttf" }]
 
     #[test]
     fn package_manifest_rejects_invalid_license_expression() {
-        let err = testing::try_parse_manifest(
-            r#"
-name = "example-font"
-version = "0.1.0"
-license = "not-a-valid-spdx"
+        let err = testing::try_parse_manifest(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
+            license = "not-a-valid-spdx"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-"#,
-        )
+            [sources.contents]
+            type = "archive"
+        "#})
         .unwrap_err();
 
         assert!(err.to_string().contains("invalid SPDX expression"));
@@ -454,14 +360,12 @@ type = "archive"
 
     #[test]
     fn package_manifest_rejects_empty_sources() {
-        let err = testing::try_parse_manifest(
-            r#"
-sources = []
+        let err = testing::try_parse_manifest(indoc::indoc! {r#"
+            sources = []
 
-name = "example-font"
-version = "0.1.0"
-"#,
-        )
+            name = "example-font"
+            version = "0.1.0"
+        "#})
         .unwrap_err();
 
         assert!(err.to_string().contains("a non-empty array"));
@@ -469,20 +373,18 @@ version = "0.1.0"
 
     #[test]
     fn package_manifest_rejects_empty_fonts() {
-        let err = testing::try_parse_manifest(
-            r#"
-name = "example-font"
-version = "0.1.0"
+        let err = testing::try_parse_manifest(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-fonts = []
-"#,
-        )
+            [sources.contents]
+            type = "archive"
+            fonts = []
+        "#})
         .unwrap_err();
 
         assert!(err.to_string().contains("a non-empty array"));
@@ -490,17 +392,15 @@ fonts = []
 
     #[test]
     fn package_manifest_rejects_empty_description() {
-        let err = testing::try_parse_manifest(
-            r#"
-name = "example-font"
-version = "0.1.0"
-description = ""
+        let err = testing::try_parse_manifest(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
+            description = ""
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-"#,
-        )
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        "#})
         .unwrap_err();
 
         assert!(
@@ -511,20 +411,18 @@ hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     #[test]
     fn package_manifest_rejects_description_with_surrounding_whitespace() {
-        let err = testing::try_parse_manifest(
-            r#"
-name = "example-font"
-version = "0.1.0"
-description = " example-font "
+        let err = testing::try_parse_manifest(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
+            description = " example-font "
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-"#,
-        )
+            [sources.contents]
+            type = "archive"
+        "#})
         .unwrap_err();
 
         assert!(
@@ -535,19 +433,17 @@ type = "archive"
 
     #[test]
     fn package_manifest_rejects_non_http_source_url() {
-        let err = testing::try_parse_manifest(
-            r#"
-name = "example-font"
-version = "0.1.0"
+        let err = testing::try_parse_manifest(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
 
-[[sources]]
-url = "file:///tmp/example-font_v0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "file:///tmp/example-font_v0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-"#,
-        )
+            [sources.contents]
+            type = "archive"
+        "#})
         .unwrap_err();
 
         assert!(err.to_string().contains("a URL with http or https scheme"));
@@ -555,20 +451,18 @@ type = "archive"
 
     #[test]
     fn package_manifest_rejects_non_http_homepage_url() {
-        let err = testing::try_parse_manifest(
-            r#"
-name = "example-font"
-version = "0.1.0"
-homepage = "file:///tmp/project"
+        let err = testing::try_parse_manifest(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
+            homepage = "file:///tmp/project"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-"#,
-        )
+            [sources.contents]
+            type = "archive"
+        "#})
         .unwrap_err();
 
         assert!(err.to_string().contains("a URL with http or https scheme"));
@@ -576,19 +470,17 @@ type = "archive"
 
     #[test]
     fn package_manifest_uses_default_files_when_omitted() {
-        let manifest = testing::parse_manifest(
-            r#"
-name = "example-font"
-version = "0.1.0"
+        let manifest = testing::parse_manifest(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+        "#});
 
         let archive = manifest.sources[0].contents.as_archive().unwrap();
         assert_eq!(
@@ -604,21 +496,19 @@ type = "archive"
 
     #[test]
     fn package_manifest_deserializes_ignore_rules() {
-        let manifest = testing::parse_manifest(
-            r#"
-name = "example-font"
-version = "0.1.0"
+        let manifest = testing::parse_manifest(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-fonts = [{ glob = "fonts/*.ttf" }]
-ignore = ["fonts/exclude.ttf", { glob = "fonts/legacy/*.ttf" }]
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+            fonts = [{ glob = "fonts/*.ttf" }]
+            ignore = ["fonts/exclude.ttf", { glob = "fonts/legacy/*.ttf" }]
+        "#});
 
         let archive = manifest.sources[0].contents.as_archive().unwrap();
         assert_eq!(
