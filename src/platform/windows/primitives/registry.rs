@@ -12,7 +12,7 @@ cfg_select! {
         // Registry-touching tests must run under the sandbox harness so they cannot
         // affect the user's real registry or session state.
         fn assert_sandbox_test_only() {
-            if std::env::var_os("FOTON_UNSAFE_ALLOW_REGISTRY_TESTS").is_some() {
+            if std::env::var_os("FOTON_ALLOW_UNSAFE_REGISTRY_TESTS").is_some() {
                 return;
             }
             panic!("registry primitives must only run in sandbox tests; use `cargo xtask sandbox run --test` instead.");

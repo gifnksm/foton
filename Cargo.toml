@@ -34,6 +34,7 @@ bin-dir = "{ bin }{ binary-ext }"
 pkg-fmt = "tgz"
 
 [workspace]
+resolver = "3"
 members = ["xtask"]
 
 [workspace.lints.clippy]

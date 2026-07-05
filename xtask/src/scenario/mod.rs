@@ -8,7 +8,11 @@ use tempfile::TempDir;
 
 use crate::{
     report::{ExecResult, ReportContext, RunId, RunKind, RunReport},
-    util::{build, env as env_util, fs as fs_util},
+    util::{
+        build,
+        env::{self as env_util, FOTON_EXE_PATH_ENVVAR_NAME, FOTON_FIXTURE_DIR_PATH_ENVVAR_NAME},
+        fs as fs_util,
+    },
 };
 
 mod help_check;
@@ -43,8 +47,28 @@ pub(crate) enum Scenario {
 /// Commands for running scenarios.
 #[derive(clap::Subcommand)]
 pub(crate) enum ScenarioCommand {
-    /// Run a scenario and print a summary of the captured outputs.
+    /// Dangerous: bypass the isolation safeguard and run the scenario directly.
+    ///
+    /// These scenarios are development and testing helpers, not commands meant
+    /// for routine execution on the current environment. They may install,
+    /// uninstall, or update fonts, rewrite Windows registry entries under HKCU,
+    /// and otherwise modify state on the current system.
+    ///
+    /// Running a scenario without isolation may seriously damage the current
+    /// user environment and may leave the current system broken or unusable
+    /// for the current user.
+    ///
+    /// Use this only if you fully understand exactly what will be executed and
+    /// exactly what state may be modified.
+    ///
+    /// Prefer `cargo xtask sandbox run --scenario <scenario>` unless you
+    /// intentionally need to run without isolation.
     Run {
+        #[clap(
+            long = "allow-unsafe-scenario-run-directly-without-isolation",
+            env = "FOTON_ALLOW_UNSAFE_SCENARIO_RUN_DIRECTLY_WITHOUT_ISOLATION"
+        )]
+        allow_run_without_isolation: bool,
         /// Scenario to run.
         #[clap(long)]
         scenario: Scenario,
@@ -63,8 +87,11 @@ pub(crate) enum ScenarioCommand {
 #[derive(clap::Args)]
 pub(crate) struct RunArgs {
     /// Path to the `foton` executable to run inside the scenario. If omitted, `foton` is built automatically.
-    #[clap(long)]
+    #[clap(long, env = FOTON_EXE_PATH_ENVVAR_NAME)]
     foton_exe: Option<Utf8PathBuf>,
+    /// Directory containing test fixtures. If omitted, the default fixture directory is used.
+    #[clap(long, env = FOTON_FIXTURE_DIR_PATH_ENVVAR_NAME)]
+    fixture_dir: Option<Utf8PathBuf>,
     /// Directory where scenario outputs are written. If omitted, a temporary directory is used.
     #[clap(long)]
     output_dir: Option<Utf8PathBuf>,
@@ -72,7 +99,19 @@ pub(crate) struct RunArgs {
 
 pub(crate) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()> {
     match command {
-        ScenarioCommand::Run { scenario, args } => {
+        ScenarioCommand::Run {
+            allow_run_without_isolation,
+            scenario,
+            args,
+        } => {
+            let allow_run = *allow_run_without_isolation
+                || env_util::is_in_github_actions_runner()
+                || env_util::is_in_windows_sandbox_environment();
+            ensure!(
+                allow_run,
+                "running scenarios without isolation is not allowed. Use `cargo xtask sandbox run --scenario {scenario}`."
+            );
+
             let (_tempdir_guard, params) = args.build_parameters()?;
             let (res, report) =
                 RunReport::capture(params.run_id, RunKind::Scenario(*scenario), |cx| {
@@ -97,14 +136,20 @@ pub(crate) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()> {
 
 impl RunArgs {
     fn build_parameters(&self) -> eyre::Result<(Option<TempDir>, ScenarioParameters)> {
-        let foton_exe = if let Some(path) = self.foton_exe.clone() {
-            path
+        let Self {
+            foton_exe,
+            fixture_dir,
+            output_dir,
+        } = self;
+
+        let foton_exe = if let Some(path) = foton_exe {
+            path.clone()
         } else {
             build::build_foton_exe()?
         };
-        let (tempdir_guard, output_dir) = if let Some(output_dir) = &self.output_dir {
-            fs_util::create_dir_all("output directory", output_dir)?;
-            (None, output_dir.clone())
+        let (tempdir_guard, output_dir) = if let Some(path) = output_dir {
+            fs_util::create_dir_all("output directory", path)?;
+            (None, path.clone())
         } else {
             let tempdir = TempDir::new().wrap_err("failed to create temporary output directory")?;
             let path = Utf8PathBuf::from_path_buf(tempdir.path().to_owned()).map_err(|path| {
@@ -115,7 +160,11 @@ impl RunArgs {
             })?;
             (Some(tempdir), path)
         };
-        let fixture_dir = env_util::fixture_dir()?;
+        let fixture_dir = if let Some(path) = fixture_dir {
+            path.clone()
+        } else {
+            env_util::fixture_dir()?
+        };
         Ok((
             tempdir_guard,
             ScenarioParameters {

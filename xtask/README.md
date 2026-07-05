@@ -29,12 +29,6 @@ cargo xtask sandbox run --scenario <scenario>
 cargo xtask sandbox run --scenario <scenario> --timeout <seconds>
 ```
 
-Run a scenario directly:
-
-```text
-cargo xtask scenario run --scenario <scenario> --foton-exe <path> --output-dir <path>
-```
-
 ## Output
 
 Generated Sandbox config artifacts are written under:

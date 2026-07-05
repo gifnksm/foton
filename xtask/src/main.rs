@@ -4,7 +4,7 @@ compile_error!("foton is supported on Windows only.");
 use clap::Parser as _;
 use color_eyre::eyre;
 
-use crate::{sandbox::SandboxCommand, scenario::ScenarioCommand};
+use crate::{bootstrap::BootstrapArgs, sandbox::SandboxCommand, scenario::ScenarioCommand};
 
 mod bootstrap;
 mod report;
@@ -33,12 +33,15 @@ enum GlobalCommand {
         #[clap(subcommand)]
         command: ScenarioCommand,
     },
-    /// Bootstrap helpers.
+    /// Internal sandbox bootstrap command.
+    ///
+    /// This subcommand is used by `cargo xtask sandbox run` inside Windows
+    /// Sandbox and is not intended for direct invocation.
     #[clap(hide = true)]
     Bootstrap {
-        /// Bootstrap arguments.
+        /// Internal bootstrap arguments.
         #[clap(flatten)]
-        command: bootstrap::BootstrapArgs,
+        command: BootstrapArgs,
     },
 }
 

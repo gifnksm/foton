@@ -14,7 +14,11 @@ use crate::{
     bootstrap::{SandboxAction, SandboxBootstrapConfig},
     report::{RunId, RunKind, RunReport},
     scenario::Scenario,
-    util::{build, env as env_util, fs as fs_util},
+    util::{
+        build,
+        env::{self as env_util, FOTON_EXECUTION_ENVIRONMENT_WINDOWS_SANDBOX},
+        fs as fs_util,
+    },
 };
 
 /// Mutually exclusive options that choose what kind of sandbox config to generate.
@@ -249,7 +253,7 @@ impl MappingPaths {
 
     fn logon_command(&self) -> String {
         format!(
-            r#""{}" bootstrap --config "{}""#,
+            r#""{}" bootstrap --launched-inside-sandbox --config "{}""#,
             self.xtask_exe, self.bootstrap_config,
         )
     }
@@ -473,6 +477,7 @@ fn build_bootstrap_config(
         envs.push(("RUST_BACKTRACE".to_string(), rust_backtrace));
     }
     SandboxBootstrapConfig {
+        execution_environment: FOTON_EXECUTION_ENVIRONMENT_WINDOWS_SANDBOX.to_owned(),
         foton_exe: sandbox_paths.foton_exe.clone(),
         xtask_exe: sandbox_paths.xtask_exe.clone(),
         fixture_dir: sandbox_paths.fixture_dir.clone(),

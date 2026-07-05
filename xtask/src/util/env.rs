@@ -46,3 +46,18 @@ pub(crate) fn current_exe() -> eyre::Result<Utf8PathBuf> {
 pub(crate) fn fixture_dir() -> eyre::Result<Utf8PathBuf> {
     Ok(repository_root_dir()?.join("xtask").join("fixture"))
 }
+
+pub(crate) fn is_in_github_actions_runner() -> bool {
+    env::var_os("GITHUB_ACTIONS").is_some_and(|v| v == "true")
+}
+
+pub(crate) const FOTON_EXECUTION_ENVIRONMENT_ENVVAR_NAME: &str = "FOTON_EXECUTION_ENVIRONMENT";
+pub(crate) const FOTON_EXECUTION_ENVIRONMENT_WINDOWS_SANDBOX: &str = "windows-sandbox";
+
+pub(crate) fn is_in_windows_sandbox_environment() -> bool {
+    env::var_os(FOTON_EXECUTION_ENVIRONMENT_ENVVAR_NAME)
+        .is_some_and(|v| v == FOTON_EXECUTION_ENVIRONMENT_WINDOWS_SANDBOX)
+}
+
+pub(crate) const FOTON_EXE_PATH_ENVVAR_NAME: &str = "FOTON_EXE_PATH";
+pub(crate) const FOTON_FIXTURE_DIR_PATH_ENVVAR_NAME: &str = "FOTON_FIXTURE_DIR";
