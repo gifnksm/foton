@@ -40,10 +40,7 @@ impl OperationError for RepairError {
 }
 
 pub(crate) async fn repair_package(cx: &RootContext, args: &RepairArgs) -> Result<(), RepairError> {
-    let RepairArgs {
-        pkg_specs,
-        exit_on_lock,
-    } = args;
+    let RepairArgs { pkg_specs } = args;
 
     let report = if pkg_specs.is_empty() {
         format_args!("Repairing all packages...")
@@ -53,7 +50,7 @@ pub(crate) async fn repair_package(cx: &RootContext, args: &RepairArgs) -> Resul
     let cx = RepairScope::start_with_report(cx, report);
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
-    let mut db = engine::load_database(&cx, &mut db_lock_file, *exit_on_lock)?;
+    let mut db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let targets = if pkg_specs.is_empty() {
         engine::resolve_all_repair_targets(&cx, &db)

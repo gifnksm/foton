@@ -43,17 +43,14 @@ pub(crate) async fn deactivate_package(
     cx: &RootContext,
     args: &DeactivateArgs,
 ) -> Result<(), DeactivateError> {
-    let DeactivateArgs {
-        pkg_specs,
-        exit_on_lock,
-    } = args;
+    let DeactivateArgs { pkg_specs } = args;
     let cx = DeactivateScope::start_with_report(
         cx,
         format_args!("Deactivating {} package(s)...", pkg_specs.len()),
     );
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
-    let mut db = engine::load_database(&cx, &mut db_lock_file, *exit_on_lock)?;
+    let mut db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let targets = engine::resolve_deactivate_targets(&cx, &db, pkg_specs)?;
     let plan = engine::plan_deactivate(&targets);

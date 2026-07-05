@@ -16,21 +16,23 @@ Package names, optionally with an exact version as `<package-name>@<version>`.
 
 ## Options
 
-### `--no-confirm`
+### `--include-files`
 
-Skip interactive confirmation prompts.
+For installed packages, also include the fonts directory and installed font files.
+
+## Global options
 
 ### `--exit-on-lock`
 
 Exit immediately if the package database is locked by another operation.
 
+### `--no-confirm`
+
+Skip interactive confirmation prompts.
+
 ### `--warnings-as-errors`
 
 Treat warnings as errors, causing the command to fail if any warning is emitted.
-
-### `--include-files`
-
-For installed packages, also include the fonts directory and installed font files.
 
 ## Examples
 

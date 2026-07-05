@@ -10,10 +10,6 @@ foton font list [OPTIONS]
 
 ## Options
 
-### `--no-confirm`
-
-Skip interactive confirmation prompts.
-
 ### `--include-system-fonts`
 
 Also include all system fonts recognized by Windows.
@@ -22,17 +18,26 @@ Also include all system fonts recognized by Windows.
 
 Also include all user fonts recognized by Windows.
 
-### `--warnings-as-errors`
-
-Treat warnings as errors, causing the command to fail if any warning is
-emitted.
-
 ### `--format <FORMAT>`
 
 Select the output format.
 
 - **Default**: `text`
 - **Possible Values**: `text`, `jsonl`
+
+## Global options
+
+### `--exit-on-lock`
+
+Exit immediately if the package database is locked by another operation.
+
+### `--no-confirm`
+
+Skip interactive confirmation prompts.
+
+### `--warnings-as-errors`
+
+Treat warnings as errors, causing the command to fail if any warning is emitted.
 
 ## Examples
 

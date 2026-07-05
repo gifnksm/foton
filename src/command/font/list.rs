@@ -232,7 +232,6 @@ struct JsonlEntry {
     family: OsString,
     #[serde(with = "ser_de::readable_os_string")]
     face: OsString,
-    #[serde(flatten)]
     location: JsonlEntryLocation,
 }
 

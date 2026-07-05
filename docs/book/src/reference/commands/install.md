@@ -31,18 +31,6 @@ Package registry IDs to resolve packages from.
 Use a comma-separated list such as `--registry local,foton`.
 This option applies only to packages installed by `<PACKAGE>`.
 
-### `--no-confirm`
-
-Skip interactive confirmation prompts.
-
-### `--exit-on-lock`
-
-Exit immediately if the package database is locked by another operation.
-
-### `--warnings-as-errors`
-
-Treat warnings as errors, causing the command to fail if any warning is emitted.
-
 ### `--pre-release`
 
 Allow installing pre-release versions when resolving packages from registries.
@@ -55,6 +43,20 @@ This option applies only to packages installed by `<PACKAGE>`.
 
 Do not activate the installed packages.
 Use `foton activate` later if you want to make them active manually.
+
+## Global options
+
+### `--exit-on-lock`
+
+Exit immediately if the package database is locked by another operation.
+
+### `--no-confirm`
+
+Skip interactive confirmation prompts.
+
+### `--warnings-as-errors`
+
+Treat warnings as errors, causing the command to fail if any warning is emitted.
 
 ## Examples
 

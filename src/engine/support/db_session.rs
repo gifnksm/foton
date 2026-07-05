@@ -54,14 +54,13 @@ where
 pub(crate) fn load_database<'a, S>(
     cx: &ReportContext<S>,
     lock_file: &'a mut DbLockFile,
-    exit_on_lock: bool,
 ) -> Result<PackageDatabase<'a>, S::Error>
 where
     S: ReportScope,
 {
     let cx = DatabaseLoadScope::start(cx);
 
-    let lock_file_guard = lock_database(&cx, lock_file, exit_on_lock)?;
+    let lock_file_guard = lock_database(&cx, lock_file)?;
     let db = PackageDatabase::load(cx.app_dirs(), lock_file_guard)
         .context(LoadDatabaseSnafu)
         .report_error(&cx)?;
@@ -71,12 +70,11 @@ where
 fn lock_database<'a, S>(
     cx: &ReportContext<DatabaseLoadScope<S>>,
     lock_file: &'a mut DbLockFile,
-    exit_on_lock: bool,
 ) -> Result<DbLockFileGuard<'a>, S::Error>
 where
     S: ReportScope,
 {
-    let guard = if exit_on_lock {
+    let guard = if cx.global_args().exit_on_lock {
         lock_file.try_lock()
     } else {
         lock_file.lock(|| cx.reporter().report_notice(WaitingForLockSnafu.build()))

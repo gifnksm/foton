@@ -14,11 +14,13 @@ Run `foton --help` to see the complete command-line help.
 
 ## Global options
 
+### `--exit-on-lock`
+
+Exit immediately if the package database is locked by another operation.
+
 ### `--no-confirm`
 
 Skip interactive confirmation prompts.
-This is most useful with commands that change installed packages, such as
-`install`, `update`, `uninstall`, `activate`, and `deactivate`.
 
 ### `--warnings-as-errors`
 

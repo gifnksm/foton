@@ -8,11 +8,12 @@ use color_eyre::eyre::{self, WrapErr as _};
 
 use crate::{report::ExecResult, util::fs as fs_util};
 
-pub(crate) fn exec_command<S>(
+pub(crate) fn exec_command<'a, S>(
     name: S,
     output_dir: &Utf8Path,
     cmd: &mut Command,
-) -> eyre::Result<ExecResult>
+    exec_results: &'a mut Vec<ExecResult>,
+) -> eyre::Result<&'a mut ExecResult>
 where
     S: Into<String>,
 {
@@ -45,7 +46,7 @@ where
         status.to_string(),
     )?;
 
-    Ok(ExecResult {
+    let res = ExecResult {
         name,
         arguments: cmd
             .get_args()
@@ -55,5 +56,7 @@ where
         exit_status: status.to_string(),
         stdout,
         stderr,
-    })
+    };
+
+    Ok(exec_results.push_mut(res))
 }

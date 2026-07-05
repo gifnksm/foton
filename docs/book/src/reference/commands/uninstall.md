@@ -14,15 +14,15 @@ foton uninstall [OPTIONS] <PACKAGE>...
 
 Package names, optionally with an exact version as `<package-name>@<version>`.
 
-## Options
-
-### `--no-confirm`
-
-Skip interactive confirmation prompts.
+## Global options
 
 ### `--exit-on-lock`
 
 Exit immediately if the package database is locked by another operation.
+
+### `--no-confirm`
+
+Skip interactive confirmation prompts.
 
 ### `--warnings-as-errors`
 

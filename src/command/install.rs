@@ -54,7 +54,6 @@ pub(crate) async fn install_package(
         pkg_specs,
         pre_release,
         no_activate,
-        exit_on_lock,
     } = args;
     let include_pre_release = *pre_release;
     let should_activate = !*no_activate;
@@ -73,7 +72,7 @@ pub(crate) async fn install_package(
     };
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
-    let mut db = engine::load_database(&cx, &mut db_lock_file, *exit_on_lock)?;
+    let mut db = engine::load_database(&cx, &mut db_lock_file)?;
 
     let targets = engine::resolve_install_targets(&cx, &db, &targets, &options)?;
     let plan = engine::plan_install(&db, &targets);
