@@ -85,20 +85,18 @@ mod tests {
 
     #[test]
     fn package_metadata_match_package_prefers_stronger_match_from_another_field() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font-nerd"
-description = "Example Font"
-version = "0.1.0"
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "example-font-nerd"
+            description = "Example Font"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+        "#});
         let text_matcher = make_matcher(&["example font"]);
 
         let result = pkg.match_package(&text_matcher).unwrap();
@@ -115,20 +113,18 @@ type = "archive"
 
     #[test]
     fn package_metadata_match_package_requires_all_queries_in_the_same_field() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-description = "Nerd variant"
-version = "0.1.0"
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "example-font"
+            description = "Nerd variant"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+        "#});
         let text_matcher = make_matcher(&["example", "nerd"]);
 
         assert_eq!(pkg.match_package(&text_matcher), None);
@@ -136,19 +132,17 @@ type = "archive"
 
     #[test]
     fn package_metadata_match_package_uses_weakest_match_kind_for_multiple_queries() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "typeface"
-version = "0.1.0"
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "typeface"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+        "#});
         let text_matcher = make_matcher(&["typeface", "face"]);
 
         let result = pkg.match_package(&text_matcher).unwrap();

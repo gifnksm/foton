@@ -188,7 +188,7 @@ mod tests {
     use super::*;
     use crate::{
         registry::RegistryId,
-        util::{macros::concat_line, testing, text::QueryString},
+        util::{testing, text::QueryString},
     };
 
     fn make_matcher(query: &str) -> TextMatcher {
@@ -216,42 +216,41 @@ mod tests {
 
         render_search_results(&mut output, pkgs).unwrap();
 
-        assert_eq!(
-            String::from_utf8(output).unwrap(),
-            "example-font@1.0.0 [foton]\n"
-        );
+        let output = String::from_utf8(output).unwrap();
+        let expected = indoc::indoc! {r"
+            example-font@1.0.0 [foton]
+        "};
+
+        assert_eq!(output, expected);
     }
 
     #[test]
     fn render_search_results_prints_description_when_present() {
-        let manifest = testing::parse_manifest(
-            r#"
-name = "example-font"
-version = "1.0.0"
-description = "Example font family for UI and coding"
+        let manifest = testing::parse_manifest(indoc::indoc! {r#"
+            name = "example-font"
+            version = "1.0.0"
+            description = "Example font family for UI and coding"
 
-[[sources]]
-url = "https://example.com/example-font-1.0.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-1.0.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+        "#});
         let pkg = Arc::new(manifest.into());
         let pkgs = vec![make_scored_package(pkg)];
         let mut output = Vec::new();
 
         render_search_results(&mut output, pkgs).unwrap();
 
-        assert_eq!(
-            String::from_utf8(output).unwrap(),
-            concat_line!(
-                "example-font@1.0.0 [foton]",
-                "  Example font family for UI and coding",
-                "",
-            )
-        );
+        let output = String::from_utf8(output).unwrap();
+        let expected = indoc::indoc! {r"
+            example-font@1.0.0 [foton]
+              Example font family for UI and coding
+        "};
+
+        assert_eq!(output, expected);
     }
 
     #[test]

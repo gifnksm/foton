@@ -308,7 +308,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::{macros::concat_line, path::FileName};
+    use crate::util::path::FileName;
 
     #[track_caller]
     fn check_rendered_output(info: &PackageInfo, expected: &str, include_files: bool) {
@@ -396,46 +396,44 @@ mod tests {
             }),
         };
 
-        let expected = concat_line!(
-            "Package ID: example-font@0.1.0",
-            "Installation State: installed",
-            "Activation State: active",
-            "Description: Example font family for UI and coding",
-            "Homepage: https://example.com/example-font",
-            "Repository: https://github.com/example/example-font",
-            "License: OFL-1.1",
-            "Installed Font Families (2):",
-            "  - Example Font (Bold, Regular)",
-            "  - Example Font UI (Regular)",
-            "  (some font files could not be inspected; see warnings)",
-            r"Fonts Directory: C:\path\to\fonts",
-            "Installed Font Files (3):",
-            "  - example-font-collection.ttc",
-            "    - Example Font (Bold, Regular)",
-            "  - example-font-ui-regular.ttf",
-            "    - Example Font UI (Regular)",
-            "  - example-font-bold.ttf",
-            "    (failed to inspect font file; see warnings)",
-            "",
-            "",
-        );
+        let expected = indoc::indoc! {r"
+            Package ID: example-font@0.1.0
+            Installation State: installed
+            Activation State: active
+            Description: Example font family for UI and coding
+            Homepage: https://example.com/example-font
+            Repository: https://github.com/example/example-font
+            License: OFL-1.1
+            Installed Font Families (2):
+              - Example Font (Bold, Regular)
+              - Example Font UI (Regular)
+              (some font files could not be inspected; see warnings)
+            Fonts Directory: C:\path\to\fonts
+            Installed Font Files (3):
+              - example-font-collection.ttc
+                - Example Font (Bold, Regular)
+              - example-font-ui-regular.ttf
+                - Example Font UI (Regular)
+              - example-font-bold.ttf
+                (failed to inspect font file; see warnings)
+
+        "};
         check_rendered_output(&info, expected, true);
 
-        let expected = concat_line!(
-            "Package ID: example-font@0.1.0",
-            "Installation State: installed",
-            "Activation State: active",
-            "Description: Example font family for UI and coding",
-            "Homepage: https://example.com/example-font",
-            "Repository: https://github.com/example/example-font",
-            "License: OFL-1.1",
-            "Installed Font Families (2):",
-            "  - Example Font (Bold, Regular)",
-            "  - Example Font UI (Regular)",
-            "  (some font files could not be inspected; see warnings)",
-            "",
-            "",
-        );
+        let expected = indoc::indoc! {r"
+            Package ID: example-font@0.1.0
+            Installation State: installed
+            Activation State: active
+            Description: Example font family for UI and coding
+            Homepage: https://example.com/example-font
+            Repository: https://github.com/example/example-font
+            License: OFL-1.1
+            Installed Font Families (2):
+              - Example Font (Bold, Regular)
+              - Example Font UI (Regular)
+              (some font files could not be inspected; see warnings)
+
+        "};
         check_rendered_output(&info, expected, false);
     }
 
@@ -452,17 +450,16 @@ mod tests {
             installed_fonts: None,
         };
 
-        let expected = concat_line!(
-            "Package ID: example-font@0.1.0",
-            "Installation State: incomplete-install",
-            "Activation State: inactive",
-            "Description: Example font family for UI and coding",
-            "Homepage: https://example.com/example-font",
-            "Repository: https://github.com/example/example-font",
-            "License: OFL-1.1",
-            "",
-            "",
-        );
+        let expected = indoc::indoc! {r"
+            Package ID: example-font@0.1.0
+            Installation State: incomplete-install
+            Activation State: inactive
+            Description: Example font family for UI and coding
+            Homepage: https://example.com/example-font
+            Repository: https://github.com/example/example-font
+            License: OFL-1.1
+
+        "};
         check_rendered_output(&info, expected, true);
         check_rendered_output(&info, expected, false);
     }

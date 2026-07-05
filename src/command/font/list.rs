@@ -291,10 +291,7 @@ mod tests {
     use std::{collections::BTreeSet, str::FromStr as _};
 
     use super::*;
-    use crate::{
-        package::PackageId,
-        util::{macros::concat_line, testing},
-    };
+    use crate::{package::PackageId, util::testing};
 
     fn font_family_info(family: &str, faces: &[&str]) -> FontFamilyInfo {
         FontFamilyInfo {
@@ -335,20 +332,18 @@ mod tests {
             render_grouped_fonts(&cx, &mut output, &grouped_fonts).unwrap();
             let output = String::from_utf8(output).unwrap();
 
-            assert_eq!(
-                output,
-                concat_line!(
-                    "Fonts from Package example-font@1.2.3:",
-                    "  - Example Font (Bold, Regular)",
-                    "Fonts from System Font Directory:",
-                    "  - Example Sans (Regular)",
-                    "Fonts from User Font Directories:",
-                    "  - Example Serif (Italic)",
-                    "Fonts from Unknown Locations:",
-                    "  - Example Mystery (Regular)",
-                    "",
-                )
-            );
+            let expected = indoc::indoc! {r"
+                Fonts from Package example-font@1.2.3:
+                  - Example Font (Bold, Regular)
+                Fonts from System Font Directory:
+                  - Example Sans (Regular)
+                Fonts from User Font Directories:
+                  - Example Serif (Italic)
+                Fonts from Unknown Locations:
+                  - Example Mystery (Regular)
+            "};
+
+            assert_eq!(output, expected);
         });
     }
 }

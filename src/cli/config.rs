@@ -87,6 +87,12 @@ mod tests {
     use super::*;
     use crate::util::testing;
 
+    fn make_config_file(content: &str) -> (tempfile::TempDir, AppDirs) {
+        let (tempdir, app_dirs) = testing::make_app_dirs();
+        fs::write(app_dirs.config_file(), content).unwrap();
+        (tempdir, app_dirs)
+    }
+
     #[test]
     fn load_config_returns_default_when_file_does_not_exist() {
         let (_tempdir, app_dirs) = testing::make_app_dirs();
@@ -110,24 +116,19 @@ mod tests {
 
     #[test]
     fn load_config_overrides_defaults_from_config_file() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        fs::write(
-            app_dirs.config_file(),
-            r#"
-[install]
-max-source-size-bytes = 123
-max-fonts-per-package-source = 456
-max-font-file-size-bytes = 789
+        let (_tempdir, app_dirs) = make_config_file(indoc::indoc! {r#"
+            [install]
+            max-source-size-bytes = 123
+            max-fonts-per-package-source = 456
+            max-font-file-size-bytes = 789
 
-[registries.foton]
-source = "git+https://example.com/custom.git"
-enabled = false
+            [registries.foton]
+            source = "git+https://example.com/custom.git"
+            enabled = false
 
-[registries.local]
-source = "local+C:/registry"
-"#,
-        )
-        .unwrap();
+            [registries.local]
+            source = "local+C:/registry"
+        "#});
 
         let config = load_config(&app_dirs).unwrap();
 
@@ -148,15 +149,10 @@ source = "local+C:/registry"
 
     #[test]
     fn load_config_returns_error_for_invalid_config_file() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        fs::write(
-            app_dirs.config_file(),
-            r#"
-[install]
-max-source-size-bytes = "foton-invalid-value"
-"#,
-        )
-        .unwrap();
+        let (_tempdir, app_dirs) = make_config_file(indoc::indoc! {r#"
+            [install]
+            max-source-size-bytes = "foton-invalid-value"
+        "#});
 
         let err = load_config(&app_dirs).unwrap_err();
         let err = err.to_string();
@@ -167,14 +163,9 @@ max-source-size-bytes = "foton-invalid-value"
 
     #[test]
     fn load_config_returns_error_for_unknown_root_key() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        fs::write(
-            app_dirs.config_file(),
-            r"
-foton-unknown-key = 123
-",
-        )
-        .unwrap();
+        let (_tempdir, app_dirs) = make_config_file(indoc::indoc! {r"
+            foton-unknown-key = 123
+        "});
 
         let err = load_config(&app_dirs).unwrap_err();
         let err = err.to_string();
@@ -184,15 +175,10 @@ foton-unknown-key = 123
 
     #[test]
     fn load_config_returns_error_for_unknown_install_key() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        fs::write(
-            app_dirs.config_file(),
-            r"
-[install]
-foton-unknown-key = 123
-",
-        )
-        .unwrap();
+        let (_tempdir, app_dirs) = make_config_file(indoc::indoc! {r"
+            [install]
+            foton-unknown-key = 123
+        "});
 
         let err = load_config(&app_dirs).unwrap_err();
         let err = err.to_string();
@@ -202,15 +188,10 @@ foton-unknown-key = 123
 
     #[test]
     fn load_config_returns_error_for_zero_install_limit() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        fs::write(
-            app_dirs.config_file(),
-            r"
-[install]
-max-source-size-bytes = 0
-",
-        )
-        .unwrap();
+        let (_tempdir, app_dirs) = make_config_file(indoc::indoc! {r"
+            [install]
+            max-source-size-bytes = 0
+        "});
 
         let err = load_config(&app_dirs).unwrap_err();
         let err = err.to_string();
@@ -221,15 +202,10 @@ max-source-size-bytes = 0
 
     #[test]
     fn load_config_uses_default_enabled_for_registry() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        fs::write(
-            app_dirs.config_file(),
-            r#"
-[registries.local]
-source = "local+C:/registry"
-"#,
-        )
-        .unwrap();
+        let (_tempdir, app_dirs) = make_config_file(indoc::indoc! {r#"
+            [registries.local]
+            source = "local+C:/registry"
+        "#});
 
         let config = load_config(&app_dirs).unwrap();
 
@@ -238,15 +214,10 @@ source = "local+C:/registry"
 
     #[test]
     fn load_config_returns_error_for_invalid_registry_source() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        fs::write(
-            app_dirs.config_file(),
-            r#"
-[registries.local]
-source = "https://example.com/registry.git"
-"#,
-        )
-        .unwrap();
+        let (_tempdir, app_dirs) = make_config_file(indoc::indoc! {r#"
+            [registries.local]
+            source = "https://example.com/registry.git"
+        "#});
 
         let err = load_config(&app_dirs).unwrap_err();
         let err = err.to_string();
@@ -256,16 +227,11 @@ source = "https://example.com/registry.git"
 
     #[test]
     fn load_config_returns_error_for_unknown_registry_key() {
-        let (_tempdir, app_dirs) = testing::make_app_dirs();
-        fs::write(
-            app_dirs.config_file(),
-            r#"
-[registries.foton]
-source = "git+https://example.com/custom.git"
-foton-unknown-key = true
-"#,
-        )
-        .unwrap();
+        let (_tempdir, app_dirs) = make_config_file(indoc::indoc! {r#"
+            [registries.foton]
+            source = "git+https://example.com/custom.git"
+            foton-unknown-key = true
+        "#});
 
         let err = load_config(&app_dirs).unwrap_err();
         let err = err.to_string();

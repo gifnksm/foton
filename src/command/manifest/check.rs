@@ -715,19 +715,17 @@ mod tests {
 
     #[test]
     fn check_missing_fields_reports_all_missing_fields() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+        "#});
         let mut reports = vec![];
 
         check_missing_fields(&pkg, &mut reports);
@@ -743,21 +741,19 @@ type = "archive"
 
     #[test]
     fn check_homepage_and_repository_url_reports_same_url() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
-homepage = "https://example.com/repo"
-repository = "https://example.com/repo"
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
+            homepage = "https://example.com/repo"
+            repository = "https://example.com/repo"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+        "#});
         let mut reports = vec![];
 
         check_homepage_and_repository_url(&pkg, &mut reports);
@@ -770,20 +766,18 @@ type = "archive"
 
     #[test]
     fn check_archive_fonts_extraction_reports_rules_matching_no_paths() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-fonts = ["fonts/missing.ttf"]
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+            fonts = ["fonts/missing.ttf"]
+        "#});
         let options = pkg.sources[0].contents.as_archive().unwrap();
         let extract_details = [make_archive_extract_detail(
             options,
@@ -804,21 +798,19 @@ fonts = ["fonts/missing.ttf"]
 
     #[test]
     fn check_archive_fonts_extraction_reports_rules_matching_only_ignored_paths() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-fonts = ["fonts/skip.ttf"]
-ignore = ["fonts/skip.ttf"]
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+            fonts = ["fonts/skip.ttf"]
+            ignore = ["fonts/skip.ttf"]
+        "#});
         let options = pkg.sources[0].contents.as_archive().unwrap();
         let extract_details = [make_archive_extract_detail(
             options,
@@ -844,20 +836,18 @@ ignore = ["fonts/skip.ttf"]
 
     #[test]
     fn check_archive_fonts_extraction_reports_glob_rules() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-fonts = [{ glob = "fonts/a.ttf" }]
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+            fonts = [{ glob = "fonts/a.ttf" }]
+        "#});
         let options = pkg.sources[0].contents.as_archive().unwrap();
         let extract_details = [make_archive_extract_detail(
             options,
@@ -880,20 +870,18 @@ fonts = [{ glob = "fonts/a.ttf" }]
 
     #[test]
     fn check_archive_fonts_extraction_reports_multiple_rules_matching_same_path() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-fonts = ["fonts/a.ttf", { path = "fonts/a.ttf" }]
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+            fonts = ["fonts/a.ttf", { path = "fonts/a.ttf" }]
+        "#});
         let options = pkg.sources[0].contents.as_archive().unwrap();
         let extract_details = [make_archive_extract_detail(
             options,
@@ -920,20 +908,18 @@ fonts = ["fonts/a.ttf", { path = "fonts/a.ttf" }]
 
     #[test]
     fn check_archive_fonts_extraction_reports_glob_rule_and_duplicate_match_independently() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-fonts = [{ glob = "fonts/*.ttf" }, "fonts/a.ttf"]
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+            fonts = [{ glob = "fonts/*.ttf" }, "fonts/a.ttf"]
+        "#});
         let options = pkg.sources[0].contents.as_archive().unwrap();
         let extract_details = [make_archive_extract_detail(
             options,
@@ -970,20 +956,18 @@ fonts = [{ glob = "fonts/*.ttf" }, "fonts/a.ttf"]
 
     #[test]
     fn check_archive_ignore_extraction_reports_rules_matching_no_paths() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-ignore = ["fonts/missing.ttf"]
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+            ignore = ["fonts/missing.ttf"]
+        "#});
         let options = pkg.sources[0].contents.as_archive().unwrap();
         let extract_details = [make_archive_extract_detail(
             options,
@@ -1004,20 +988,18 @@ ignore = ["fonts/missing.ttf"]
 
     #[test]
     fn check_archive_ignore_extraction_does_not_report_when_rule_matches_paths() {
-        let pkg = testing::parse_manifest_to_definition(
-            r#"
-name = "example-font"
-version = "0.1.0"
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
 
-[[sources]]
-url = "https://example.com/example-font-0.1.0.zip"
-hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-[sources.contents]
-type = "archive"
-ignore = ["fonts/skip.ttf"]
-"#,
-        );
+            [sources.contents]
+            type = "archive"
+            ignore = ["fonts/skip.ttf"]
+        "#});
         let options = pkg.sources[0].contents.as_archive().unwrap();
         let extract_details = [make_archive_extract_detail(
             options,

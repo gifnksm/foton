@@ -299,11 +299,14 @@ mod tests {
     #[test]
     fn file_rule_deserializes_path_string() {
         #[derive(Deserialize)]
-        struct Wrapper {
+        struct Proxy {
             value: FontRule,
         }
 
-        let wrapper: Wrapper = toml::from_str("value = \"fonts/A.ttf\"").unwrap();
+        let wrapper = toml::from_str::<Proxy>(indoc::indoc! {r#"
+            value = "fonts/A.ttf"
+        "#})
+        .unwrap();
 
         assert_eq!(
             wrapper.value.matcher(),
@@ -313,14 +316,20 @@ mod tests {
 
     #[test]
     fn file_rule_deserializes_path_object() {
-        let rule: FontRule = toml::from_str("path = \"fonts/A.ttf\"").unwrap();
+        let rule = toml::from_str::<FontRule>(indoc::indoc! {r#"
+            path = "fonts/A.ttf"
+        "#})
+        .unwrap();
 
         assert_eq!(rule.matcher(), &PathMatcher::path("fonts/A.ttf").unwrap());
     }
 
     #[test]
     fn file_rule_deserializes_glob_object() {
-        let rule: FontRule = toml::from_str("glob = \"**/*.ttf\"").unwrap();
+        let rule = toml::from_str::<FontRule>(indoc::indoc! {r#"
+            glob = "**/*.ttf"
+        "#})
+        .unwrap();
 
         assert_eq!(
             rule.matcher(),
@@ -330,9 +339,10 @@ mod tests {
 
     #[test]
     fn file_rule_rejects_unknown_fields() {
-        let err = toml::from_str::<FontRule>(
-            "path = \"fonts/A.ttf\"\n__foton_unused_field__ = \"B.ttf\"",
-        )
+        let err = toml::from_str::<FontRule>(indoc::indoc! {r#"
+            path = "fonts/A.ttf"
+            __foton_unused_field__ = "B.ttf"
+        "#})
         .unwrap_err();
 
         assert!(
@@ -345,8 +355,11 @@ mod tests {
 
     #[test]
     fn file_rule_rejects_path_and_glob_together() {
-        let err = toml::from_str::<FontRule>("path = \"fonts/A.ttf\"\nglob = \"fonts/*.ttf\"")
-            .unwrap_err();
+        let err = toml::from_str::<FontRule>(indoc::indoc! {r#"
+            path = "fonts/A.ttf"
+            glob = "fonts/*.ttf"
+        "#})
+        .unwrap_err();
 
         assert!(
             err.to_string()
@@ -358,9 +371,10 @@ mod tests {
 
     #[test]
     fn ignore_rule_rejects_unknown_fields() {
-        let err = toml::from_str::<IgnoreRule>(
-            "path = \"fonts/A.ttf\"\n__foton_unused_field__ = \"B.ttf\"",
-        )
+        let err = toml::from_str::<IgnoreRule>(indoc::indoc! {r#"
+            path = "fonts/A.ttf"
+            __foton_unused_field__ = "B.ttf"
+        "#})
         .unwrap_err();
 
         assert!(
@@ -373,8 +387,11 @@ mod tests {
 
     #[test]
     fn ignore_rule_rejects_path_and_glob_together() {
-        let err = toml::from_str::<IgnoreRule>("path = \"fonts/A.ttf\"\nglob = \"fonts/*.ttf\"")
-            .unwrap_err();
+        let err = toml::from_str::<IgnoreRule>(indoc::indoc! {r#"
+            path = "fonts/A.ttf"
+            glob = "fonts/*.ttf"
+        "#})
+        .unwrap_err();
 
         assert!(
             err.to_string()
