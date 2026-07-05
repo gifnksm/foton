@@ -216,6 +216,7 @@ impl RunReport {
         for (i, res) in self.exec_results.iter().enumerate() {
             eprintln!();
             eprintln!("  Exec #{i}: {}", res.name);
+            eprintln!("    Arguments: {:?}", res.arguments);
             eprintln!("    Exit Status: {}", res.exit_status);
             eprintln!("    Stdout: ({} bytes)", res.stdout.len());
             if !res.stdout.is_empty() {
