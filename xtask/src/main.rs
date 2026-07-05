@@ -46,6 +46,7 @@ fn main() -> eyre::Result<()> {
     let Args { command } = Args::parse();
 
     color_eyre::install()?;
+    report::init_panic_hook();
 
     match command {
         GlobalCommand::Sandbox { command } => sandbox::dispatch(&command)?,

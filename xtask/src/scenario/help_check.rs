@@ -1,12 +1,9 @@
 use color_eyre::eyre;
 
-use crate::{report::ExecResult, scenario::ScenarioParameters};
+use crate::scenario::ScenarioContext;
 
-pub(super) fn run(
-    params: &ScenarioParameters,
-    exec_results: &mut Vec<ExecResult>,
-) -> eyre::Result<()> {
-    super::exec_foton(params, exec_results, |cmd| {
+pub(super) fn run(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
+    cx.exec_foton(|cmd| {
         cmd.arg("--help");
     })?
     .ensure_success()?

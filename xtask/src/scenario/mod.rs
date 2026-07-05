@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::{process::Command, sync::Arc};
 
 use cargo_metadata::camino::Utf8PathBuf;
 use color_eyre::eyre::{self, WrapErr as _, ensure, eyre};
@@ -7,7 +7,7 @@ use strum::IntoEnumIterator as _;
 use tempfile::TempDir;
 
 use crate::{
-    report::{ExecResult, RunId, RunKind, RunReport},
+    report::{ExecResult, ReportContext, RunId, RunKind, RunReport},
     util::{build, env as env_util, fs as fs_util},
 };
 
@@ -74,11 +74,10 @@ pub(crate) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()> {
     match command {
         ScenarioCommand::Run { scenario, args } => {
             let (_tempdir_guard, params) = args.build_parameters()?;
-            let (res, report) = RunReport::capture(
-                params.run_id,
-                RunKind::Scenario(*scenario),
-                |exec_results| run(*scenario, &params, exec_results),
-            );
+            let (res, report) =
+                RunReport::capture(params.run_id, RunKind::Scenario(*scenario), |cx| {
+                    run(cx, *scenario, &params)
+                });
             report.print_summary();
             res
         }
@@ -137,31 +136,61 @@ pub(crate) struct ScenarioParameters {
     pub(crate) run_id: RunId,
 }
 
+#[derive(Debug)]
+struct ScenarioContext<'a> {
+    cx: &'a ReportContext,
+    params: &'a ScenarioParameters,
+}
+
 pub(crate) fn run(
+    cx: &ReportContext,
     scenario: Scenario,
     params: &ScenarioParameters,
-    exec_results: &mut Vec<ExecResult>,
 ) -> eyre::Result<()> {
+    let cx = ScenarioContext { cx, params };
     match scenario {
-        Scenario::HelpCheck => help_check::run(params, exec_results),
-        Scenario::InstallUninstall => install_uninstall::run(params, exec_results),
-        Scenario::Update => update::run(params, exec_results),
-        Scenario::ManifestCheck => manifest_check::run(params, exec_results),
-        Scenario::InstallFailure => install_failure::run(params, exec_results),
+        Scenario::HelpCheck => help_check::run(&cx),
+        Scenario::InstallUninstall => install_uninstall::run(&cx),
+        Scenario::Update => update::run(&cx),
+        Scenario::ManifestCheck => manifest_check::run(&cx),
+        Scenario::InstallFailure => install_failure::run(&cx),
     }
 }
 
-fn exec_foton<'a, F>(
-    params: &ScenarioParameters,
-    exec_results: &'a mut Vec<ExecResult>,
-    f: F,
-) -> eyre::Result<&'a mut ExecResult>
-where
-    F: FnOnce(&mut Command),
-{
-    let mut cmd = Command::new(&params.foton_exe);
-    f(&mut cmd);
-    crate::util::process::exec_command("foton", &params.output_dir, &mut cmd, exec_results)
+impl ScenarioContext<'_> {
+    fn exec_foton<F>(&self, f: F) -> eyre::Result<Arc<ExecResult>>
+    where
+        F: FnOnce(&mut Command),
+    {
+        let mut cmd = Command::new(&self.params.foton_exe);
+        f(&mut cmd);
+        crate::util::process::exec_command(self.cx, "foton", &self.params.output_dir, &mut cmd)
+    }
+
+    fn list_packages(&self) -> eyre::Result<Vec<ListPackageEntry>> {
+        self.exec_foton(|cmd| {
+            cmd.args(["list", "--exit-on-lock", "--format", "jsonl"]);
+        })?
+        .ensure_success()?
+        .deserialize_stdout_as_jsonl()
+    }
+
+    fn list_fonts(&self) -> eyre::Result<Vec<ListFontEntry>> {
+        self.exec_foton(|cmd| {
+            cmd.args(["font", "list", "--exit-on-lock", "--format", "jsonl"]);
+        })?
+        .ensure_success()?
+        .deserialize_stdout_as_jsonl()
+    }
+
+    fn list_package_fonts(&self) -> eyre::Result<Vec<ListFontEntry>> {
+        let fonts = self
+            .list_fonts()?
+            .into_iter()
+            .filter(|font| font.location.ty.is_package_dir())
+            .collect();
+        Ok(fonts)
+    }
 }
 
 #[derive(
@@ -266,17 +295,6 @@ impl ListPackageEntry {
     }
 }
 
-fn list_packages(
-    params: &ScenarioParameters,
-    exec_results: &mut Vec<ExecResult>,
-) -> eyre::Result<Vec<ListPackageEntry>> {
-    exec_foton(params, exec_results, |cmd| {
-        cmd.args(["list", "--exit-on-lock", "--format", "jsonl"]);
-    })?
-    .ensure_success()?
-    .deserialize_stdout_as_jsonl()
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct ListFontEntry {
@@ -302,26 +320,4 @@ struct FontLocation {
     ty: FontLocationType,
     #[serde(rename = "package-id", default)]
     pkg_id: Option<String>,
-}
-
-fn list_fonts(
-    params: &ScenarioParameters,
-    exec_results: &mut Vec<ExecResult>,
-) -> eyre::Result<Vec<ListFontEntry>> {
-    exec_foton(params, exec_results, |cmd| {
-        cmd.args(["font", "list", "--exit-on-lock", "--format", "jsonl"]);
-    })?
-    .ensure_success()?
-    .deserialize_stdout_as_jsonl()
-}
-
-fn list_package_fonts(
-    params: &ScenarioParameters,
-    exec_results: &mut Vec<ExecResult>,
-) -> eyre::Result<Vec<ListFontEntry>> {
-    let fonts = list_fonts(params, exec_results)?
-        .into_iter()
-        .filter(|font| font.location.ty.is_package_dir())
-        .collect();
-    Ok(fonts)
 }

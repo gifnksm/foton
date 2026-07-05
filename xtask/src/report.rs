@@ -1,6 +1,11 @@
 use std::{
+    collections::HashMap,
     fmt::{self, Display},
+    mem,
+    panic::{self, PanicHookInfo, UnwindSafe},
     process,
+    sync::{Arc, LazyLock, Mutex},
+    thread::{self, Thread, ThreadId},
 };
 
 use chrono::{DateTime, Utc};
@@ -180,21 +185,35 @@ pub(crate) fn not_contains_warning_line(stderr: &str) -> bool {
     not_contains_line_starting_with(stderr, WARNING_PREFIX)
 }
 
+#[derive(Debug, Default)]
+pub(crate) struct ReportContext {
+    exec_results: Arc<Mutex<Vec<Arc<ExecResult>>>>,
+}
+
+impl ReportContext {
+    pub(crate) fn push_exec_result(&self, exec_result: ExecResult) -> Arc<ExecResult> {
+        let result = Arc::new(exec_result);
+        self.exec_results.lock().unwrap().push(Arc::clone(&result));
+        result
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct RunReport {
     pub(crate) id: RunId,
     pub(crate) kind: RunKind,
     pub(crate) outcome: RunOutcome,
-    pub(crate) exec_results: Vec<ExecResult>,
+    pub(crate) exec_results: Vec<Arc<ExecResult>>,
 }
 
 impl RunReport {
     pub(crate) fn capture<F>(id: RunId, kind: RunKind, f: F) -> (eyre::Result<()>, Self)
     where
-        F: FnOnce(&mut Vec<ExecResult>) -> eyre::Result<()>,
+        F: FnOnce(&ReportContext) -> eyre::Result<()> + UnwindSafe,
     {
-        let mut exec_results = vec![];
-        let res = f(&mut exec_results);
+        let cx = ReportContext::default();
+        let res = run_with_panic_capture(|| f(&cx));
+        let exec_results = mem::take(&mut *cx.exec_results.lock().unwrap());
         let report = Self {
             id,
             kind,
@@ -240,6 +259,111 @@ impl RunReport {
                 for source in sources {
                     eprintln!("    caused by: {source}");
                 }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct CapturedPanic {
+    thread: Thread,
+    message: String,
+    location: Option<String>,
+}
+
+impl CapturedPanic {
+    fn from_panic_info(thread: Thread, panic_info: &PanicHookInfo<'_>) -> Self {
+        let message = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            (*s).to_owned()
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Unknown panic payload".to_owned()
+        };
+
+        let location = panic_info.location().map(ToString::to_string);
+
+        Self {
+            thread,
+            message,
+            location,
+        }
+    }
+}
+
+impl Display for CapturedPanic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let thread_name = self.thread.name().unwrap_or("<unnamed>");
+        let thread_id = self.thread.id();
+        let loc = self.location.as_deref().unwrap_or("<unknown location>");
+        let message = &self.message;
+        writeln!(f, "thread {thread_name}({thread_id:?}) panicked at: {loc}")?;
+        write!(f, "{message}")?;
+        Ok(())
+    }
+}
+
+static PANIC_SLOTS: LazyLock<Mutex<HashMap<ThreadId, Option<CapturedPanic>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+pub(crate) fn init_panic_hook() {
+    let prev_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        capture_panic(panic_info);
+        prev_hook(panic_info);
+    }));
+}
+
+fn capture_panic(panic_info: &PanicHookInfo<'_>) {
+    let current_thread = thread::current();
+    let thread_id = current_thread.id();
+    let captured = CapturedPanic::from_panic_info(current_thread, panic_info);
+
+    if let Some(slot) = PANIC_SLOTS.lock().unwrap().get_mut(&thread_id) {
+        // Always overwrite with the latest panic.
+        // If an inner `catch_unwind` triggers and handles a panic, that panic information
+        // becomes obsolete. Overwriting ensures we capture the final, unhandled panic
+        // that actually escapes the `run_with_panic_capture` scope.
+        *slot = Some(captured);
+    }
+}
+
+fn enter_panic_capture(thread_id: ThreadId) {
+    *PANIC_SLOTS.lock().unwrap().entry(thread_id).or_default() = None;
+}
+
+fn take_captured_panic(thread_id: ThreadId) -> Option<CapturedPanic> {
+    PANIC_SLOTS.lock().unwrap().remove(&thread_id).flatten()
+}
+
+fn run_with_panic_capture<F>(f: F) -> eyre::Result<()>
+where
+    F: FnOnce() -> eyre::Result<()> + UnwindSafe,
+{
+    let thread_id = thread::current().id();
+    enter_panic_capture(thread_id);
+    let res = panic::catch_unwind(f);
+    let captured = take_captured_panic(thread_id);
+
+    match res {
+        Ok(res) => res,
+        Err(panic_info) => {
+            if let Some(captured) = captured {
+                Err(eyre::eyre!("{captured}"))
+            } else {
+                let panic_payload = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "<unknown panic payload>".to_string()
+                };
+                let thread = thread::current();
+                let thread_name = thread.name().unwrap_or("<unnamed>");
+                let thread_id = thread.id();
+                Err(eyre::eyre!(
+                    "thread {thread_name}({thread_id:?}) panicked at <unknown location>:\n{panic_payload}"
+                ))
             }
         }
     }

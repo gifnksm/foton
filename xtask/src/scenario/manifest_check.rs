@@ -1,17 +1,11 @@
 use color_eyre::eyre;
 
-use crate::{
-    report::{self, ExecResult},
-    scenario::ScenarioParameters,
-};
+use crate::{report, scenario::ScenarioContext};
 
-pub(super) fn run(
-    params: &ScenarioParameters,
-    exec_results: &mut Vec<ExecResult>,
-) -> eyre::Result<()> {
-    let fixture_dir = params.fixture_dir.join("manifest_check");
+pub(super) fn run(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
+    let fixture_dir = cx.params.fixture_dir.join("manifest_check");
 
-    super::exec_foton(params, exec_results, |cmd| {
+    cx.exec_foton(|cmd| {
         cmd.args(["manifest", "check", "--no-confirm", "--warnings-as-errors"])
             .arg(fixture_dir.join("manifest_without_warning.toml"));
     })?
@@ -20,7 +14,7 @@ pub(super) fn run(
     .ensure_stderr(report::not_contains_error_line)?
     .ensure_stderr(report::not_contains_warning_line)?;
 
-    super::exec_foton(params, exec_results, |cmd| {
+    cx.exec_foton(|cmd| {
         cmd.args(["manifest", "check", "--no-confirm"])
             .arg(fixture_dir.join("manifest_with_warning.toml"));
     })?
@@ -29,7 +23,7 @@ pub(super) fn run(
     .ensure_stderr(report::contains_warning_line)?
     .ensure_stderr(report::not_contains_error_line)?;
 
-    super::exec_foton(params, exec_results, |cmd| {
+    cx.exec_foton(|cmd| {
         cmd.args(["manifest", "check", "--no-confirm", "--warnings-as-errors"])
             .arg(fixture_dir.join("manifest_with_warning.toml"));
     })?
