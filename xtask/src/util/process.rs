@@ -1,19 +1,25 @@
 use std::{
     process::Command,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use cargo_metadata::camino::Utf8Path;
 use color_eyre::eyre::{self, WrapErr as _};
 
-use crate::{report::ExecResult, util::fs as fs_util};
+use crate::{
+    report::{ExecResult, ReportContext},
+    util::fs as fs_util,
+};
 
-pub(crate) fn exec_command<'a, S>(
+pub(crate) fn exec_command<S>(
+    cx: &ReportContext,
     name: S,
     output_dir: &Utf8Path,
     cmd: &mut Command,
-    exec_results: &'a mut Vec<ExecResult>,
-) -> eyre::Result<&'a mut ExecResult>
+) -> eyre::Result<Arc<ExecResult>>
 where
     S: Into<String>,
 {
@@ -58,5 +64,5 @@ where
         stderr,
     };
 
-    Ok(exec_results.push_mut(res))
+    Ok(cx.push_exec_result(res))
 }

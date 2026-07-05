@@ -5,7 +5,7 @@ use color_eyre::eyre::{self, WrapErr as _, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    report::{ExecResult, RunId, RunKind, RunReport},
+    report::{ReportContext, RunId, RunKind, RunReport},
     scenario::{self, Scenario},
     util::{fs as fs_util, process as process_util},
 };
@@ -19,6 +19,7 @@ pub(crate) struct SandboxBootstrapConfig {
     pub(crate) complete_stamp: Utf8PathBuf,
     pub(crate) run_id: RunId,
     pub(crate) action: SandboxAction,
+    pub(crate) envs: Vec<(String, String)>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -83,6 +84,7 @@ fn dispatch_parent(args: &BootstrapArgs, config: &SandboxBootstrapConfig) -> eyr
         .arg("--config")
         .arg(&args.config)
         .arg("--run-as-child-process")
+        .envs(config.envs.iter().map(|(k, v)| (k, v)))
         .stdout(stdout_file)
         .stderr(stderr_file)
         .status()
@@ -106,8 +108,8 @@ fn dispatch_child(config: &SandboxBootstrapConfig) -> eyre::Result<()> {
             report_json,
         } => (
             report_json,
-            RunReport::capture(config.run_id, kind, |exec_results| {
-                run_test(test_exes, &config.output_dir, exec_results)
+            RunReport::capture(config.run_id, kind, |cx| {
+                run_test(cx, test_exes, &config.output_dir)
             }),
         ),
         SandboxAction::RunScenario {
@@ -115,14 +117,14 @@ fn dispatch_child(config: &SandboxBootstrapConfig) -> eyre::Result<()> {
             report_json,
         } => (
             report_json,
-            RunReport::capture(config.run_id, kind, |exec_results| {
+            RunReport::capture(config.run_id, kind, |cx| {
                 let params = scenario::ScenarioParameters {
                     foton_exe: config.foton_exe.clone(),
                     fixture_dir: config.fixture_dir.clone(),
                     output_dir: config.output_dir.clone(),
                     run_id: config.run_id,
                 };
-                scenario::run(*scenario, &params, exec_results)
+                scenario::run(cx, *scenario, &params)
             }),
         ),
     };
@@ -131,14 +133,14 @@ fn dispatch_child(config: &SandboxBootstrapConfig) -> eyre::Result<()> {
 }
 
 fn run_test(
+    cx: &ReportContext,
     test_exes: &[Utf8PathBuf],
     output_dir: &Utf8Path,
-    exec_results: &mut Vec<ExecResult>,
 ) -> eyre::Result<()> {
     for test_exe in test_exes {
         let mut cmd = Command::new(test_exe);
         let name = test_exe.file_stem().unwrap_or("test");
-        let res = process_util::exec_command(name, output_dir, &mut cmd, exec_results)?;
+        let res = process_util::exec_command(cx, name, output_dir, &mut cmd)?;
         if !res.success {
             bail!(
                 "test executable `{test_exe}` failed with status {}",

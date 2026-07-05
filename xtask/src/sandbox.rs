@@ -1,4 +1,5 @@
 use std::{
+    env,
     process::Command,
     sync::mpsc::{self, RecvTimeoutError},
     time::{Duration, Instant},
@@ -162,7 +163,7 @@ fn run(kind: RunKind, timeout: Duration) -> eyre::Result<()> {
 
     let report: RunReport = fs_util::read_json("report", &host_paths.report_json)?;
     report.print_summary();
-    ensure!(report.is_success(), "run failed");
+    ensure!(report.is_success(), "run in sandbox failed");
 
     Ok(())
 }
@@ -254,6 +255,16 @@ impl MappingPaths {
     }
 }
 
+fn copy_exe_and_pdb(name: &str, src: &Utf8Path, dst: &Utf8Path) -> eyre::Result<()> {
+    let _bytes = fs_util::copy(name, src, dst)?;
+    let pdb_src = src.with_extension("pdb");
+    if pdb_src.exists() {
+        let pdb_dst = dst.with_extension("pdb");
+        let _bytes = fs_util::copy(format_args!("{name} PDB"), &pdb_src, &pdb_dst)?;
+    }
+    Ok(())
+}
+
 fn prepare_host_artifacts(
     run_id: RunId,
     kind: RunKind,
@@ -269,8 +280,8 @@ fn prepare_host_artifacts(
     fs_util::create_dir_all("fixture", &host_paths.fixture_dir)?;
     fs_util::create_dir_all("output", &host_paths.output_dir)?;
 
-    let _bytes = fs_util::copy("xtask.exe", &xtask_exe, &host_paths.xtask_exe)?;
-    let _bytes = fs_util::copy("foton.exe", &foton_exe, &host_paths.foton_exe)?;
+    copy_exe_and_pdb("xtask.exe", &xtask_exe, &host_paths.xtask_exe)?;
+    copy_exe_and_pdb("foton.exe", &foton_exe, &host_paths.foton_exe)?;
     fs_util::copy_dir(
         "fixture files",
         env_util::fixture_dir()?,
@@ -286,10 +297,10 @@ fn prepare_host_artifacts(
                 let file_name = host_test_exe.file_name().unwrap();
                 let sandbox_test_exe = sandbox_paths.bin_dir.join(file_name);
                 sandbox_test_exes.push(sandbox_test_exe);
-                let _bytes = fs_util::copy(
+                copy_exe_and_pdb(
                     "test executable",
                     &host_test_exe,
-                    host_paths.bin_dir.join(file_name),
+                    &host_paths.bin_dir.join(file_name),
                 )?;
             }
             SandboxAction::RunTests {
@@ -457,6 +468,10 @@ fn build_bootstrap_config(
     sandbox_paths: &MappingPaths,
     action: SandboxAction,
 ) -> SandboxBootstrapConfig {
+    let mut envs = vec![];
+    if let Ok(rust_backtrace) = env::var("RUST_BACKTRACE") {
+        envs.push(("RUST_BACKTRACE".to_string(), rust_backtrace));
+    }
     SandboxBootstrapConfig {
         foton_exe: sandbox_paths.foton_exe.clone(),
         xtask_exe: sandbox_paths.xtask_exe.clone(),
@@ -465,5 +480,6 @@ fn build_bootstrap_config(
         complete_stamp: sandbox_paths.complete_stamp.clone(),
         run_id,
         action,
+        envs,
     }
 }
