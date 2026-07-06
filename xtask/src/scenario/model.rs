@@ -1,6 +1,15 @@
 use color_eyre::eyre::{self, ensure};
 use serde::Deserialize;
 
+fn pkg_id_matches_spec(pkg_id: &str, spec: &str) -> bool {
+    let (pkg_name, pkg_version) = pkg_id.split_once('@').unwrap();
+    if let Some((name, version)) = spec.split_once('@') {
+        pkg_name == name && pkg_version == version
+    } else {
+        pkg_name == spec
+    }
+}
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, derive_more::Display, derive_more::IsVariant, Deserialize,
 )]
@@ -34,29 +43,13 @@ pub(in crate::scenario) struct ListPackageEntry {
 }
 
 impl ListPackageEntry {
-    pub(in crate::scenario) fn name(&self) -> &str {
-        let (name, _version) = self.pkg_id.split_once('@').unwrap();
-        name
-    }
-
     pub(in crate::scenario) fn version(&self) -> &str {
         let (_name, version) = self.pkg_id.split_once('@').unwrap();
         version
     }
 
-    #[track_caller]
-    pub(in crate::scenario) fn ensure_name<P>(&self, predicate: P) -> eyre::Result<&Self>
-    where
-        P: FnOnce(&str) -> bool,
-    {
-        let name = self.name();
-        ensure!(
-            predicate(name),
-            "unexpected package name for `{}`: `{}`",
-            self.pkg_id,
-            name,
-        );
-        Ok(self)
+    pub(in crate::scenario) fn matches_spec(&self, spec: &str) -> bool {
+        pkg_id_matches_spec(&self.pkg_id, spec)
     }
 
     #[track_caller]
@@ -134,4 +127,14 @@ pub(in crate::scenario) struct FontLocation {
     pub(in crate::scenario) ty: FontLocationType,
     #[serde(rename = "package-id", default)]
     pub(in crate::scenario) pkg_id: Option<String>,
+}
+
+impl FontLocation {
+    pub(in crate::scenario) fn is_pkg_font(&self, pkg_spec: &str) -> bool {
+        self.ty.is_package_dir()
+            && match &self.pkg_id {
+                Some(pkg_id) => pkg_id_matches_spec(pkg_id, pkg_spec),
+                None => false,
+            }
+    }
 }

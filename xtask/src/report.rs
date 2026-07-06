@@ -62,7 +62,7 @@ impl Display for RunKind {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum RunOutcome {
     Success,
-    Failure { error: String, sources: Vec<String> },
+    Failure { error: String },
 }
 
 impl From<&eyre::Result<()>> for RunOutcome {
@@ -70,8 +70,7 @@ impl From<&eyre::Result<()>> for RunOutcome {
         match value {
             Ok(()) => RunOutcome::Success,
             Err(err) => RunOutcome::Failure {
-                error: err.to_string(),
-                sources: err.chain().skip(1).map(ToString::to_string).collect(),
+                error: format!("{err:?}"),
             },
         }
     }
@@ -79,6 +78,8 @@ impl From<&eyre::Result<()>> for RunOutcome {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct ExecResult {
+    pub(crate) timestamp: DateTime<Utc>,
+    pub(crate) caller: String,
     pub(crate) name: String,
     pub(crate) arguments: Vec<String>,
     pub(crate) success: bool,
@@ -158,31 +159,35 @@ impl ExecResult {
     }
 }
 
-pub(crate) fn contains_line_starting_with(s: &str, prefix: &str) -> bool {
-    s.lines().any(|line| line.starts_with(prefix))
+pub(crate) fn contains_line_eq(target: &str) -> impl Fn(&str) -> bool + use<'_> {
+    move |s| s.lines().any(|line| line == target)
+}
+
+pub(crate) fn contains_line_starting_with(prefix: &str) -> impl Fn(&str) -> bool + use<'_> {
+    move |s| s.lines().any(|line| line.starts_with(prefix))
+}
+
+pub(crate) fn not_contains_line_starting_with(prefix: &str) -> impl Fn(&str) -> bool + use<'_> {
+    move |s| s.lines().all(|line| !line.starts_with(prefix))
 }
 
 const ERROR_PREFIX: &str = "error: ";
 const WARNING_PREFIX: &str = "warning: ";
 
-pub(crate) fn not_contains_line_starting_with(s: &str, prefix: &str) -> bool {
-    s.lines().all(|line| !line.starts_with(prefix))
-}
-
 pub(crate) fn contains_error_line(stderr: &str) -> bool {
-    contains_line_starting_with(stderr, ERROR_PREFIX)
+    contains_line_starting_with(ERROR_PREFIX)(stderr)
 }
 
 pub(crate) fn not_contains_error_line(stderr: &str) -> bool {
-    not_contains_line_starting_with(stderr, ERROR_PREFIX)
+    not_contains_line_starting_with(ERROR_PREFIX)(stderr)
 }
 
 pub(crate) fn contains_warning_line(stderr: &str) -> bool {
-    contains_line_starting_with(stderr, WARNING_PREFIX)
+    contains_line_starting_with(WARNING_PREFIX)(stderr)
 }
 
 pub(crate) fn not_contains_warning_line(stderr: &str) -> bool {
-    not_contains_line_starting_with(stderr, WARNING_PREFIX)
+    not_contains_line_starting_with(WARNING_PREFIX)(stderr)
 }
 
 #[derive(Debug, Default)]
@@ -235,6 +240,8 @@ impl RunReport {
         for (i, res) in self.exec_results.iter().enumerate() {
             eprintln!();
             eprintln!("  Exec #{i}: {}", res.name);
+            eprintln!("    Timestamp: {}", res.timestamp);
+            eprintln!("    Caller: {}", res.caller);
             eprintln!("    Arguments: {:?}", res.arguments);
             eprintln!("    Exit Status: {}", res.exit_status);
             eprintln!("    Stdout: ({} bytes)", res.stdout.len());
@@ -253,11 +260,11 @@ impl RunReport {
 
         match &self.outcome {
             RunOutcome::Success => eprintln!("  Result: Success"),
-            RunOutcome::Failure { error, sources } => {
+            RunOutcome::Failure { error } => {
                 eprintln!("  Result: Failure");
-                eprintln!("  Error: {error}");
-                for source in sources {
-                    eprintln!("    caused by: {source}");
+                eprintln!("  Error:");
+                for line in error.lines().skip_while(|line| line.trim().is_empty()) {
+                    eprintln!("    {line}");
                 }
             }
         }
