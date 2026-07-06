@@ -5,8 +5,8 @@ use color_eyre::eyre;
 use crate::{
     report::{ExecResult, ReportContext},
     scenario::{
+        ScenarioParameters,
         model::{ListFontEntry, ListPackageEntry},
-        params::ScenarioParameters,
     },
 };
 

@@ -2,11 +2,11 @@ use std::process::Command;
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use color_eyre::eyre::{self, WrapErr as _, bail, ensure};
-use serde::{Deserialize, Serialize};
 
 use crate::{
-    report::{ReportContext, RunId, RunKind, RunReport},
-    scenario::{self, Scenario},
+    report::{ReportContext, RunReport},
+    sandbox::{SandboxAction, SandboxBootstrapConfig},
+    scenario::{self, ScenarioParameters},
     util::{
         env::{
             FOTON_EXE_PATH_ENVVAR_NAME, FOTON_EXECUTION_ENVIRONMENT_ENVVAR_NAME,
@@ -16,49 +16,12 @@ use crate::{
     },
 };
 
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct SandboxBootstrapConfig {
-    pub(crate) execution_environment: String,
-    pub(crate) foton_exe: Utf8PathBuf,
-    pub(crate) xtask_exe: Utf8PathBuf,
-    pub(crate) fixture_dir: Utf8PathBuf,
-    pub(crate) output_dir: Utf8PathBuf,
-    pub(crate) complete_stamp: Utf8PathBuf,
-    pub(crate) run_id: RunId,
-    pub(crate) action: SandboxAction,
-    pub(crate) envs: Vec<(String, String)>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum SandboxAction {
-    Noop,
-    RunTests {
-        test_exes: Vec<Utf8PathBuf>,
-        report_json: Utf8PathBuf,
-    },
-    RunScenario {
-        scenario: Scenario,
-        report_json: Utf8PathBuf,
-    },
-}
-
-impl SandboxAction {
-    pub(crate) fn to_kind(&self) -> RunKind {
-        match self {
-            Self::Noop => RunKind::Noop,
-            Self::RunTests { .. } => RunKind::Test,
-            Self::RunScenario { scenario, .. } => RunKind::Scenario(*scenario),
-        }
-    }
-}
-
 /// Internal arguments for the sandbox bootstrap command.
 ///
 /// This command is launched inside Windows Sandbox by the sandbox runner and
 /// is not intended for direct invocation.
 #[derive(Debug, clap::Args)]
-pub(crate) struct BootstrapArgs {
+pub(in crate::command) struct BootstrapArgs {
     /// Internal marker indicating that this command was launched inside
     /// Windows Sandbox by the sandbox runner.
     #[clap(long)]
@@ -72,7 +35,7 @@ pub(crate) struct BootstrapArgs {
     config: Utf8PathBuf,
 }
 
-pub(crate) fn dispatch(args: &BootstrapArgs) -> eyre::Result<()> {
+pub(in crate::command) fn dispatch(args: &BootstrapArgs) -> eyre::Result<()> {
     let BootstrapArgs {
         launched_inside_sandbox,
         run_as_child_process,
@@ -159,7 +122,8 @@ fn dispatch_child(config: &SandboxBootstrapConfig) -> eyre::Result<()> {
         } => (
             report_json,
             RunReport::capture(config.run_id, kind, |cx| {
-                scenario::run_in_sandbox(cx, config, *scenario)
+                let params = build_scenario_parameters(config);
+                scenario::run(cx, *scenario, &params)
             }),
         ),
     };
@@ -184,4 +148,12 @@ fn run_test(
         }
     }
     Ok(())
+}
+
+fn build_scenario_parameters(config: &SandboxBootstrapConfig) -> ScenarioParameters {
+    ScenarioParameters {
+        foton_exe: config.foton_exe.clone(),
+        fixture_dir: config.fixture_dir.clone(),
+        output_dir: config.output_dir.clone(),
+    }
 }
