@@ -24,11 +24,11 @@ mod model;
 #[display(rename_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum Scenario {
-    HelpCheck,
-    InstallUninstall,
-    Update,
-    ManifestCheck,
-    InstallFailure,
+    SanityCheck,
+    InstallActivationLifecycle,
+    UpdateLifecycle,
+    ManifestValidation,
+    InstallFailureCleanup,
 }
 
 #[derive(Debug)]

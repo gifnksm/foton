@@ -1,6 +1,6 @@
 use std::{process::Command, sync::Arc};
 
-use color_eyre::eyre;
+use color_eyre::eyre::{self, ensure};
 
 use crate::{
     report::{ExecResult, ReportContext},
@@ -25,37 +25,134 @@ impl<'a> ScenarioContext<'a> {
         self.params
     }
 
+    #[track_caller]
     pub(in crate::scenario) fn exec_foton<F>(&self, f: F) -> eyre::Result<Arc<ExecResult>>
     where
         F: FnOnce(&mut Command),
     {
         let mut cmd = Command::new(&self.params.foton_exe);
+        cmd.args(["--no-confirm", "--exit-on-lock"]);
         f(&mut cmd);
         crate::util::process::exec_command(self.cx, "foton", &self.params.output_dir, &mut cmd)
     }
 
-    pub(in crate::scenario) fn list_packages(&self) -> eyre::Result<Vec<ListPackageEntry>> {
+    #[track_caller]
+    pub(in crate::scenario) fn exec_foton_with_args<I, S>(
+        &self,
+        args: I,
+    ) -> eyre::Result<Arc<ExecResult>>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<std::ffi::OsStr>,
+    {
         self.exec_foton(|cmd| {
-            cmd.args(["list", "--exit-on-lock", "--format", "jsonl"]);
-        })?
-        .ensure_success()?
-        .deserialize_stdout_as_jsonl()
+            cmd.args(args);
+        })
     }
 
-    pub(in crate::scenario) fn list_fonts(&self) -> eyre::Result<Vec<ListFontEntry>> {
-        self.exec_foton(|cmd| {
-            cmd.args(["font", "list", "--exit-on-lock", "--format", "jsonl"]);
-        })?
-        .ensure_success()?
-        .deserialize_stdout_as_jsonl()
+    #[track_caller]
+    pub(in crate::scenario) fn query_all_managed_packages(
+        &self,
+    ) -> eyre::Result<Vec<ListPackageEntry>> {
+        self.exec_foton_with_args(["list", "--format", "jsonl"])?
+            .ensure_success()?
+            .deserialize_stdout_as_jsonl()
     }
 
-    pub(in crate::scenario) fn list_package_fonts(&self) -> eyre::Result<Vec<ListFontEntry>> {
-        let fonts = self
-            .list_fonts()?
+    #[track_caller]
+    pub(in crate::scenario) fn query_managed_packages(
+        &self,
+        pkg_spec: &str,
+    ) -> eyre::Result<Vec<ListPackageEntry>> {
+        let managed_packages = self.query_all_managed_packages()?;
+        let entries = managed_packages
             .into_iter()
-            .filter(|font| font.location.ty.is_package_dir())
+            .filter(|pkg| pkg.matches_spec(pkg_spec))
+            .collect();
+        Ok(entries)
+    }
+
+    #[track_caller]
+    pub(in crate::scenario) fn query_all_package_active_fonts(
+        &self,
+    ) -> eyre::Result<Vec<ListFontEntry>> {
+        self.exec_foton_with_args(["font", "list", "--format", "jsonl"])?
+            .ensure_success()?
+            .deserialize_stdout_as_jsonl()
+    }
+
+    #[track_caller]
+    pub(in crate::scenario) fn query_package_active_fonts(
+        &self,
+        pkg_spec: &str,
+    ) -> eyre::Result<Vec<ListFontEntry>> {
+        let fonts = self
+            .query_all_package_active_fonts()?
+            .into_iter()
+            .filter(|font| font.location.is_pkg_font(pkg_spec))
             .collect();
         Ok(fonts)
+    }
+
+    #[track_caller]
+    pub(in crate::scenario) fn ensure_package_not_managed(
+        &self,
+        pkg_spec: &str,
+    ) -> eyre::Result<()> {
+        let managed_packages = self.query_all_managed_packages()?;
+        ensure!(
+            managed_packages
+                .iter()
+                .all(|pkg| !pkg.matches_spec(pkg_spec)),
+            "package `{}` is still managed",
+            pkg_spec,
+        );
+        Ok(())
+    }
+
+    #[track_caller]
+    pub(in crate::scenario) fn ensure_package_installed(
+        &self,
+        pkg_spec: &str,
+    ) -> eyre::Result<ListPackageEntry> {
+        let mut managed_packages = self.query_managed_packages(pkg_spec)?;
+        ensure!(
+            managed_packages.len() == 1,
+            "expected exactly one managed package matching `{}`, found {}",
+            pkg_spec,
+            managed_packages.len(),
+        );
+        let pkg = managed_packages.pop().unwrap();
+        Ok(pkg)
+    }
+
+    #[track_caller]
+    pub(in crate::scenario) fn ensure_package_has_no_active_fonts(
+        &self,
+        pkg_spec: &str,
+    ) -> eyre::Result<()> {
+        let active_fonts = self.query_all_package_active_fonts()?;
+        ensure!(
+            active_fonts
+                .iter()
+                .all(|font| !font.location.is_pkg_font(pkg_spec)),
+            "package `{}` still has active fonts",
+            pkg_spec,
+        );
+        Ok(())
+    }
+
+    #[track_caller]
+    pub(in crate::scenario) fn ensure_package_has_active_fonts(
+        &self,
+        pkg_spec: &str,
+    ) -> eyre::Result<Vec<ListFontEntry>> {
+        let active_fonts = self.query_package_active_fonts(pkg_spec)?;
+        ensure!(
+            !active_fonts.is_empty(),
+            "package `{}` has no active fonts",
+            pkg_spec,
+        );
+        Ok(active_fonts)
     }
 }

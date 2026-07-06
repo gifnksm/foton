@@ -1,4 +1,5 @@
 use std::{
+    panic::Location,
     process::Command,
     sync::{
         Arc,
@@ -7,6 +8,7 @@ use std::{
 };
 
 use cargo_metadata::camino::Utf8Path;
+use chrono::Utc;
 use color_eyre::eyre::{self, WrapErr as _};
 
 use crate::{
@@ -14,6 +16,7 @@ use crate::{
     util::fs as fs_util,
 };
 
+#[track_caller]
 pub(crate) fn exec_command<S>(
     cx: &ReportContext,
     name: S,
@@ -53,6 +56,8 @@ where
     )?;
 
     let res = ExecResult {
+        timestamp: Utc::now(),
+        caller: Location::caller().to_string(),
         name,
         arguments: cmd
             .get_args()
