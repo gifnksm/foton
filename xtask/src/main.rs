@@ -21,13 +21,13 @@ struct Args {
 
 #[derive(clap::Subcommand)]
 enum GlobalCommand {
-    /// Windows Sandbox helpers.
+    /// Windows Sandbox-related helper commands.
     Sandbox {
         /// Sandbox subcommand to run.
         #[clap(subcommand)]
         command: SandboxCommand,
     },
-    /// Scenario helpers.
+    /// Commands for running scenarios.
     Scenario {
         /// Scenario subcommand to run.
         #[clap(subcommand)]

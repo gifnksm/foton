@@ -47,23 +47,24 @@ pub(crate) enum Scenario {
 /// Commands for running scenarios.
 #[derive(clap::Subcommand)]
 pub(crate) enum ScenarioCommand {
-    /// Dangerous: bypass the isolation safeguard and run the scenario directly.
-    ///
-    /// These scenarios are development and testing helpers, not commands meant
-    /// for routine execution on the current environment. They may install,
-    /// uninstall, or update fonts, rewrite Windows registry entries under HKCU,
-    /// and otherwise modify state on the current system.
-    ///
-    /// Running a scenario without isolation may seriously damage the current
-    /// user environment and may leave the current system broken or unusable
-    /// for the current user.
-    ///
-    /// Use this only if you fully understand exactly what will be executed and
-    /// exactly what state may be modified.
-    ///
-    /// Prefer `cargo xtask sandbox run --scenario <scenario>` unless you
-    /// intentionally need to run without isolation.
+    /// Run a scenario and print a summary of the captured outputs.
     Run {
+        /// Dangerous: bypass the isolation safeguard and run the scenario directly.
+        ///
+        /// These scenarios are development and testing helpers, not commands meant
+        /// for routine execution on the current environment. They may install,
+        /// uninstall, or update fonts, rewrite Windows registry entries under HKCU,
+        /// and otherwise modify state on the current system.
+        ///
+        /// Running a scenario without isolation may seriously damage the current
+        /// user environment and may leave the current system broken or unusable
+        /// for the current user.
+        ///
+        /// Use this only if you fully understand exactly what will be executed and
+        /// exactly what state may be modified.
+        ///
+        /// Prefer `cargo xtask sandbox run --scenario <scenario>` unless you
+        /// intentionally need to run without isolation.
         #[clap(
             long = "allow-unsafe-scenario-run-directly-without-isolation",
             env = "FOTON_ALLOW_UNSAFE_SCENARIO_RUN_DIRECTLY_WITHOUT_ISOLATION"
