@@ -3,7 +3,7 @@ use color_eyre::eyre::{self, ensure};
 use crate::{report, scenario::ScenarioContext};
 
 pub(super) fn run(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
-    let fixture_dir = cx.params.fixture_dir.join("install_failure");
+    let fixture_dir = cx.params().fixture_dir.join("install_failure");
 
     cx.exec_foton(|cmd| {
         cmd.args([
