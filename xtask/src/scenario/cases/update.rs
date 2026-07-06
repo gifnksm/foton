@@ -56,15 +56,10 @@ pub(super) fn run(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
     let installed_fonts = cx.list_package_fonts()?;
     ensure!(!installed_fonts.is_empty());
 
-    // DirectWrite can continue to report fonts from the old package
-    // immediately after unregistration, so we do not require all
-    // visible package fonts to belong to the newly active package.
-    // Instead, we only check that at least one visible package font
-    // belongs to the new package.
     ensure!(
         installed_fonts
             .iter()
-            .any(|font| font.location.pkg_id.as_deref() == Some(&new_pkg.pkg_id))
+            .all(|font| font.location.pkg_id.as_deref() == Some(&new_pkg.pkg_id))
     );
 
     cx.exec_foton(|cmd| {
