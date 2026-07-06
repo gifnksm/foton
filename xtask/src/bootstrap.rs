@@ -159,13 +159,7 @@ fn dispatch_child(config: &SandboxBootstrapConfig) -> eyre::Result<()> {
         } => (
             report_json,
             RunReport::capture(config.run_id, kind, |cx| {
-                let params = scenario::ScenarioParameters {
-                    foton_exe: config.foton_exe.clone(),
-                    fixture_dir: config.fixture_dir.clone(),
-                    output_dir: config.output_dir.clone(),
-                    run_id: config.run_id,
-                };
-                scenario::run(cx, *scenario, &params)
+                scenario::run_in_sandbox(cx, config, *scenario)
             }),
         ),
     };

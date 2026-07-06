@@ -3,7 +3,7 @@ use color_eyre::eyre;
 use crate::{report, scenario::ScenarioContext};
 
 pub(super) fn run(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
-    let fixture_dir = cx.params.fixture_dir.join("manifest_check");
+    let fixture_dir = cx.params().fixture_dir.join("manifest_check");
 
     cx.exec_foton(|cmd| {
         cmd.args(["manifest", "check", "--no-confirm", "--warnings-as-errors"])
