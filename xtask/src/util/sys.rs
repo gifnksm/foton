@@ -15,6 +15,7 @@ where
     V: AsRef<str>,
 {
     const REG_KEY_ENVIRONMENT: &str = "Environment";
+    const SEND_MESSAGE_TIMEOUT_MS: u32 = 5000;
 
     let reg_key = CURRENT_USER
         .create(REG_KEY_ENVIRONMENT)
@@ -40,7 +41,7 @@ where
             WPARAM(0),
             LPARAM(w!("Environment").as_ptr() as isize),
             SMTO_ABORTIFHUNG,
-            5000,
+            SEND_MESSAGE_TIMEOUT_MS,
             None,
         );
     }

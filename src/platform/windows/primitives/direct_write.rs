@@ -14,8 +14,8 @@ use windows::Win32::{
         self, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_PROPERTY_ID,
         DWRITE_FONT_PROPERTY_ID_FACE_NAME, DWRITE_FONT_PROPERTY_ID_FAMILY_NAME,
         DWRITE_FONT_PROPERTY_ID_PREFERRED_FAMILY_NAME,
-        DWRITE_FONT_PROPERTY_ID_TYPOGRAPHIC_FACE_NAME, IDWriteFactory6, IDWriteFontSet1,
-        IDWriteLocalFontFileLoader, IDWriteLocalizedStrings,
+        DWRITE_FONT_PROPERTY_ID_TYPOGRAPHIC_FACE_NAME, IDWriteFactory3, IDWriteFactory6,
+        IDWriteFontSet1, IDWriteLocalFontFileLoader, IDWriteLocalizedStrings,
     },
 };
 use windows_core::{HSTRING, Interface as _};
@@ -64,8 +64,16 @@ pub(crate) enum DirectWriteFontSetError {
         path: PathBuf,
         source: windows_core::Error,
     },
-    #[snafu(display("failed to get system font set"))]
-    GetSystemFontSet { source: windows_core::Error },
+    #[snafu(display("failed to cast DirectWrite factory"))]
+    CastFactory { source: windows_core::Error },
+    #[snafu(display("failed to get system font collection"))]
+    GetSystemFontCollection { source: windows_core::Error },
+    #[snafu(display("system font collection is empty"))]
+    GotSystemFontCollectionIsEmpty,
+    #[snafu(display("failed to get font set from collection"))]
+    GetFontSetFromCollection { source: windows_core::Error },
+    #[snafu(display("failed to cast system font set"))]
+    CastSystemFontSet { source: windows_core::Error },
 }
 
 #[derive(Debug)]
@@ -110,11 +118,26 @@ impl DirectWriteFontSet {
     pub(crate) fn system_font_set(
         factory: &DirectWriteFactory,
     ) -> Result<DirectWriteFontSet, DirectWriteFontSetError> {
-        // SAFETY: `GetSystemFontSet` is an FFI call on a valid factory interface. The returned
-        // font set is an owned COM interface managed by `windows`, so it remains valid
-        // independently of the factory value used to obtain it.
-        let font_set =
-            unsafe { factory.factory.GetSystemFontSet(false) }.context(GetSystemFontSetSnafu)?;
+        let factory3 = factory
+            .factory
+            .cast::<IDWriteFactory3>()
+            .context(CastFactorySnafu)?;
+        let mut collection = None;
+
+        // SAFETY: `GetSystemFontCollection` writes the returned collection to the provided
+        // out-parameter. `factory3` is a valid DirectWrite factory interface, and `collection` is
+        // a valid mutable local for the duration of the call. On success, any returned collection
+        // is an owned COM interface managed by `windows`.
+        unsafe { factory3.GetSystemFontCollection(false, &raw mut collection, true) }
+            .context(GetSystemFontCollectionSnafu)?;
+        let collection = collection.context(GotSystemFontCollectionIsEmptySnafu)?;
+
+        // SAFETY: `GetFontSet` is an FFI call on a valid font collection interface. The returned
+        // font set is an owned COM interface managed by `windows`, so no borrowed data escapes the
+        // call.
+        let font_set = unsafe { collection.GetFontSet() }.context(GetFontSetFromCollectionSnafu)?;
+
+        let font_set = font_set.cast().context(CastSystemFontSetSnafu)?;
 
         Ok(DirectWriteFontSet { font_set })
     }
