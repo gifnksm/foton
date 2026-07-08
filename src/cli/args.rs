@@ -151,6 +151,11 @@ pub(crate) struct RepairArgs {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct ListArgs {
+    /// Package names, optionally with an exact version as `<package-name>@<version>`.
+    ///
+    /// If not specified, show all packages in the local package database.
+    #[clap(value_name = "PACKAGE")]
+    pub(crate) pkg_specs: Vec<PackageSpec>,
     /// Select the output format.
     #[clap(long, default_value_t, value_enum)]
     pub(crate) format: ListFormat,

@@ -1,5 +1,6 @@
-use std::io;
+use std::{collections::BTreeSet, io};
 
+use either::Either;
 use serde::Serialize;
 use snafu::{ResultExt as _, Snafu};
 
@@ -8,12 +9,13 @@ use crate::{
         args::{ListArgs, ListFormat},
         context::{ReportContext, RootContext},
         reporter::{
-            NeverReport, OperationError, ReportScope, RootReportScope, ScopeResultErrorExt as _,
+            ErrorReportExt as _, NeverReport, OperationError, ReportScope, RootReportScope,
+            ScopeResultErrorExt as _,
         },
     },
-    db::PackageDbEntry,
+    db::{PackageDatabase, PackageDbEntry},
     engine,
-    package::{ActivationState, InstallationState, PackageId},
+    package::{ActivationState, InstallationState, PackageId, PackageSpec},
 };
 
 #[derive(Debug, Default)]
@@ -30,6 +32,8 @@ impl RootReportScope for ListScope {}
 
 #[derive(Debug, Snafu)]
 enum ListErrorReport {
+    #[snafu(display("no package matches `{pkg_spec}`"))]
+    NoMatchingPackage { pkg_spec: PackageSpec },
     #[snafu(display("failed to serialize package information"))]
     SerializeToJsonl { source: serde_json::Error },
     #[snafu(display("failed to render package information to stdout"))]
@@ -55,21 +59,44 @@ impl OperationError for ListError {
 }
 
 pub(crate) fn list_package(cx: &RootContext, args: &ListArgs) -> Result<(), ListError> {
-    let ListArgs { format } = args;
+    let ListArgs { format, pkg_specs } = args;
 
     let cx = ListScope::start(cx);
 
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
     let db = engine::load_database(&cx, &mut db_lock_file)?;
 
+    let entries = collect_entries(&cx, &db, pkg_specs)?;
+
     let renderer = match format {
         ListFormat::Text => (&TextRender {}) as &dyn EntryRender,
         ListFormat::Jsonl => &JsonlRender {},
     };
 
-    render_entries(&cx, &mut io::stdout().lock(), db.all_entries(), renderer)?;
+    render_entries(&cx, &mut io::stdout().lock(), entries, renderer)?;
 
     Ok(())
+}
+
+fn collect_entries<'db>(
+    cx: &ReportContext<ListScope>,
+    db: &'db PackageDatabase<'_>,
+    pkg_specs: &[PackageSpec],
+) -> Result<impl Iterator<Item = PackageDbEntry<'db>>, ListError> {
+    if pkg_specs.is_empty() {
+        return Ok(Either::Left(db.all_entries()));
+    }
+
+    let mut seen_pkg_id = BTreeSet::new();
+    let mut entries = vec![];
+    for pkg_spec in pkg_specs {
+        let mut pkgs = db.entries_by_spec(pkg_spec).peekable();
+        if pkgs.peek().is_none() {
+            return Err(NoMatchingPackageSnafu { pkg_spec }.build().report_error(cx));
+        }
+        entries.extend(pkgs.filter(|entry| seen_pkg_id.insert(entry.id().clone())));
+    }
+    Ok(Either::Right(entries.into_iter()))
 }
 
 fn render_entries<'a, I>(

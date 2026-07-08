@@ -79,8 +79,8 @@ impl<'lock> PackageDatabase<'lock> {
 
     pub(crate) fn entries_by_spec<'a>(
         &'a self,
-        pkg_spec: &'a PackageSpec,
-    ) -> Box<dyn Iterator<Item = PackageDbEntry<'a>> + 'a> {
+        pkg_spec: &PackageSpec,
+    ) -> impl Iterator<Item = PackageDbEntry<'a>> {
         self.persisted_state.entries_by_spec(pkg_spec)
     }
 

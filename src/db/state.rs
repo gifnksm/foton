@@ -1,3 +1,4 @@
+use either::Either;
 use snafu::{OptionExt as _, Snafu};
 
 use crate::{
@@ -110,11 +111,11 @@ impl PackageDbState {
 
     pub(in crate::db) fn entries_by_spec<'a>(
         &'a self,
-        pkg_spec: &'a PackageSpec,
-    ) -> Box<dyn Iterator<Item = PackageDbEntry<'a>> + 'a> {
+        pkg_spec: &PackageSpec,
+    ) -> impl Iterator<Item = PackageDbEntry<'a>> {
         match pkg_spec {
-            PackageSpec::Id(id) => Box::new(self.entry_by_id(id).into_iter()),
-            PackageSpec::Name(name) => Box::new(self.entries_by_name(name)),
+            PackageSpec::Id(id) => Either::Left(self.entry_by_id(id).into_iter()),
+            PackageSpec::Name(name) => Either::Right(self.entries_by_name(name)),
         }
     }
 
