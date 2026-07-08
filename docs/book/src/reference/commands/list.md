@@ -5,8 +5,16 @@ List packages recorded in the local package database.
 ## Usage
 
 ```text
-foton list [OPTIONS]
+foton list [OPTIONS] [<PACKAGE>...]
 ```
+
+## Arguments
+
+### `<PACKAGE>`
+
+Package names, optionally with an exact version as `<package-name>@<version>`.
+
+If not specified, show all packages in the local package database.
 
 ## Options
 

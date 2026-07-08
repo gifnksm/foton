@@ -1,4 +1,4 @@
-use std::io;
+use std::{collections::BTreeSet, io};
 
 use snafu::{ResultExt as _, Snafu};
 
@@ -11,7 +11,7 @@ use crate::{
             ScopeResultErrorExt as _, ScopeResultWarnExt as _,
         },
     },
-    db::PackageDbEntry,
+    db::{PackageDatabase, PackageDbEntry},
     engine,
     package::{
         ActivationState, InstallationState, PackageDefinition, PackageDirs, PackageFont, PackageId,
@@ -52,7 +52,7 @@ enum InfoWarnReport {
 enum InfoErrorReport {
     #[snafu(display("failed to create font inspector"))]
     CreateFontInspector { source: FontInspectorError },
-    #[snafu(display("no package matches the specified package `{pkg_spec}`"))]
+    #[snafu(display("no package matches `{pkg_spec}`"))]
     NoMatchingPackage { pkg_spec: PackageSpec },
     #[snafu(display("failed to write package info to stdout"))]
     WriteInfo { source: io::Error },
@@ -87,29 +87,37 @@ pub(crate) fn info_package(cx: &RootContext, args: &InfoArgs) -> Result<(), Info
     let mut db_lock_file = engine::open_db_lock_file(&cx)?;
     let db = engine::load_database(&cx, &mut db_lock_file)?;
 
+    let entries = collect_entries(&cx, &db, pkg_specs)?;
+
     let inspector = FontInspector::new()
         .context(CreateFontInspectorSnafu)
         .report_error(&cx)?;
 
-    let mut res = Ok(());
-    for pkg_spec in pkg_specs {
-        let mut entries = db.entries_by_spec(pkg_spec).peekable();
-        if entries.peek().is_none() {
-            res = Err(NoMatchingPackageSnafu { pkg_spec }
-                .build()
-                .report_error(&cx));
-            continue;
-        }
-
-        for entry in entries {
-            let info = load_package_info(&cx, &entry, &inspector)?;
-            render_package_info(io::stdout().lock(), &info, *include_files)
-                .context(WriteInfoSnafu)
-                .report_error(&cx)?;
-        }
+    for entry in entries {
+        let info = load_package_info(&cx, &entry, &inspector)?;
+        render_package_info(io::stdout().lock(), &info, *include_files)
+            .context(WriteInfoSnafu)
+            .report_error(&cx)?;
     }
 
-    res
+    Ok(())
+}
+
+fn collect_entries<'db>(
+    cx: &ReportContext<InfoScope>,
+    db: &'db PackageDatabase<'_>,
+    pkg_specs: &[PackageSpec],
+) -> Result<Vec<PackageDbEntry<'db>>, InfoError> {
+    let mut seen_pkg_id = BTreeSet::new();
+    let mut entries = vec![];
+    for pkg_spec in pkg_specs {
+        let mut pkgs = db.entries_by_spec(pkg_spec).peekable();
+        if pkgs.peek().is_none() {
+            return Err(NoMatchingPackageSnafu { pkg_spec }.build().report_error(cx));
+        }
+        entries.extend(pkgs.filter(|entry| seen_pkg_id.insert(entry.id().clone())));
+    }
+    Ok(entries)
 }
 
 #[derive(Debug)]

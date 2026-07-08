@@ -64,12 +64,9 @@ impl<'a> ScenarioContext<'a> {
         &self,
         pkg_spec: &str,
     ) -> eyre::Result<Vec<ListPackageEntry>> {
-        let managed_packages = self.query_all_managed_packages()?;
-        let entries = managed_packages
-            .into_iter()
-            .filter(|pkg| pkg.matches_spec(pkg_spec))
-            .collect();
-        Ok(entries)
+        self.exec_foton_with_args(["list", "--format", "jsonl", pkg_spec])?
+            .ensure_success()?
+            .deserialize_stdout_as_jsonl()
     }
 
     #[track_caller]

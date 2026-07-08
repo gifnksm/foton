@@ -159,15 +159,15 @@ impl ExecResult {
     }
 }
 
-pub(crate) fn contains_line_eq(target: &str) -> impl Fn(&str) -> bool + use<'_> {
+pub(crate) fn contains_line_eq(target: &str) -> impl Fn(&str) -> bool {
     move |s| s.lines().any(|line| line == target)
 }
 
-pub(crate) fn contains_line_starting_with(prefix: &str) -> impl Fn(&str) -> bool + use<'_> {
+pub(crate) fn contains_line_starting_with(prefix: &str) -> impl Fn(&str) -> bool {
     move |s| s.lines().any(|line| line.starts_with(prefix))
 }
 
-pub(crate) fn not_contains_line_starting_with(prefix: &str) -> impl Fn(&str) -> bool + use<'_> {
+pub(crate) fn not_contains_line_starting_with(prefix: &str) -> impl Fn(&str) -> bool {
     move |s| s.lines().all(|line| !line.starts_with(prefix))
 }
 

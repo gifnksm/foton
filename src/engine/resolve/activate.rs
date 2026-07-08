@@ -38,7 +38,7 @@ impl<S> SubReportScope<S> for ActivateResolveScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum ActivateResolveErrorReport {
-    #[snafu(display("no installed package matches the specified package `{pkg_spec}`"))]
+    #[snafu(display("no installed package matches `{pkg_spec}`"))]
     NoMatchingPackage { pkg_spec: PackageSpec },
     #[snafu(display(
         concat_line!(

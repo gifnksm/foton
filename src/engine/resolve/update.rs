@@ -43,7 +43,7 @@ impl<S> SubReportScope<S> for UpdateResolveScope<S> where S: ReportScope {}
 
 #[derive(Debug, Snafu)]
 enum UpdateResolveErrorReport {
-    #[snafu(display("no installed package matches the specified package `{pkg_spec}`"))]
+    #[snafu(display("no installed package matches `{pkg_spec}`"))]
     NoMatchingPackage { pkg_spec: PackageSpec },
     #[snafu(display("failed to find the latest package for `{name}` in registry `{reg_id}`"))]
     FindLatestPackage {
