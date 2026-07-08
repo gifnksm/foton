@@ -75,7 +75,7 @@ pub(crate) fn search_packages(cx: &RootContext, args: &SearchArgs) -> Result<(),
 
     let cx = SearchScope::start(cx);
 
-    let registries = engine::resolve_registries_by_id(&cx, registries.as_deref())?;
+    let registries = engine::resolve_registries(&cx, registries.as_deref())?;
     engine::ensure_non_empty_registries(&cx, &registries)?;
     let indexes = engine::fetch_registries(&cx, &registries)?;
 
@@ -176,8 +176,8 @@ impl Ord for ScoredPackage {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.score
             .cmp(&other.score)
-            .then_with(|| self.reg_id.cmp(&other.reg_id))
-            .then_with(|| self.definition.id.cmp(&other.definition.id))
+            .then_with(|| self.definition.id.cmp(&other.definition.id).reverse())
+            .then_with(|| self.reg_id.cmp(&other.reg_id).reverse())
     }
 }
 
@@ -276,6 +276,34 @@ mod tests {
         assert_eq!(
             results[0].definition.id.to_string(),
             "preview-font@1.0.0-rc-1"
+        );
+    }
+
+    #[test]
+    fn collect_search_results_keeps_best_matches_within_limit() {
+        let (registry_dir, registry) = testing::make_registry_index("foton");
+        testing::write_manifest(registry_dir.path(), "example-font-serif@1.0.0");
+        testing::write_manifest(registry_dir.path(), "example-font@1.0.0");
+        testing::write_manifest(registry_dir.path(), "another-example-font-a@1.0.0");
+        testing::write_manifest(registry_dir.path(), "another-example-font-b@1.0.0");
+        testing::write_manifest(registry_dir.path(), "another-example-font-c@1.0.0");
+
+        let results =
+            collect_search_results(&[registry], &make_matcher("example"), 4, false).unwrap();
+
+        assert_eq!(results.len(), 4);
+        assert_eq!(results[0].definition.id.to_string(), "example-font@1.0.0");
+        assert_eq!(
+            results[1].definition.id.to_string(),
+            "example-font-serif@1.0.0"
+        );
+        assert_eq!(
+            results[2].definition.id.to_string(),
+            "another-example-font-a@1.0.0"
+        );
+        assert_eq!(
+            results[3].definition.id.to_string(),
+            "another-example-font-b@1.0.0"
         );
     }
 }
