@@ -67,24 +67,32 @@ struct TempdirContext {
     cx: RootContext,
 }
 
+fn unique_app_id() -> String {
+    static TEST_ID: AtomicUsize = AtomicUsize::new(0);
+    format!(
+        "io.github.gifnksm.foton.test.{}.{}",
+        process::id(),
+        TEST_ID.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
+impl Default for TempdirContext {
+    fn default() -> Self {
+        Self::new(unique_app_id(), FotonConfig::default())
+    }
+}
+
 impl TempdirContext {
-    fn new() -> Self {
-        static TEST_ID: AtomicUsize = AtomicUsize::new(0);
-        let app_id = format!(
-            "io.github.gifnksm.foton.test.{}.{}",
-            process::id(),
-            TEST_ID.fetch_add(1, Ordering::Relaxed)
-        );
-        Self::with_app_id(app_id)
+    fn with_config(config: FotonConfig) -> Self {
+        Self::new(unique_app_id(), config)
     }
 
-    fn with_app_id<S>(app_id: S) -> Self
+    fn new<S>(app_id: S, config: FotonConfig) -> Self
     where
         S: Into<Arc<str>>,
     {
         let warnings_as_errors = false;
         let (tempdir, app_dirs) = make_app_dirs();
-        let config = FotonConfig::default();
         let reporter = RootReporter::message_reporter(warnings_as_errors);
         let cx = RootContext::new(
             app_id.into(),
@@ -338,7 +346,15 @@ pub(crate) fn with_root_context<F, T>(f: F) -> T
 where
     F: FnOnce(&RootContext) -> T,
 {
-    let cx = TempdirContext::new();
+    let cx = TempdirContext::default();
+    f(&cx)
+}
+
+pub(crate) fn with_configured_root_context<F, T>(config: FotonConfig, f: F) -> T
+where
+    F: FnOnce(&RootContext) -> T,
+{
+    let cx = TempdirContext::with_config(config);
     f(&cx)
 }
 
@@ -347,6 +363,16 @@ where
     F: FnOnce(&ReportContext<TestScope>) -> T,
 {
     with_root_context(|cx| {
+        let cx = TestScope::start(cx);
+        f(&cx)
+    })
+}
+
+pub(crate) fn with_configured_context<F, T>(config: FotonConfig, f: F) -> T
+where
+    F: FnOnce(&ReportContext<TestScope>) -> T,
+{
+    with_configured_root_context(config, |cx| {
         let cx = TestScope::start(cx);
         f(&cx)
     })

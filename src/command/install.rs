@@ -64,7 +64,7 @@ pub(crate) async fn install_package(
     );
 
     let targets = resolve_target_inputs(&cx, manifests, pkg_specs)?;
-    let registries = engine::resolve_registries_by_id(&cx, registries.as_deref())?;
+    let registries = engine::resolve_registries(&cx, registries.as_deref())?;
     let options = InstallResolveOptions {
         registries,
         include_pre_release,
