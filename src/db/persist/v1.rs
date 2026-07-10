@@ -34,6 +34,7 @@ pub(in crate::db::persist) mod types {
     };
 
     #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
     #[serde(deny_unknown_fields)]
     pub(in crate::db) struct PersistedPackageDb {
         pub(in crate::db::persist) packages: BTreeMap<PackageName, PersistedPackageVersionMap>,
@@ -46,6 +47,7 @@ pub(in crate::db::persist) mod types {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
     #[serde(deny_unknown_fields)]
     pub(in crate::db) struct PersistedPackageEntry {
         pub(in crate::db::persist) installation_state: PersistedInstallationState,
@@ -122,6 +124,7 @@ pub(in crate::db::persist) mod types {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
     #[serde(deny_unknown_fields)]
     pub(in crate::db::persist) struct PersistedPackageFont {
         pub(in crate::db::persist) file_name: FileName,

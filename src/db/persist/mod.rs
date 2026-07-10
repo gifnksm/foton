@@ -16,6 +16,7 @@ use crate::package::{
 pub(in crate::db) use self::latest::types::*;
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 struct Envelope {
     schema_version: u32,

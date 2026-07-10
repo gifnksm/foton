@@ -32,14 +32,12 @@ pub(super) fn run(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
     // ensure that subsequent installation from registry succeeds, and that the package is installed and active
     cx.exec_foton_with_args(["install", PKG_NAME])?
         .ensure_success()?;
-    cx.ensure_package_installed(PKG_NAME)?
+    cx.ensure_package_managed(PKG_NAME)?
+        .ensure_installation_state(|state| state.is_installed())?
         .ensure_activation_state(|state| state.is_active())?;
     cx.ensure_package_has_active_fonts(PKG_NAME)?;
 
-    cx.exec_foton_with_args(["uninstall", PKG_NAME])?
-        .ensure_success()?;
-    cx.ensure_package_not_managed(PKG_NAME)?;
-    cx.ensure_package_has_no_active_fonts(PKG_NAME)?;
+    cx.uninstall_package(PKG_NAME)?;
 
     Ok(())
 }

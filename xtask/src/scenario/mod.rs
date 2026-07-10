@@ -29,6 +29,7 @@ pub(crate) enum Scenario {
     UpdateLifecycle,
     ManifestValidation,
     InstallFailureCleanup,
+    RepairLifecycle,
 }
 
 #[derive(Debug)]

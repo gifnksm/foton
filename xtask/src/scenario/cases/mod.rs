@@ -5,6 +5,7 @@ use crate::scenario::{Scenario, ScenarioContext};
 mod install_activation_lifecycle;
 mod install_failure_cleanup;
 mod manifest_validation;
+mod repair_lifecycle;
 mod sanity_check;
 mod update_lifecycle;
 
@@ -15,5 +16,6 @@ pub(in crate::scenario) fn run(cx: &ScenarioContext<'_>, scenario: Scenario) -> 
         Scenario::UpdateLifecycle => update_lifecycle::run(cx),
         Scenario::ManifestValidation => manifest_validation::run(cx),
         Scenario::InstallFailureCleanup => install_failure_cleanup::run(cx),
+        Scenario::RepairLifecycle => repair_lifecycle::run(cx),
     }
 }

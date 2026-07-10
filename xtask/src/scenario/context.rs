@@ -108,7 +108,7 @@ impl<'a> ScenarioContext<'a> {
     }
 
     #[track_caller]
-    pub(in crate::scenario) fn ensure_package_installed(
+    pub(in crate::scenario) fn ensure_package_managed(
         &self,
         pkg_spec: &str,
     ) -> eyre::Result<ListPackageEntry> {
@@ -151,5 +151,39 @@ impl<'a> ScenarioContext<'a> {
             pkg_spec,
         );
         Ok(active_fonts)
+    }
+
+    #[track_caller]
+    pub(in crate::scenario) fn install_package(&self, pkg_spec: &str) -> eyre::Result<()> {
+        self.exec_foton_with_args(["install", pkg_spec])?
+            .ensure_success()?;
+        self.ensure_package_managed(pkg_spec)?
+            .ensure_installation_state(|state| state.is_installed())?
+            .ensure_activation_state(|state| state.is_active())?;
+        self.ensure_package_has_active_fonts(pkg_spec)?;
+        Ok(())
+    }
+
+    #[track_caller]
+    pub(in crate::scenario) fn install_package_no_activation(
+        &self,
+        pkg_spec: &str,
+    ) -> eyre::Result<()> {
+        self.exec_foton_with_args(["install", "--no-activate", pkg_spec])?
+            .ensure_success()?;
+        self.ensure_package_managed(pkg_spec)?
+            .ensure_installation_state(|state| state.is_installed())?
+            .ensure_activation_state(|state| state.is_inactive())?;
+        self.ensure_package_has_no_active_fonts(pkg_spec)?;
+        Ok(())
+    }
+
+    #[track_caller]
+    pub(in crate::scenario) fn uninstall_package(&self, pkg_spec: &str) -> eyre::Result<()> {
+        self.exec_foton_with_args(["uninstall", pkg_spec])?
+            .ensure_success()?;
+        self.ensure_package_not_managed(pkg_spec)?;
+        self.ensure_package_has_no_active_fonts(pkg_spec)?;
+        Ok(())
     }
 }

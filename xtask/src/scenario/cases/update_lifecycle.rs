@@ -13,7 +13,8 @@ pub(super) fn run(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
     cx.exec_foton_with_args(["install", OLD_PKG_ID])?
         .ensure_success()?;
 
-    cx.ensure_package_installed(OLD_PKG_ID)?
+    cx.ensure_package_managed(OLD_PKG_ID)?
+        .ensure_installation_state(|state| state.is_installed())?
         .ensure_activation_state(|state| state.is_active())?;
     let active_fonts = cx.ensure_package_has_active_fonts(OLD_PKG_ID)?;
     ensure!(
@@ -68,12 +69,8 @@ pub(super) fn run(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
     }
 
     let new_pkg_version = new_pkg_version.unwrap();
-    cx.exec_foton_with_args([
-        "uninstall",
-        &format!("{PKG_NAME}@{OLD_PKG_VERSION}"),
-        &format!("{PKG_NAME}@{new_pkg_version}"),
-    ])?
-    .ensure_success()?;
+    cx.uninstall_package(&format!("{PKG_NAME}@{OLD_PKG_VERSION}"))?;
+    cx.uninstall_package(&format!("{PKG_NAME}@{new_pkg_version}"))?;
 
     Ok(())
 }
