@@ -18,7 +18,8 @@ fn implicit_activation(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
     for _ in 0..2 {
         cx.exec_foton_with_args(["install", PKG_NAME])?
             .ensure_success()?;
-        cx.ensure_package_installed(PKG_NAME)?
+        cx.ensure_package_managed(PKG_NAME)?
+            .ensure_installation_state(|state| state.is_installed())?
             .ensure_activation_state(|state| state.is_active())?;
         cx.ensure_package_has_active_fonts(PKG_NAME)?;
     }
@@ -49,7 +50,8 @@ fn explicit_activation(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
         cx.exec_foton_with_args(["install", "--no-activate", PKG_NAME])?
             .ensure_success()?;
 
-        cx.ensure_package_installed(PKG_NAME)?
+        cx.ensure_package_managed(PKG_NAME)?
+            .ensure_installation_state(|state| state.is_installed())?
             .ensure_activation_state(|state| state.is_inactive())?;
         cx.ensure_package_has_no_active_fonts(PKG_NAME)?;
     }
@@ -59,7 +61,8 @@ fn explicit_activation(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
         cx.exec_foton_with_args(["activate", PKG_NAME])?
             .ensure_success()?;
 
-        cx.ensure_package_installed(PKG_NAME)?
+        cx.ensure_package_managed(PKG_NAME)?
+            .ensure_installation_state(|state| state.is_installed())?
             .ensure_activation_state(|state| state.is_active())?;
         cx.ensure_package_has_active_fonts(PKG_NAME)?;
     }
@@ -75,7 +78,8 @@ fn explicit_activation(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
         cx.exec_foton_with_args(["deactivate", PKG_NAME])?
             .ensure_success()?;
 
-        cx.ensure_package_installed(PKG_NAME)?
+        cx.ensure_package_managed(PKG_NAME)?
+            .ensure_installation_state(|state| state.is_installed())?
             .ensure_activation_state(|state| state.is_inactive())?;
         cx.ensure_package_has_no_active_fonts(PKG_NAME)?;
     }

@@ -1,7 +1,32 @@
-use std::env;
+use std::{env, sync::LazyLock};
 
 use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use color_eyre::eyre::{self, OptionExt as _, WrapErr as _, eyre};
+use directories::ProjectDirs;
+
+const APP_QUALIFIER: &str = "";
+const APP_ORGANIZATION: &str = "io.github.gifnksm";
+const APP_APPLICATION: &str = "foton";
+
+static FOTON_PROJECT_DIRS: LazyLock<Option<ProjectDirs>> =
+    LazyLock::new(|| ProjectDirs::from(APP_QUALIFIER, APP_ORGANIZATION, APP_APPLICATION));
+
+pub(crate) fn foton_data_dir() -> eyre::Result<&'static Utf8Path> {
+    let data_local_dir = FOTON_PROJECT_DIRS
+        .as_ref()
+        .ok_or_eyre("failed to get FOTON project directories")?
+        .data_local_dir();
+    data_local_dir.try_into().wrap_err_with(|| {
+        format!(
+            "invalid UTF-8 path for FOTON data directory: {}",
+            data_local_dir.display()
+        )
+    })
+}
+
+pub(crate) fn foton_db_path() -> eyre::Result<Utf8PathBuf> {
+    Ok(foton_data_dir()?.join("db.json"))
+}
 
 pub(crate) fn path_from_env(var: &str) -> eyre::Result<Option<Utf8PathBuf>> {
     let Some(path) = env::var_os(var) else {
