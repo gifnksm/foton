@@ -321,6 +321,7 @@ jobs:
           fail_ci_if_error: false
 
   actionlint:
+    name: Actionlint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
