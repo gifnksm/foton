@@ -25,6 +25,15 @@ where
     File::open(path).wrap_err_with(|| format!("failed to open {name}: {path}"))
 }
 
+pub(crate) fn remove_file<N, P>(name: N, path: P) -> eyre::Result<()>
+where
+    N: Display,
+    P: AsRef<Utf8Path>,
+{
+    let path = path.as_ref();
+    fs::remove_file(path).wrap_err_with(|| format!("failed to remove {name}: {path}"))
+}
+
 pub(crate) fn create_dir_all<N, P>(name: N, path: P) -> eyre::Result<()>
 where
     N: Display,

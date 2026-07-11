@@ -82,12 +82,17 @@ pub(in crate::command) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()
             );
 
             let run_id = RunId::new();
-            let (_tempdir_guard, params) = build_scenario_parameters(args)?;
+            let params = build_scenario_parameters(args)?;
+            let (_tempdir_guard, output_dir) = build_output_dir(args)?;
 
-            let (res, report) = RunReport::capture(run_id, RunKind::Scenario(*scenario), |cx| {
-                scenario::run(cx, *scenario, &params)
-            });
-            report.print_summary();
+            let (res, report) =
+                RunReport::capture(run_id, RunKind::Scenario(*scenario), &output_dir, |cx| {
+                    scenario::run(cx, *scenario, &params)
+                });
+            eprintln!("Scenario Run Summary:");
+            for line in report.to_string().lines() {
+                eprintln!("  {line}");
+            }
             res
         }
         ScenarioCommand::List { json } => {
@@ -104,24 +109,10 @@ pub(in crate::command) fn dispatch(command: &ScenarioCommand) -> eyre::Result<()
     }
 }
 
-fn build_scenario_parameters(
-    args: &RunArgs,
-) -> eyre::Result<(Option<TempDir>, ScenarioParameters)> {
-    let RunArgs {
-        foton_exe,
-        fixture_dir,
-        output_dir,
-    } = args;
-
-    let foton_exe = if let Some(path) = foton_exe {
-        path.to_owned()
-    } else {
-        build::build_foton_exe()?
-    };
-
-    let (tempdir_guard, output_dir) = if let Some(path) = output_dir {
+fn build_output_dir(args: &RunArgs) -> eyre::Result<(Option<TempDir>, Utf8PathBuf)> {
+    if let Some(path) = &args.output_dir {
         fs_util::create_dir_all("output directory", path)?;
-        (None, path.to_owned())
+        Ok((None, path.to_owned()))
     } else {
         let tempdir = TempDir::new().wrap_err("failed to create temporary output directory")?;
         let path = Utf8PathBuf::from_path_buf(tempdir.path().to_owned()).map_err(|path| {
@@ -130,21 +121,25 @@ fn build_scenario_parameters(
                 path.display()
             )
         })?;
-        (Some(tempdir), path)
+        Ok((Some(tempdir), path))
+    }
+}
+
+fn build_scenario_parameters(args: &RunArgs) -> eyre::Result<ScenarioParameters> {
+    let foton_exe = if let Some(path) = &args.foton_exe {
+        path.to_owned()
+    } else {
+        build::build_foton_exe()?
     };
 
-    let fixture_dir = if let Some(path) = fixture_dir {
+    let fixture_dir = if let Some(path) = &args.fixture_dir {
         path.to_owned()
     } else {
         env_util::fixture_dir()?
     };
 
-    Ok((
-        tempdir_guard,
-        ScenarioParameters {
-            foton_exe,
-            fixture_dir,
-            output_dir,
-        },
-    ))
+    Ok(ScenarioParameters {
+        foton_exe,
+        fixture_dir,
+    })
 }

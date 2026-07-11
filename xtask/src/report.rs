@@ -3,16 +3,24 @@ use std::{
     fmt::{self, Display},
     mem,
     panic::{self, PanicHookInfo, UnwindSafe},
-    process,
-    sync::{Arc, LazyLock, Mutex},
+    process::{self, Command},
+    sync::{
+        Arc, LazyLock, Mutex,
+        atomic::{AtomicU32, Ordering},
+    },
     thread::{self, Thread, ThreadId},
+    time::Duration,
 };
 
+use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use chrono::{DateTime, Utc};
 use color_eyre::eyre::{self, WrapErr as _, ensure};
 use serde::{Deserialize, Serialize};
 
-use crate::scenario::Scenario;
+use crate::{
+    scenario::Scenario,
+    util::{fs as fs_util, process as process_util},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct RunId {
@@ -79,13 +87,51 @@ impl From<&eyre::Result<()>> for RunOutcome {
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct ExecResult {
     pub(crate) timestamp: DateTime<Utc>,
+    pub(crate) duration: Duration,
     pub(crate) caller: String,
-    pub(crate) name: String,
+    pub(crate) program: String,
     pub(crate) arguments: Vec<String>,
     pub(crate) success: bool,
     pub(crate) exit_status: String,
     pub(crate) stdout: String,
     pub(crate) stderr: String,
+}
+
+impl Display for ExecResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            timestamp,
+            duration,
+            caller,
+            program,
+            arguments,
+            success,
+            exit_status,
+            stdout,
+            stderr,
+        } = self;
+
+        writeln!(f, "Timestamp: {timestamp}")?;
+        writeln!(f, "Duration: {duration:?}")?;
+        writeln!(f, "Caller: {caller}")?;
+        writeln!(f, "Program: {program}")?;
+        writeln!(f, "Arguments: {arguments:?}")?;
+        writeln!(f, "Success: {success}")?;
+        writeln!(f, "Exit Status: {exit_status}")?;
+        writeln!(f, "Stdout: ({} bytes)", stdout.len())?;
+        if !stdout.is_empty() {
+            for line in stdout.lines() {
+                writeln!(f, "  {line}")?;
+            }
+        }
+        writeln!(f, "Stderr: ({} bytes)", stderr.len())?;
+        if !stderr.is_empty() {
+            for line in stderr.lines() {
+                writeln!(f, "  {line}")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl ExecResult {
@@ -94,7 +140,7 @@ impl ExecResult {
         ensure!(
             self.success,
             "{} failed with exit status {}. stderr:\n{}",
-            self.name,
+            self.program,
             self.exit_status,
             self.stderr
         );
@@ -106,7 +152,7 @@ impl ExecResult {
         ensure!(
             self.exit_status == format!("exit code: {code}"),
             "{} failed with exit status {}. stderr:\n{}",
-            self.name,
+            self.program,
             self.exit_status,
             self.stderr
         );
@@ -121,7 +167,7 @@ impl ExecResult {
         ensure!(
             predicate(&self.stdout),
             "{} stdout did not satisfy the expected condition. stdout:\n{}",
-            self.name,
+            self.program,
             self.stdout
         );
         Ok(self)
@@ -135,7 +181,7 @@ impl ExecResult {
         ensure!(
             predicate(&self.stderr),
             "{} stderr did not satisfy the expected condition. stderr:\n{}",
-            self.name,
+            self.program,
             self.stderr
         );
         Ok(self)
@@ -153,7 +199,7 @@ impl ExecResult {
             .wrap_err_with(|| {
                 format!(
                     "{} stdout is not valid JSONL. stdout:\n{}",
-                    self.name, self.stdout
+                    self.program, self.stdout
                 )
             })
     }
@@ -190,16 +236,42 @@ pub(crate) fn not_contains_warning_line(stderr: &str) -> bool {
     not_contains_line_starting_with(WARNING_PREFIX)(stderr)
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct ReportContext {
+    report_seq: u32,
+    output_dir: Utf8PathBuf,
+    exec_seq: AtomicU32,
     exec_results: Arc<Mutex<Vec<Arc<ExecResult>>>>,
 }
 
 impl ReportContext {
-    pub(crate) fn push_exec_result(&self, exec_result: ExecResult) -> Arc<ExecResult> {
-        let result = Arc::new(exec_result);
-        self.exec_results.lock().unwrap().push(Arc::clone(&result));
-        result
+    fn new(output_base_dir: &Utf8Path) -> Self {
+        static REPORT_SEQ: AtomicU32 = AtomicU32::new(0);
+        let report_seq = REPORT_SEQ.fetch_add(1, Ordering::Relaxed);
+        let output_dir = output_base_dir.join(format!("report.{report_seq}"));
+        Self {
+            report_seq,
+            output_dir,
+            exec_seq: AtomicU32::new(0),
+            exec_results: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    #[track_caller]
+    pub(crate) fn exec_command(&self, cmd: &mut Command) -> eyre::Result<Arc<ExecResult>> {
+        fs_util::create_dir_all(
+            format_args!("report #{} output directory", self.report_seq),
+            &self.output_dir,
+        )?;
+
+        let exec_seq = self.exec_seq.fetch_add(1, Ordering::Relaxed);
+        let exec_result = process_util::exec_command(exec_seq, &self.output_dir, cmd)?;
+        let exec_result = Arc::new(exec_result);
+        self.exec_results
+            .lock()
+            .unwrap()
+            .push(Arc::clone(&exec_result));
+        Ok(exec_result)
     }
 }
 
@@ -211,12 +283,47 @@ pub(crate) struct RunReport {
     pub(crate) exec_results: Vec<Arc<ExecResult>>,
 }
 
+impl Display for RunReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            id,
+            kind,
+            outcome,
+            exec_results,
+        } = self;
+        writeln!(f, "Run ID: {id}")?;
+        writeln!(f, "Run Kind: {kind}")?;
+        for (i, res) in exec_results.iter().enumerate() {
+            writeln!(f, "Exec Result #{i}:")?;
+            for line in res.to_string().lines() {
+                writeln!(f, "  {line}")?;
+            }
+        }
+        match outcome {
+            RunOutcome::Success => writeln!(f, "Result: Success")?,
+            RunOutcome::Failure { error } => {
+                writeln!(f, "Result: Failure")?;
+                writeln!(f, "Error:")?;
+                for line in error.lines().skip_while(|line| line.trim().is_empty()) {
+                    writeln!(f, "  {line}")?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 impl RunReport {
-    pub(crate) fn capture<F>(id: RunId, kind: RunKind, f: F) -> (eyre::Result<()>, Self)
+    pub(crate) fn capture<F>(
+        id: RunId,
+        kind: RunKind,
+        output_base_dir: &Utf8Path,
+        f: F,
+    ) -> (eyre::Result<()>, Self)
     where
         F: FnOnce(&ReportContext) -> eyre::Result<()> + UnwindSafe,
     {
-        let cx = ReportContext::default();
+        let cx = ReportContext::new(output_base_dir);
         let res = run_with_panic_capture(|| f(&cx));
         let exec_results = mem::take(&mut *cx.exec_results.lock().unwrap());
         let report = Self {
@@ -230,44 +337,6 @@ impl RunReport {
 
     pub(crate) fn is_success(&self) -> bool {
         self.outcome.is_success()
-    }
-
-    pub(crate) fn print_summary(&self) {
-        eprintln!("Run Summary:");
-        eprintln!("  Run ID: {}", self.id);
-        eprintln!("  Run Kind: {}", self.kind);
-
-        for (i, res) in self.exec_results.iter().enumerate() {
-            eprintln!();
-            eprintln!("  Exec #{i}: {}", res.name);
-            eprintln!("    Timestamp: {}", res.timestamp);
-            eprintln!("    Caller: {}", res.caller);
-            eprintln!("    Arguments: {:?}", res.arguments);
-            eprintln!("    Exit Status: {}", res.exit_status);
-            eprintln!("    Stdout: ({} bytes)", res.stdout.len());
-            if !res.stdout.is_empty() {
-                for line in res.stdout.lines() {
-                    eprintln!("      {line}");
-                }
-            }
-            eprintln!("    Stderr: ({} bytes)", res.stderr.len());
-            if !res.stderr.is_empty() {
-                for line in res.stderr.lines() {
-                    eprintln!("      {line}");
-                }
-            }
-        }
-
-        match &self.outcome {
-            RunOutcome::Success => eprintln!("  Result: Success"),
-            RunOutcome::Failure { error } => {
-                eprintln!("  Result: Failure");
-                eprintln!("  Error:");
-                for line in error.lines().skip_while(|line| line.trim().is_empty()) {
-                    eprintln!("    {line}");
-                }
-            }
-        }
     }
 }
 

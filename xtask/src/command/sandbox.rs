@@ -166,7 +166,10 @@ fn run(kind: RunKind, timeout: Duration) -> eyre::Result<()> {
     sandbox.stop()?;
 
     let report: RunReport = fs_util::read_json("report", &host_paths.report_json)?;
-    report.print_summary();
+    eprintln!("Sandbox Run Summary:");
+    for line in report.to_string().lines() {
+        eprintln!("  {line}");
+    }
     ensure!(report.is_success(), "run in sandbox failed");
 
     Ok(())

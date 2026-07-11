@@ -1,64 +1,60 @@
-use std::{
-    panic::Location,
-    process::Command,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-};
+use std::{fmt::Display, panic::Location, process::Command, time::Instant};
 
 use cargo_metadata::camino::Utf8Path;
 use chrono::Utc;
 use color_eyre::eyre::{self, WrapErr as _};
 
-use crate::{
-    report::{ExecResult, ReportContext},
-    util::fs as fs_util,
-};
+use crate::{report::ExecResult, util::fs as fs_util};
 
 #[track_caller]
-pub(crate) fn exec_command<S>(
-    cx: &ReportContext,
-    name: S,
+pub(crate) fn exec_command<N>(
+    id: N,
     output_dir: &Utf8Path,
     cmd: &mut Command,
-) -> eyre::Result<Arc<ExecResult>>
+) -> eyre::Result<ExecResult>
 where
-    S: Into<String>,
+    N: Display,
 {
-    static EXEC_COUNTER: AtomicUsize = AtomicUsize::new(0);
+    struct PrettyId<'a, 'b, N>(&'a Command, &'b N);
+    impl<N> Display for PrettyId<'_, '_, N>
+    where
+        N: Display,
+    {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{} (exec #{})", self.0.get_program().display(), self.1)
+        }
+    }
 
-    let name = name.into();
+    let summary_path = output_dir.join(format!("{id}.summary.txt"));
+    let stdout_path = output_dir.join(format!(".{id}.stdout.txt"));
+    let stderr_path = output_dir.join(format!(".{id}.stderr.txt"));
 
-    let id = EXEC_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let file_prefix = format_args!("{id}.{name}");
+    let stdout_file =
+        fs_util::create_file(format_args!("{} stdout", PrettyId(cmd, &id)), &stdout_path)?;
+    let stderr_file =
+        fs_util::create_file(format_args!("{} stderr", PrettyId(cmd, &id)), &stderr_path)?;
 
-    let stdout_path = output_dir.join(format!("{file_prefix}.stdout.txt"));
-    let stderr_path = output_dir.join(format!("{file_prefix}.stderr.txt"));
-    let status_path = output_dir.join(format!("{file_prefix}.status.txt"));
-
-    let stdout_file = fs_util::create_file(format_args!("{name} stdout"), &stdout_path)?;
-    let stderr_file = fs_util::create_file(format_args!("{name} stderr"), &stderr_path)?;
+    let timestamp = Utc::now();
+    let start_time = Instant::now();
 
     let status = cmd
         .stdout(stdout_file)
         .stderr(stderr_file)
         .status()
-        .wrap_err_with(|| format!("failed to execute {name} (exec #{id})"))?;
+        .wrap_err_with(|| format!("failed to execute {}", PrettyId(cmd, &id)))?;
 
-    let stdout = fs_util::read_to_string(format_args!("{name} stdout"), &stdout_path)?;
-    let stderr = fs_util::read_to_string(format_args!("{name} stderr"), &stderr_path)?;
+    let duration = start_time.elapsed();
 
-    fs_util::write(
-        format_args!("{name} status"),
-        &status_path,
-        status.to_string(),
-    )?;
+    let stdout =
+        fs_util::read_to_string(format_args!("{} stdout", PrettyId(cmd, &id)), &stdout_path)?;
+    let stderr =
+        fs_util::read_to_string(format_args!("{} stderr", PrettyId(cmd, &id)), &stderr_path)?;
 
-    let res = ExecResult {
-        timestamp: Utc::now(),
+    let exec_result = ExecResult {
+        timestamp,
+        duration,
         caller: Location::caller().to_string(),
-        name,
+        program: cmd.get_program().display().to_string(),
         arguments: cmd
             .get_args()
             .map(|arg| arg.display().to_string())
@@ -69,5 +65,14 @@ where
         stderr,
     };
 
-    Ok(cx.push_exec_result(res))
+    fs_util::write(
+        format_args!("{} summary", PrettyId(cmd, &id)),
+        &summary_path,
+        exec_result.to_string(),
+    )?;
+
+    let _ = fs_util::remove_file(format_args!("{} stdout", PrettyId(cmd, &id)), &stdout_path);
+    let _ = fs_util::remove_file(format_args!("{} stderr", PrettyId(cmd, &id)), &stderr_path);
+
+    Ok(exec_result)
 }

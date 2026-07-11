@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
+use cargo_metadata::camino::Utf8PathBuf;
 use color_eyre::eyre::{self, WrapErr as _, bail, ensure};
 
 use crate::{
@@ -74,30 +74,20 @@ fn dispatch_parent(args: &BootstrapArgs, config: &SandboxBootstrapConfig) -> eyr
 
     fs_util::create_dir_all("output directory", &config.output_dir)?;
 
-    let stdout_path = config.output_dir.join("bootstrap.stdout.txt");
-    let stderr_path = config.output_dir.join("bootstrap.stderr.txt");
-    let status_path = config.output_dir.join("bootstrap.status.txt");
-
-    let stdout_file = fs_util::create_file("bootstrap stdout", &stdout_path)?;
-    let stderr_file = fs_util::create_file("bootstrap stderr", &stderr_path)?;
-
     let mut cmd = Command::new(&config.xtask_exe);
-    let status = cmd
-        .arg("bootstrap")
+    cmd.arg("bootstrap")
         .arg("--launched-inside-sandbox")
         .arg("--run-as-child-process")
         .arg("--config")
         .arg(&args.config)
-        .envs(config.envs.iter().map(|(k, v)| (k, v)))
-        .stdout(stdout_file)
-        .stderr(stderr_file)
-        .status()
-        .wrap_err("failed to spawn or wait for bootstrap process")?;
+        .envs(config.envs.iter().map(|(k, v)| (k, v)));
+    let exec_result = process_util::exec_command("bootstrap", &config.output_dir, &mut cmd)?;
 
-    fs_util::write("bootstrap status", &status_path, status.to_string())?;
-
-    if !status.success() {
-        bail!("bootstrap child process failed with status {status}");
+    if !exec_result.success {
+        bail!(
+            "bootstrap child process failed with status {}",
+            exec_result.exit_status
+        );
     }
 
     Ok(())
@@ -112,8 +102,8 @@ fn dispatch_child(config: &SandboxBootstrapConfig) -> eyre::Result<()> {
             report_json,
         } => (
             report_json,
-            RunReport::capture(config.run_id, kind, |cx| {
-                run_test(cx, test_exes, &config.output_dir)
+            RunReport::capture(config.run_id, kind, &config.output_dir, |cx| {
+                run_test(cx, test_exes)
             }),
         ),
         SandboxAction::RunScenario {
@@ -121,7 +111,7 @@ fn dispatch_child(config: &SandboxBootstrapConfig) -> eyre::Result<()> {
             report_json,
         } => (
             report_json,
-            RunReport::capture(config.run_id, kind, |cx| {
+            RunReport::capture(config.run_id, kind, &config.output_dir, |cx| {
                 let params = build_scenario_parameters(config);
                 scenario::run(cx, *scenario, &params)
             }),
@@ -131,15 +121,10 @@ fn dispatch_child(config: &SandboxBootstrapConfig) -> eyre::Result<()> {
     res
 }
 
-fn run_test(
-    cx: &ReportContext,
-    test_exes: &[Utf8PathBuf],
-    output_dir: &Utf8Path,
-) -> eyre::Result<()> {
+fn run_test(cx: &ReportContext, test_exes: &[Utf8PathBuf]) -> eyre::Result<()> {
     for test_exe in test_exes {
         let mut cmd = Command::new(test_exe);
-        let name = test_exe.file_stem().unwrap_or("test");
-        let res = process_util::exec_command(cx, name, output_dir, &mut cmd)?;
+        let res = cx.exec_command(&mut cmd)?;
         if !res.success {
             bail!(
                 "test executable `{test_exe}` failed with status {}",
@@ -154,6 +139,5 @@ fn build_scenario_parameters(config: &SandboxBootstrapConfig) -> ScenarioParamet
     ScenarioParameters {
         foton_exe: config.foton_exe.clone(),
         fixture_dir: config.fixture_dir.clone(),
-        output_dir: config.output_dir.clone(),
     }
 }
