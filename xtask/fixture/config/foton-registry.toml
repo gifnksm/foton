@@ -1,0 +1,3 @@
+[registries.foton]
+source = "local+__FIXTURE_DIR__/registry/foton-registry"
+enabled = true

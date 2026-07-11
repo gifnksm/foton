@@ -3,10 +3,11 @@ use serde_json::{Map, Value};
 
 use crate::{scenario::ScenarioContext, util::env as env_util, util::fs as fs_util};
 
-const INSTALLED_PKG_NAME: &str = "hackgen";
-const ACTIVE_PKG_NAME: &str = "hackgen-nf";
+const INSTALLED_PKG_NAME: &str = "tom-thumb";
+const ACTIVE_PKG_NAME: &str = "tom-thumb-monospace";
 
 pub(super) fn run(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
+    cx.install_fixture_config("foton-registry")?;
     setup_package(cx)?;
     create_broken_incomplete_packages(cx)?;
 

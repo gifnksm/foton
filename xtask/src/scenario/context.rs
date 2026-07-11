@@ -8,6 +8,7 @@ use crate::{
         ScenarioParameters,
         model::{ListFontEntry, ListPackageEntry},
     },
+    util::{env as env_util, fs as fs_util},
 };
 
 #[derive(Debug)]
@@ -23,6 +24,22 @@ impl<'a> ScenarioContext<'a> {
 
     pub(in crate::scenario) fn params(&self) -> &'a ScenarioParameters {
         self.params
+    }
+
+    pub(in crate::scenario) fn install_fixture_config(&self, name: &str) -> eyre::Result<()> {
+        let src_path = self
+            .params
+            .fixture_dir
+            .join("config")
+            .join(format!("{name}.toml"));
+        let content = fs_util::read_to_string(format_args!("config {name}"), &src_path)?.replace(
+            "__FIXTURE_DIR__",
+            &self.params.fixture_dir.as_str().replace('\\', "/"),
+        );
+        fs_util::create_dir_all("FOTON config directory", env_util::foton_config_dir()?)?;
+        let dst_path = env_util::foton_config_path()?;
+        fs_util::write(format_args!("config {name}"), &dst_path, &content)?;
+        Ok(())
     }
 
     #[track_caller]
@@ -120,6 +137,12 @@ impl<'a> ScenarioContext<'a> {
             managed_packages.len(),
         );
         let pkg = managed_packages.pop().unwrap();
+        ensure!(
+            pkg.matches_spec(pkg_spec),
+            "expected managed package matching `{}`, found `{}`",
+            pkg_spec,
+            pkg.pkg_id
+        );
         Ok(pkg)
     }
 

@@ -1,0 +1,12 @@
+name = "tom-thumb-monospace"
+version = "2023.02.25"
+description = "A very tiny, monospace, bitmap font"
+repository = "https://github.com/gheja/tom-thumb-ttf"
+license = "CC0-1.0 OR CC-BY-3.0"
+
+[[sources]]
+url = "https://github.com/gheja/tom-thumb-ttf/raw/0451feafbc3dd09ffe142b52b5719cfd5f98c10a/Tom%20Thumb%20Monospace.ttf"
+hash = "sha256:a413040226cfab1a5158065cc6636021ef081a3b69442347bee6fe4f5132c2a9"
+
+[sources.contents]
+type = "font-file"

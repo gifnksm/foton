@@ -43,28 +43,8 @@ pub(in crate::scenario) struct ListPackageEntry {
 }
 
 impl ListPackageEntry {
-    pub(in crate::scenario) fn version(&self) -> &str {
-        let (_name, version) = self.pkg_id.split_once('@').unwrap();
-        version
-    }
-
     pub(in crate::scenario) fn matches_spec(&self, spec: &str) -> bool {
         pkg_id_matches_spec(&self.pkg_id, spec)
-    }
-
-    #[track_caller]
-    pub(in crate::scenario) fn ensure_version<P>(&self, predicate: P) -> eyre::Result<&Self>
-    where
-        P: FnOnce(&str) -> bool,
-    {
-        let version = self.version();
-        ensure!(
-            predicate(version),
-            "unexpected package version for `{}`: `{}`",
-            self.pkg_id,
-            version,
-        );
-        Ok(self)
     }
 
     #[track_caller]
