@@ -2,6 +2,7 @@ use color_eyre::eyre;
 
 use crate::scenario::{Scenario, ScenarioContext};
 
+mod default_registry_install;
 mod install_activation_lifecycle;
 mod install_failure_cleanup;
 mod manifest_validation;
@@ -17,5 +18,6 @@ pub(in crate::scenario) fn run(cx: &ScenarioContext<'_>, scenario: Scenario) -> 
         Scenario::ManifestValidation => manifest_validation::run(cx),
         Scenario::InstallFailureCleanup => install_failure_cleanup::run(cx),
         Scenario::RepairLifecycle => repair_lifecycle::run(cx),
+        Scenario::DefaultRegistryInstall => default_registry_install::run(cx),
     }
 }
