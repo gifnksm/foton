@@ -36,7 +36,7 @@ impl<'a> ScenarioContext<'a> {
             "__FIXTURE_DIR__",
             &self.params.fixture_dir.as_str().replace('\\', "/"),
         );
-        fs_util::create_dir_all("FOTON config directory", env_util::foton_config_dir()?)?;
+        fs_util::create_dir_all("foton config directory", env_util::foton_config_dir()?)?;
         let dst_path = env_util::foton_config_path()?;
         fs_util::write(format_args!("config {name}"), &dst_path, &content)?;
         Ok(())

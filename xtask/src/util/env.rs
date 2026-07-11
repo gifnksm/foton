@@ -14,14 +14,14 @@ pub(crate) fn foton_project_dirs() -> eyre::Result<&'static ProjectDirs> {
 
     FOTON_PROJECT_DIRS
         .as_ref()
-        .ok_or_eyre("failed to get FOTON project directories")
+        .ok_or_eyre("failed to get foton project directories")
 }
 
 pub(crate) fn foton_data_dir() -> eyre::Result<&'static Utf8Path> {
     let data_local_dir = foton_project_dirs()?.data_local_dir();
     data_local_dir.try_into().wrap_err_with(|| {
         format!(
-            "invalid UTF-8 path for FOTON data directory: {}",
+            "invalid UTF-8 path for foton data directory: {}",
             data_local_dir.display()
         )
     })
@@ -35,7 +35,7 @@ pub(crate) fn foton_config_dir() -> eyre::Result<&'static Utf8Path> {
     let config_dir = foton_project_dirs()?.config_dir();
     config_dir.try_into().wrap_err_with(|| {
         format!(
-            "invalid UTF-8 path for FOTON config directory: {}",
+            "invalid UTF-8 path for foton config directory: {}",
             config_dir.display()
         )
     })
