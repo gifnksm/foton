@@ -4,7 +4,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use snafu::{OptionExt as _, ResultExt as _, Snafu};
+use snafu::{IntoError as _, OptionExt as _, ResultExt as _, Snafu};
+use url::Url;
 
 use crate::{
     cli::{
@@ -59,6 +60,54 @@ enum CheckManifestWarnReport {
     MissingLicense,
     #[snafu(display("`description` field is missing in manifest"))]
     MissingDescription,
+    #[snafu(display(
+        concat_line!(
+            "`description` field is empty",
+            "provide an appropriate description for the package in the manifest",
+        )
+    ))]
+    EmptyDescription,
+    #[snafu(display(
+        concat_line!(
+            "`description` field contains leading or trailing whitespace: {description:?}",
+            "ensure the description is a non-empty string without leading or trailing whitespace",
+        ),
+        description = description,
+    ))]
+    DescriptionWithSurroundingWhitespace { description: String },
+    #[snafu(display(
+        concat_line!(
+            "`{field}` field is not a valid URL: {url}",
+            "ensure the URL is valid and properly formatted",
+        ),
+        field = field,
+        url = url,
+    ))]
+    InvalidUrl {
+        field: String,
+        url: String,
+        source: url::ParseError,
+    },
+    #[snafu(display(
+        concat_line!(
+            "`{field}` field uses a non-HTTP/HTTPS URL: {url}",
+            "ensure the URL uses the `http` or `https` scheme",
+        ),
+        field = field,
+        url = url,
+    ))]
+    NonHttpUrl { field: String, url: Url },
+    #[snafu(display(
+        concat_line!(
+            "`license` field is not a valid SPDX expression: {license}",
+            "ensure the license is a valid SPDX expression",
+        ),
+        license = license,
+    ))]
+    InvalidLicense {
+        license: String,
+        source: spdx::ParseError,
+    },
     #[snafu(display(
         concat_line!(
             "`homepage` and `repository` fields have the same URL: {url}",
@@ -351,6 +400,7 @@ fn find_manifest_relative_path_from_detected_registry_root(
 
 fn check_fields(pkg: &PackageDefinition, reports: &mut Vec<CheckManifestWarnReport>) {
     check_missing_fields(pkg, reports);
+    check_field_values(pkg, reports);
     check_homepage_and_repository_url(pkg, reports);
 }
 
@@ -370,6 +420,41 @@ fn check_missing_fields(pkg: &PackageDefinition, reports: &mut Vec<CheckManifest
     }
     if pkg.description.is_none() {
         reports.push(MissingDescriptionSnafu.build());
+    }
+}
+
+fn check_field_values(pkg: &PackageDefinition, reports: &mut Vec<CheckManifestWarnReport>) {
+    if let Some(description) = &pkg.description {
+        if description.is_empty() {
+            reports.push(EmptyDescriptionSnafu.build());
+        }
+        if description.trim() != description {
+            reports.push(DescriptionWithSurroundingWhitespaceSnafu { description }.build());
+        }
+    }
+    if let Some(homepage) = &pkg.homepage {
+        check_url("homepage", homepage, reports);
+    }
+    if let Some(repository) = &pkg.repository {
+        check_url("repository", repository, reports);
+    }
+    if let Some(license) = &pkg.license
+        && let Err(source) = license.parse::<spdx::Expression>()
+    {
+        reports.push(InvalidLicenseSnafu { license }.into_error(source));
+    }
+}
+
+fn check_url(field: &str, url: &str, reports: &mut Vec<CheckManifestWarnReport>) {
+    match Url::parse(url) {
+        Ok(url) => {
+            if url.scheme() != "http" && url.scheme() != "https" {
+                reports.push(NonHttpUrlSnafu { field, url }.build());
+            }
+        }
+        Err(source) => {
+            reports.push(InvalidUrlSnafu { field, url }.into_error(source));
+        }
     }
 }
 
@@ -736,6 +821,133 @@ mod tests {
                 CheckManifestWarnReport::MissingLicense,
                 CheckManifestWarnReport::MissingDescription,
             ]
+        );
+    }
+
+    #[test]
+    fn check_field_values_reports_empty_description() {
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
+            description = ""
+
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+            [sources.contents]
+            type = "archive"
+        "#});
+        let mut reports = vec![];
+
+        check_field_values(&pkg, &mut reports);
+
+        assert_matches!(
+            reports.as_slice(),
+            [CheckManifestWarnReport::EmptyDescription]
+        );
+    }
+
+    #[test]
+    fn check_field_values_reports_description_with_surrounding_whitespace() {
+        let descriptions = ["  Invalid description with leading whitespace  ", "  "];
+        for desc in descriptions {
+            let pkg = testing::parse_manifest_to_definition(&indoc::formatdoc! {r#"
+                name = "example-font"
+                version = "0.1.0"
+                description = "{desc}"
+
+                [[sources]]
+                url = "https://example.com/example-font-0.1.0.zip"
+                hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+                [sources.contents]
+                type = "archive"
+            "#});
+            let mut reports = vec![];
+
+            check_field_values(&pkg, &mut reports);
+
+            assert_matches!(
+                reports.as_slice(),
+                [CheckManifestWarnReport::DescriptionWithSurroundingWhitespace { .. }]
+            );
+        }
+    }
+
+    #[test]
+    fn check_field_values_reports_invalid_url() {
+        for field in ["homepage", "repository"] {
+            let pkg = testing::parse_manifest_to_definition(&indoc::formatdoc! {r#"
+                name = "example-font"
+                version = "0.1.0"
+                {field} = "invalid-url"
+
+                [[sources]]
+                url = "https://example.com/example-font-0.1.0.zip"
+                hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+                [sources.contents]
+                type = "archive"
+            "#});
+            let mut reports = vec![];
+
+            check_field_values(&pkg, &mut reports);
+
+            assert_matches!(
+                reports.as_slice(),
+                [CheckManifestWarnReport::InvalidUrl { field: f, .. }] if f == field,
+            );
+        }
+    }
+
+    #[test]
+    fn check_field_values_reports_url_with_non_http_scheme() {
+        for field in ["homepage", "repository"] {
+            let pkg = testing::parse_manifest_to_definition(&indoc::formatdoc! {r#"
+                name = "example-font"
+                version = "0.1.0"
+                {field} = "file:///tmp/project"
+
+                [[sources]]
+                url = "https://example.com/example-font-0.1.0.zip"
+                hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+                [sources.contents]
+                type = "archive"
+            "#});
+            let mut reports = vec![];
+
+            check_field_values(&pkg, &mut reports);
+
+            assert_matches!(
+                reports.as_slice(),
+                [CheckManifestWarnReport::NonHttpUrl { field: f, .. }] if f == field,
+            );
+        }
+    }
+
+    #[test]
+    fn check_field_values_reports_invalid_license_expression() {
+        let pkg = testing::parse_manifest_to_definition(indoc::indoc! {r#"
+            name = "example-font"
+            version = "0.1.0"
+            license = "not-a-valid-spdx"
+
+            [[sources]]
+            url = "https://example.com/example-font-0.1.0.zip"
+            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+            [sources.contents]
+            type = "archive"
+        "#});
+        let mut reports = vec![];
+
+        check_field_values(&pkg, &mut reports);
+
+        assert_matches!(
+            reports.as_slice(),
+            [CheckManifestWarnReport::InvalidLicense { .. }],
         );
     }
 

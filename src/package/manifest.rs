@@ -29,17 +29,17 @@ pub(crate) struct PackageManifest {
     /// This identifies a specific immutable release of the package.
     pub(crate) version: PackageVersion,
     /// Short description of the font family, collection, or bundle provided by the package.
-    #[serde(default, with = "optional_description")]
+    #[serde(default)]
     pub(crate) description: Option<String>,
     /// Upstream homepage for the font project or distribution represented by the package.
-    #[serde(default, with = "optional_http_url")]
-    pub(crate) homepage: Option<Url>,
+    #[serde(default)]
+    pub(crate) homepage: Option<String>,
     /// Upstream source repository for the font project represented by the package.
-    #[serde(default, with = "optional_http_url")]
-    pub(crate) repository: Option<Url>,
+    #[serde(default)]
+    pub(crate) repository: Option<String>,
     /// SPDX license expression for the upstream font files included in the package.
-    #[serde(default, with = "optional_spdx_expression")]
-    pub(crate) license: Option<spdx::Expression>,
+    #[serde(default)]
+    pub(crate) license: Option<String>,
     /// Download sources from which the package's font files can be installed.
     #[serde(with = "ser_de::non_empty_vec")]
     pub(crate) sources: Vec<PackageManifestSource>,
@@ -98,9 +98,9 @@ impl From<PackageManifest> for PackageDefinition {
         Self {
             id: PackageId::new(name, version),
             description,
-            homepage: homepage.map(|url| url.to_string()),
-            repository: repository.map(|url| url.to_string()),
-            license: license.map(|expr| expr.to_string()),
+            homepage,
+            repository,
+            license,
             sources: sources.into_iter().map(Into::into).collect(),
         }
     }
@@ -145,50 +145,6 @@ fn default_archive_fonts() -> Vec<FontRule> {
         FontRule::glob(PathGlob::new("**/*.ttc").unwrap()),
         FontRule::glob(PathGlob::new("**/*.otc").unwrap()),
     ]
-}
-
-pub(crate) mod optional_description {
-    use serde::Deserialize as _;
-
-    use crate::util::ser_de;
-
-    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(Option::<ser_de::description::Proxy>::deserialize(deserializer)?.map(Into::into))
-    }
-}
-
-mod optional_http_url {
-    use serde::Deserialize as _;
-    use url::Url;
-
-    use crate::util::ser_de;
-
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Option<Url>, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let url = Option::<ser_de::http_url::Proxy>::deserialize(deserializer)?.map(Into::into);
-        Ok(url)
-    }
-}
-
-mod optional_spdx_expression {
-    use serde::{Deserialize as _, Deserializer};
-    use spdx::Expression;
-
-    use crate::util::ser_de;
-
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Option<Expression>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let expr =
-            Option::<ser_de::spdx_expression::Proxy>::deserialize(deserializer)?.map(Into::into);
-        Ok(expr)
-    }
 }
 
 #[derive(Debug, Snafu)]
@@ -305,28 +261,28 @@ mod tests {
         assert_eq!(manifest.version, "0.1.0".parse().unwrap());
         assert_eq!(
             manifest.description.as_deref(),
-            Some("Example font family for UI and coding")
+            Some("Example font family for UI and coding"),
         );
         assert_eq!(
-            manifest.homepage.as_ref().map(Url::as_str),
-            Some("https://example.com/example-font")
+            manifest.homepage.as_deref(),
+            Some("https://example.com/example-font"),
         );
         assert_eq!(
-            manifest.repository.as_ref().map(Url::as_str),
-            Some("https://github.com/example/example-font")
+            manifest.repository.as_deref(),
+            Some("https://github.com/example/example-font"),
         );
         assert_eq!(
             manifest.license.as_ref().map(ToString::to_string),
-            Some("OFL-1.1".to_string())
+            Some("OFL-1.1".to_string()),
         );
         assert_eq!(manifest.sources.len(), 1);
         assert_eq!(
             manifest.sources[0].url.as_str(),
-            "https://example.com/example-font-0.1.0.zip"
+            "https://example.com/example-font-0.1.0.zip",
         );
         assert_eq!(
             manifest.sources[0].hash.to_string(),
-            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         );
         let archive = manifest.sources[0].contents.as_archive().unwrap();
         assert_eq!(
@@ -335,27 +291,8 @@ mod tests {
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>(),
-            ["*/*.ttf"]
+            ["*/*.ttf"],
         );
-    }
-
-    #[test]
-    fn package_manifest_rejects_invalid_license_expression() {
-        let err = testing::try_parse_manifest(indoc::indoc! {r#"
-            name = "example-font"
-            version = "0.1.0"
-            license = "not-a-valid-spdx"
-
-            [[sources]]
-            url = "https://example.com/example-font-0.1.0.zip"
-            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-            [sources.contents]
-            type = "archive"
-        "#})
-        .unwrap_err();
-
-        assert!(err.to_string().contains("invalid SPDX expression"));
     }
 
     #[test]
@@ -391,47 +328,6 @@ mod tests {
     }
 
     #[test]
-    fn package_manifest_rejects_empty_description() {
-        let err = testing::try_parse_manifest(indoc::indoc! {r#"
-            name = "example-font"
-            version = "0.1.0"
-            description = ""
-
-            [[sources]]
-            url = "https://example.com/example-font-0.1.0.zip"
-            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-        "#})
-        .unwrap_err();
-
-        assert!(
-            err.to_string()
-                .contains("a non-empty string without leading or trailing whitespace")
-        );
-    }
-
-    #[test]
-    fn package_manifest_rejects_description_with_surrounding_whitespace() {
-        let err = testing::try_parse_manifest(indoc::indoc! {r#"
-            name = "example-font"
-            version = "0.1.0"
-            description = " example-font "
-
-            [[sources]]
-            url = "https://example.com/example-font-0.1.0.zip"
-            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-            [sources.contents]
-            type = "archive"
-        "#})
-        .unwrap_err();
-
-        assert!(
-            err.to_string()
-                .contains("a non-empty string without leading or trailing whitespace")
-        );
-    }
-
-    #[test]
     fn package_manifest_rejects_non_http_source_url() {
         let err = testing::try_parse_manifest(indoc::indoc! {r#"
             name = "example-font"
@@ -439,25 +335,6 @@ mod tests {
 
             [[sources]]
             url = "file:///tmp/example-font_v0.1.0.zip"
-            hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-            [sources.contents]
-            type = "archive"
-        "#})
-        .unwrap_err();
-
-        assert!(err.to_string().contains("a URL with http or https scheme"));
-    }
-
-    #[test]
-    fn package_manifest_rejects_non_http_homepage_url() {
-        let err = testing::try_parse_manifest(indoc::indoc! {r#"
-            name = "example-font"
-            version = "0.1.0"
-            homepage = "file:///tmp/project"
-
-            [[sources]]
-            url = "https://example.com/example-font-0.1.0.zip"
             hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
             [sources.contents]
