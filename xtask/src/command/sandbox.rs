@@ -198,7 +198,7 @@ impl MappingPaths {
         let bootstrap_config = config_dir.join("bootstrap.config.json");
         let fixture_dir = base_dir.join("fixture");
         let output_dir = base_dir.join("output");
-        let report = output_dir.join(".report.json");
+        let report_json = output_dir.join(".report.json");
         let complete_stamp = output_dir.join(".complete.stamp");
         Self {
             base_dir,
@@ -209,7 +209,7 @@ impl MappingPaths {
             bootstrap_config,
             fixture_dir,
             output_dir,
-            report_json: report,
+            report_json,
             complete_stamp,
         }
     }
