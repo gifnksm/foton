@@ -30,6 +30,7 @@ pub(crate) enum Scenario {
     ManifestValidation,
     InstallFailureCleanup,
     RepairLifecycle,
+    DefaultRegistryInstall,
 }
 
 #[derive(Debug)]
