@@ -9,7 +9,4 @@ url = "https://github.com/gheja/tom-thumb-ttf/raw/0451feafbc3dd09ffe142b52b5719c
 hash = "sha256:cfa3c1547ace1db611d4e01dfca532fcf1918cd246d2a7c40366f6639993d9a0"
 
 [sources.contents]
-type = "archive"
-fonts = [
-  "Invalid.ttf",
-]
+type = "font-file"

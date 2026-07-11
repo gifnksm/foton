@@ -2,11 +2,13 @@ use color_eyre::eyre::{self, ensure};
 
 use crate::{report, scenario::ScenarioContext};
 
-const PKG_NAME: &str = "hackgen";
-const OLD_PKG_VERSION: &str = "2.9.1";
-const OLD_PKG_ID: &str = "hackgen@2.9.1";
+const PKG_NAME: &str = "tom-thumb";
+const OLD_PKG_ID: &str = "tom-thumb@2023.02.25.00";
+const NEW_PKG_ID: &str = "tom-thumb@2023.02.25.01";
 
 pub(super) fn run(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
+    cx.install_fixture_config("foton-registry-update")?;
+
     cx.ensure_package_not_managed(PKG_NAME)?;
     cx.ensure_package_has_no_active_fonts(PKG_NAME)?;
 
@@ -23,31 +25,18 @@ pub(super) fn run(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
             .all(|font| font.location.is_pkg_font(OLD_PKG_ID))
     );
 
-    let mut new_pkg_version = None;
-
     // ensure that second update attempt is no-op, and that the package remains installed and active
     for _ in 0..2 {
         cx.exec_foton_with_args(["update"])?.ensure_success()?;
 
-        let managed_packages = cx.query_managed_packages(PKG_NAME)?;
-        ensure!(managed_packages.len() == 2);
-        let (old_pkg, new_pkg) = if managed_packages[0].pkg_id == OLD_PKG_ID {
-            (&managed_packages[0], &managed_packages[1])
-        } else {
-            ensure!(managed_packages[1].pkg_id == OLD_PKG_ID);
-            (&managed_packages[1], &managed_packages[0])
-        };
+        let old_pkg = cx.ensure_package_managed(OLD_PKG_ID)?;
+        let new_pkg = cx.ensure_package_managed(NEW_PKG_ID)?;
         old_pkg
             .ensure_installation_state(|state| state.is_installed())?
             .ensure_activation_state(|state| state.is_inactive())?;
         new_pkg
-            .ensure_version(|version| version != OLD_PKG_VERSION)?
             .ensure_installation_state(|state| state.is_installed())?
             .ensure_activation_state(|state| state.is_active())?;
-        if let Some(prev_version) = &new_pkg_version {
-            ensure!(new_pkg.version() == prev_version);
-        }
-        new_pkg_version = Some(new_pkg.version().to_owned());
 
         let active_fonts = cx.query_package_active_fonts(PKG_NAME)?;
         ensure!(!active_fonts.is_empty());
@@ -68,9 +57,8 @@ pub(super) fn run(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
             )))?;
     }
 
-    let new_pkg_version = new_pkg_version.unwrap();
-    cx.uninstall_package(&format!("{PKG_NAME}@{OLD_PKG_VERSION}"))?;
-    cx.uninstall_package(&format!("{PKG_NAME}@{new_pkg_version}"))?;
+    cx.uninstall_package(OLD_PKG_ID)?;
+    cx.uninstall_package(NEW_PKG_ID)?;
 
     Ok(())
 }

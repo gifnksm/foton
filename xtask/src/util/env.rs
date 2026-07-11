@@ -4,18 +4,21 @@ use cargo_metadata::camino::{Utf8Path, Utf8PathBuf};
 use color_eyre::eyre::{self, OptionExt as _, WrapErr as _, eyre};
 use directories::ProjectDirs;
 
-const APP_QUALIFIER: &str = "";
-const APP_ORGANIZATION: &str = "io.github.gifnksm";
-const APP_APPLICATION: &str = "foton";
+pub(crate) fn foton_project_dirs() -> eyre::Result<&'static ProjectDirs> {
+    const APP_QUALIFIER: &str = "";
+    const APP_ORGANIZATION: &str = "io.github.gifnksm";
+    const APP_APPLICATION: &str = "foton";
 
-static FOTON_PROJECT_DIRS: LazyLock<Option<ProjectDirs>> =
-    LazyLock::new(|| ProjectDirs::from(APP_QUALIFIER, APP_ORGANIZATION, APP_APPLICATION));
+    static FOTON_PROJECT_DIRS: LazyLock<Option<ProjectDirs>> =
+        LazyLock::new(|| ProjectDirs::from(APP_QUALIFIER, APP_ORGANIZATION, APP_APPLICATION));
+
+    FOTON_PROJECT_DIRS
+        .as_ref()
+        .ok_or_eyre("failed to get FOTON project directories")
+}
 
 pub(crate) fn foton_data_dir() -> eyre::Result<&'static Utf8Path> {
-    let data_local_dir = FOTON_PROJECT_DIRS
-        .as_ref()
-        .ok_or_eyre("failed to get FOTON project directories")?
-        .data_local_dir();
+    let data_local_dir = foton_project_dirs()?.data_local_dir();
     data_local_dir.try_into().wrap_err_with(|| {
         format!(
             "invalid UTF-8 path for FOTON data directory: {}",
@@ -26,6 +29,20 @@ pub(crate) fn foton_data_dir() -> eyre::Result<&'static Utf8Path> {
 
 pub(crate) fn foton_db_path() -> eyre::Result<Utf8PathBuf> {
     Ok(foton_data_dir()?.join("db.json"))
+}
+
+pub(crate) fn foton_config_dir() -> eyre::Result<&'static Utf8Path> {
+    let config_dir = foton_project_dirs()?.config_dir();
+    config_dir.try_into().wrap_err_with(|| {
+        format!(
+            "invalid UTF-8 path for FOTON config directory: {}",
+            config_dir.display()
+        )
+    })
+}
+
+pub(crate) fn foton_config_path() -> eyre::Result<Utf8PathBuf> {
+    Ok(foton_config_dir()?.join("config.toml"))
 }
 
 pub(crate) fn path_from_env(var: &str) -> eyre::Result<Option<Utf8PathBuf>> {

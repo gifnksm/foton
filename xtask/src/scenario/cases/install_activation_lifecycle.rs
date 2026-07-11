@@ -2,9 +2,10 @@ use color_eyre::eyre;
 
 use crate::{report, scenario::ScenarioContext};
 
-const PKG_NAME: &str = "hackgen";
+const PKG_NAME: &str = "tom-thumb";
 
 pub(super) fn run(cx: &ScenarioContext<'_>) -> eyre::Result<()> {
+    cx.install_fixture_config("foton-registry")?;
     implicit_activation(cx)?;
     explicit_activation(cx)?;
     Ok(())
