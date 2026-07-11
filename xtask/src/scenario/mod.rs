@@ -37,7 +37,6 @@ pub(crate) enum Scenario {
 pub(crate) struct ScenarioParameters {
     pub(crate) foton_exe: Utf8PathBuf,
     pub(crate) fixture_dir: Utf8PathBuf,
-    pub(crate) output_dir: Utf8PathBuf,
 }
 
 pub(crate) fn run(

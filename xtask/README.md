@@ -43,14 +43,10 @@ Scenario results are written to the specified output directory.
 
 Files:
 
-- `bootstrap.stdout.txt`
-- `bootstrap.stderr.txt`
-- `bootstrap.status.txt`
-- `<index>.<name>.stdout.txt`
-- `<index>.<name>.stderr.txt`
-- `<index>.<name>.status.txt`
+- `bootstrap.summary.txt`
+- `report.<report-seq>/<exec-seq>.summary.txt`
 
-The `bootstrap.*.txt` files capture the sandbox bootstrap command itself.
+The `bootstrap.summary.txt` file captures the sandbox bootstrap command itself.
 The numbered files are generated per executed command in run order.
 
 ## Notes

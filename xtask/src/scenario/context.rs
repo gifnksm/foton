@@ -50,7 +50,7 @@ impl<'a> ScenarioContext<'a> {
         let mut cmd = Command::new(&self.params.foton_exe);
         cmd.args(["--no-confirm", "--exit-on-lock"]);
         f(&mut cmd);
-        crate::util::process::exec_command(self.cx, "foton", &self.params.output_dir, &mut cmd)
+        self.cx.exec_command(&mut cmd)
     }
 
     #[track_caller]
