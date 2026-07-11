@@ -225,6 +225,45 @@ jobs:
       - run: just ci-test
         shell: bash
 
+  registry-manifests:
+    name: Registry manifest check
+    needs: set-matrix
+    strategy:
+      fail-fast: true
+      matrix:
+        rust: [stable]
+        os: ${{ fromJSON(needs.set-matrix.outputs.os) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: gifnksm/foton-registry
+          path: foton-registry
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+      - name: List registry manifests
+        run: |
+          find foton-registry/packages -type f -name manifest.toml -print | sort > registry-manifest-list.txt
+
+          if [[ ! -s registry-manifest-list.txt ]]; then
+            echo "No registry manifests found under foton-registry/packages" >&2
+            exit 1
+          fi
+
+          cat registry-manifest-list.txt
+        shell: bash
+      - name: Validate registry manifests
+        run: |
+          mapfile -t manifests < registry-manifest-list.txt
+          cargo run --locked -- --warnings-as-errors manifest check \
+            --no-source-checks \
+            --registry-root "$GITHUB_WORKSPACE/foton-registry" \
+            "${manifests[@]}"
+        shell: bash
+
   test-coverage:
     name: Test Coverage
     needs: set-matrix
@@ -399,6 +438,7 @@ jobs:
       - sync-rdme
       - machete
       - test
+      - registry-manifests
       - test-coverage
       - release-dry-run
       - scenario
