@@ -13,7 +13,7 @@ edit-url-template = "https://github.com/gifnksm/foton/edit/main/docs/book/{path}
 
 [output.html.redirect]
 # workaround for mdBook #984 <https://github.com/rust-lang/mdBook/issues/984>
-"/guide/advanced/README.html" = "/guide/advanced/index.html"
-"/guide/basic/README.html" = "/guide/basic/index.html"
-"/reference/commands/README.html" = "/reference/commands/index.html"
-"/reference/commands/manifest/README.html" = "/reference/commands/manifest/index.html"
+"/guide/advanced/README.html" = "index.html"
+"/guide/basic/README.html" = "index.html"
+"/reference/commands/README.html" = "index.html"
+"/reference/commands/manifest/README.html" = "index.html"
