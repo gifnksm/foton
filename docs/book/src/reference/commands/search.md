@@ -14,7 +14,7 @@ foton search [OPTIONS] <QUERY>...
 
 Search query terms.
 
-All specified query terms must match within the same searchable field.
+All specified query terms must match within the same package metadata field.
 
 ## Options
 
@@ -27,6 +27,8 @@ Use a comma-separated list such as `--registry local,foton`.
 ### `--limit <LIMIT>`
 
 Maximum number of matching packages to show.
+
+- **Default**: `10`
 
 ### `--pre-release`
 
@@ -76,11 +78,9 @@ example-font@1.2.3 [example]
 
 ## Notes
 
-- By default, `search` looks at the latest version of each package in each
-  selected package registry without considering pre-release versions.
+- By default, `search` does not include pre-release versions.
   Use `--pre-release` if you want pre-release versions to be included.
 - Search matches package names and descriptions only.
-- If no matching packages are found, the command fails.
 
 ## Related pages
 

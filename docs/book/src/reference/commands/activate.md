@@ -49,12 +49,6 @@ foton activate <package-name-1> <package-name-2>
 - Only one version of a package name can be active at a time.
   Activating one version deactivates any other active version of the same
   package name.
-- If the selected package is already active, `foton` reports that there is
-  nothing to do.
-- If no installed package matches the specified package, the command fails.
-- If a package name matches multiple installed versions, `activate` does not
-  choose one automatically; specify an exact package ID such as
-  `<package-name>@<version>`.
 
 ## Related pages
 

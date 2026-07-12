@@ -24,8 +24,8 @@
 
 ## Documentation
 
-* [**Latest**](https://foton.readthedocs.io/en/latest/) — documentation for the development version
-* [**Stable**](https://foton.readthedocs.io/en/stable/) — documentation for the latest release
+* [**Latest**](https://foton.readthedocs.io/en/latest/): documentation for the development version
+* [**Stable**](https://foton.readthedocs.io/en/stable/): documentation for the latest release
 
 ## Installation
 

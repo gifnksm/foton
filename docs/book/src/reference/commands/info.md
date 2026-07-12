@@ -60,15 +60,9 @@ foton info --include-files <package-name>
 With `--include-files`, `info` also shows the fonts directory and the installed
 font files for packages in the `installed` state.
 
-If a package name matches multiple packages recorded in the local package
-database, `info` prints all of them.
-This can include packages left by incomplete operations.
-
 ## Notes
 
 - `info` reads the local package database and does not search package registries.
-- If no package recorded in the local package database matches the specified
-  package name, the command fails.
 - Use `activate` or `deactivate` when you want to change a package's
   activation state.
 - Use `repair` when you want to clean up packages left by incomplete

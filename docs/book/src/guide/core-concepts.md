@@ -20,11 +20,10 @@ version.
 - `<package-name>`
 - `<package-name>@<version>`
 
-Use `<package-name>` when you want `foton` to choose an appropriate version
-for the command you are running.
-Use `<package-name>@<version>` when you want to select an exact version.
-Some commands, such as `activate`, `deactivate`, and `uninstall`, may require
-an exact version when multiple installed versions share the same package name.
+Use `<package-name>` when you want to refer to a package by name and let the
+command decide how to handle matching versions.
+Use `<package-name>@<version>` when you want to select an exact version, or
+when a command asks you to disambiguate.
 
 ## Package registries
 

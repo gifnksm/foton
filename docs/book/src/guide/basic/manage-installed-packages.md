@@ -75,8 +75,8 @@ foton activate <package-name>@<version>
 Only one version of a package name can be active at a time.
 When you activate one version, `foton` registers that version's fonts for use
 and deactivates any other active version of that package name automatically.
-If a package name matches multiple installed versions, specify an exact version
-so `foton` knows which one to activate.
+Use an exact version when multiple versions of the same package are
+installed, or when you want to target a specific installed version.
 
 Deactivate one or more installed packages:
 
@@ -88,10 +88,8 @@ foton deactivate <package-name>
 foton deactivate <package-name>@<version>
 ```
 
-If the selected package is already inactive, `foton` reports that there is
-nothing to do.
-As with `activate`, specify an exact version when multiple installed versions
-share the same package name.
+Use an exact version when multiple versions of the same package are
+installed, or when you want to target a specific installed version.
 
 Like other commands that change installed packages, `activate` and
 `deactivate` ask for confirmation before applying changes.
@@ -131,6 +129,13 @@ foton uninstall <package-name>
 ```console
 foton uninstall <package-name-1> <package-name-2>
 ```
+
+```console
+foton uninstall <package-name>@<version>
+```
+
+Use an exact version when multiple versions of the same package are
+installed, or when you want to target a specific installed version.
 
 Like `install` and `update`, `uninstall` asks for confirmation before applying
 changes.

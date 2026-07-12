@@ -4,7 +4,7 @@ This chapter covers the commands you will use most often after discovering a
 package: `install` and `update`.
 
 In the examples below, replace placeholders such as `<package-name>`,
-`<version>`, `<registry-id>`, and `<manifest-path>` with real values.
+`<version>`, and `<registry-id>` with real values.
 
 ## Install packages from package registries
 
@@ -46,24 +46,9 @@ foton install --no-activate <package-name>
 
 You can activate the package later with `foton activate`.
 
-## Install packages from manifest files
-
-`install` can also install packages defined in local manifest files.
-This is mainly useful when authoring or testing packages.
-
-```console
-foton install --manifest <manifest-path>
-```
-
-You can specify `--manifest` multiple times.
-
-For more details, see
-[Writing a Package Manifest](../advanced/write-package-manifest.md).
-
 ## Update installed packages
 
-Update the latest installed version of each package that has a newer version
-available:
+Update installed packages when newer versions are available:
 
 ```console
 foton update
@@ -75,16 +60,6 @@ Update only selected packages:
 foton update <package-name-1> <package-name-2>
 ```
 
-You can also select an exact installed version first:
-
-```console
-foton update <package-name>@<version>
-```
-
-Without an exact version, `update` selects the latest installed version for
-that package name.
-If you want to control exactly which installed version is updated, specify an
-exact version.
 Updating a package installs the newer version without automatically removing
 older installed versions.
 
@@ -111,14 +86,9 @@ foton --no-confirm update
 
 ## Notes
 
-- If an install request does not require any changes, `foton` reports that the
-  package is already installed.
-- If an update request does not require any changes, `foton` reports that the
-  selected packages are already up to date.
 - If an install or update does not complete cleanly, use `foton repair` to
   clean up any packages left behind.
-- See the command reference for details such as pre-release handling and more
-  specific resolution rules.
+- See the command reference for additional options and details.
 
 ## Related pages
 

@@ -20,7 +20,7 @@ such as writing package manifests and setting up custom package registries.
 
 - [Installing Foton](guide/install-foton.md) explains how to install `foton`.
 - [Core Concepts](guide/core-concepts.md) introduces the terms used throughout the book.
-- [Basic Usage](guide/basic/README.md) covers the everyday workflow for discovering, installing, updating, inspecting, activating or deactivating, and removing packages.
+- [Basic Usage](guide/basic/README.md) covers the everyday package-management workflow.
 - [Advanced Usage](guide/advanced/README.md) covers manifest authoring and custom package registries.
 - Reference Guide for detailed specifications.
   - [Command Reference](reference/commands/README.md)

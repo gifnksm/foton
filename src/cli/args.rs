@@ -106,10 +106,7 @@ pub(crate) struct UpdateArgs {
     pub(crate) registries: Option<Vec<RegistryId>>,
     /// Package names, optionally with an exact version as `<package-name>@<version>`.
     ///
-    /// If not specified, `update` selects the latest installed version of each
-    /// package name and updates it if possible.
-    /// When an exact version is specified, `update` selects that installed
-    /// package first, then looks for a newer version of the same package name.
+    /// If not specified, `update` checks installed packages for newer versions.
     #[clap(value_name = "PACKAGE")]
     pub(crate) pkg_specs: Vec<PackageSpec>,
     /// Allow updating to pre-release versions when resolving packages from registries.

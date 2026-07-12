@@ -5,12 +5,12 @@ Work with package manifest files.
 ## Usage
 
 ```text
-foton manifest <COMMAND>
+foton manifest [OPTIONS] <COMMAND>
 ```
 
 ## Commands
 
-- [`check`](check.md): validate manifest files for installation errors and
+- [`check`](check.md): Validate manifest files for installation errors and
   quality warnings
 
 ## Typical usage

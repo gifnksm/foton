@@ -5,12 +5,12 @@ Work with fonts managed by foton.
 ## Usage
 
 ```text
-foton font <COMMAND>
+foton font [OPTIONS] <COMMAND>
 ```
 
 ## Commands
 
-- [`list`](list.md)
+- [`list`](list.md): List fonts managed by foton
 
 ## Related pages
 

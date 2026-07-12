@@ -106,16 +106,52 @@ not repeat `repository` in `homepage` just to fill both fields.
 
 `foton manifest check` warns if `description` or `license` is missing.
 
+## Prepare source information
+
+Each `sources[]` entry needs a source digest.
+For archive sources, you also need the exact archive entry paths for the font
+files you want to install.
+
+### Get the source hash
+
+The `hash` field stores the SHA-256 digest of the downloaded source file,
+written as `sha256:<hex-digest>`.
+Download the exact file referenced by `url`, compute its SHA-256 digest with a
+local tool, and copy the hexadecimal digest into the manifest.
+
+On Windows, one way to do this is:
+
+```powershell
+Get-FileHash -Algorithm SHA256 <downloaded-file-path>
+```
+
+Then write the result in the manifest as:
+
+```toml
+hash = "sha256:<hex-digest>"
+```
+
+### Find archive entry paths
+
+For `contents.type = "archive"`, the `fonts` and `ignore` rules use paths
+inside the ZIP archive, not paths from an extracted directory on disk.
+Open the ZIP archive in Explorer or another archive tool and copy each entry
+path exactly as it appears in the archive.
+
+For example, if the archive contains
+`example-font-1.2.3/ExampleFont-Regular.ttf`, use that full archive path in
+`fonts`.
+
 ## Choosing fonts from a source
 
 Each `sources[]` entry must define a `[sources.contents]` table.
 That table tells `foton` what kind of downloaded source it is working with and,
 for archive sources, which font files inside that source should be installed.
 
-If `contents.type = "archive"`, the downloaded source is an archive that
-contains one or more font files.
 If `contents.type = "font-file"`, the downloaded source itself is one font
 file.
+If `contents.type = "archive"`, the downloaded source is a ZIP archive that
+contains one or more font files.
 See [Package Manifest Reference](../../reference/package-manifest.md) for the exact
 field definitions and constraints.
 
@@ -173,24 +209,10 @@ foton manifest check <manifest-path>
 By default, `manifest check` does more than syntax validation.
 It reads the manifest, stages the package, downloads the sources, and verifies
 that installation would succeed.
-Use `--no-source-checks` to skip those source-dependent checks.
-This can be useful when validating many manifests at once, such as the manifests
-in a package registry:
+Use `--no-source-checks` to skip those source-dependent checks when needed.
 
-```console
-foton manifest check --no-source-checks <registry-root>\packages\**\manifest.toml
-```
-
-Warnings can include:
-
-- missing `description` or `license`
-- for manifests treated as part of a package registry, a path that does not
-  match the registry path for the manifest's package ID
-- source-content issues such as:
-  - for sources with `contents.type = "archive"`:
-    - `glob` entries in `fonts`
-    - `fonts` or `ignore` rules that match nothing
-    - font-like files that match neither `fonts` nor `ignore`
+For common warning types, see
+[Package Manifest Reference](../../reference/package-manifest.md).
 
 If you want warnings to fail the command, use the global
 `--warnings-as-errors` option.
