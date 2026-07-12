@@ -53,16 +53,8 @@ The command reports:
 
 ## Common warnings
 
-Warnings can include:
-
-- missing `description` or `license`
-- for manifests treated as part of a package registry, a path that does not
-  match the registry path for the manifest's package ID
-- source-content issues such as:
-  - for sources with `contents.type = "archive"`:
-    - `glob` entries in `fonts`
-    - `fonts` or `ignore` rules that match nothing
-    - font-like files that match neither `fonts` nor `ignore`
+For common warning types, see
+[Package Manifest Reference](../../package-manifest.md).
 
 ## Examples
 

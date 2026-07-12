@@ -46,13 +46,6 @@ foton deactivate <package-name-1> <package-name-2>
 
 - `deactivate` operates on packages recorded in the local package database and
   does not access package registries.
-- If the selected package is already inactive, `foton` reports that there is
-  nothing to do.
-- If no installed package matches the specified package, `foton` treats it as
-  already inactive and reports that there is nothing to do.
-- If a package name matches multiple installed versions, `deactivate` does not
-  choose one automatically; specify an exact package ID such as
-  `<package-name>@<version>`.
 - Use `repair` when a package command such as `install` or `activate` does
   not complete cleanly and leaves packages in incomplete states.
 

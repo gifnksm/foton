@@ -23,7 +23,7 @@ If not specified, show all packages in the local package database.
 Select the output format.
 
 - **Default**: `text`
-- **Possible Values**: `text`, `jsonl`
+- **Possible values**: `text`, `jsonl`
 
 ## Global options
 

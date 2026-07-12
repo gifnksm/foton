@@ -45,5 +45,4 @@ If the command succeeds, `foton` is installed and available on your `PATH`.
 
 If you are new to `foton`, read [Core Concepts](core-concepts.md) first.
 Then continue with [Basic Usage](basic/README.md) to learn the everyday
-workflow for searching, installing, updating, inspecting, and removing
-packages.
+package-management workflow.

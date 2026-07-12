@@ -23,7 +23,7 @@ Also include all user fonts recognized by Windows.
 Select the output format.
 
 - **Default**: `text`
-- **Possible Values**: `text`, `jsonl`
+- **Possible values**: `text`, `jsonl`
 
 ## Global options
 
@@ -82,10 +82,6 @@ Example:
 ```text
 Fonts from Package example-font@1.2.3:
   - Example Font (Bold, Regular)
-Fonts from System Font Directory:
-  - Example Sans (Regular)
-Fonts from User Font Directories:
-  - Example Serif (Italic)
 ```
 
 With `--format jsonl`, `font list` writes one JSON object per visible font face
@@ -94,6 +90,8 @@ in JSON Lines format.
 ## Notes
 
 - By default, `font list` shows fonts attributed to foton-managed packages.
+  In uncommon cases, fonts from unknown locations may also appear when Windows
+  cannot attribute their backing files more precisely.
 - `--include-system-fonts` adds system fonts recognized by Windows.
 - `--include-user-fonts` adds user fonts recognized by Windows.
 - `font list` reads the font set recognized by Windows and classifies each

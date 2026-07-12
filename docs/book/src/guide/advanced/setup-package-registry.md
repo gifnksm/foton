@@ -12,13 +12,17 @@ For the exact registry layout and configuration format, see
 
 ## Registry types
 
-`foton` supports two kinds of package registry sources:
+A custom package registry can be managed in two common ways:
 
-- `local+<absolute-path>` for a registry stored in a local directory
-- `git+<url>` for a registry stored in a Git repository
+- as a local directory on your machine
+- as a Git repository that stores the registry root and its manifests
+
+A local directory is convenient for local testing or personal use.
+A Git-backed registry is useful when you want version history, code review, or
+sharing across multiple machines or users.
 
 The default configuration already includes the public `foton` package registry.
-Custom package registries are added through your `config.toml` file.
+Custom registries are added through your `config.toml` file.
 
 ## Registry layout
 
@@ -26,6 +30,7 @@ A registry stores package manifests in this directory layout:
 
 ```text
 <registry-root>/
+  .foton-registry-root
   packages/
     <package-name>/
       <version>/
@@ -36,6 +41,7 @@ Example:
 
 ```text
 my-registry/
+  .foton-registry-root
   packages/
     example-font/
       1.2.3/
@@ -48,11 +54,67 @@ my-registry/
 Each package version has its own `manifest.toml` file.
 This layout lets a single registry contain multiple versions of the same
 package.
+The `.foton-registry-root` marker file is recommended. It is not required for
+package discovery, but it makes the registry root explicit and helps
+`foton manifest check` detect the registry root automatically.
 
-## Add a local registry
+## Setup workflow
 
-A local registry path must be absolute.
-Add an entry to your `config.toml` file:
+A practical workflow is:
+
+1. Create the registry root directory and add `.foton-registry-root`
+2. Place each manifest at `packages/<package-name>/<version>/manifest.toml`
+3. Validate the manifests in place
+4. Add the registry to your `config.toml` file
+5. Use that registry from `foton`
+
+The sections below cover each part of that workflow.
+
+## Create the registry root
+
+Create the registry root directory and add the `.foton-registry-root` marker
+file.
+This makes the registry root explicit and lets `foton manifest check` detect it
+automatically when validating manifests by file path.
+
+If you want to manage the registry through Git, make the registry root a Git
+repository, for example by running `git init` there or by placing it inside an
+existing repository.
+
+## Add package manifests
+
+Place each manifest at `packages/<package-name>/<version>/manifest.toml` in the
+registry.
+If you need help writing a manifest, see
+[Writing a Package Manifest](write-package-manifest.md).
+
+## Validate package manifests
+
+When the manifest is already stored under a registry root that contains
+`.foton-registry-root`, `manifest check` can detect that registry root
+automatically.
+In the normal case, you can validate a manifest in place with:
+
+```console
+foton manifest check <manifest-path>
+```
+
+When validating many manifests in a registry at once, it can be useful to skip
+source-dependent checks first:
+
+```console
+foton manifest check --no-source-checks <registry-root>\packages\**\manifest.toml
+```
+
+## Add the registry to your config
+
+Once the manifests are in place, add the registry to your `config.toml` file.
+You can configure it either as a local directory or as a Git-backed registry.
+
+### Local registry source
+
+Use `local+<absolute-path>` for a registry stored in a local directory.
+The path must be absolute.
 
 ```toml
 [registries.example]
@@ -60,19 +122,9 @@ source = "local+C:/path/to/my-registry"
 enabled = true
 ```
 
-After that, you can search or install from that package registry by ID:
+### Git registry source
 
-```console
-foton search --registry example <query>
-```
-
-```console
-foton install --registry example <package-name>
-```
-
-## Add a Git registry
-
-To use a registry from Git, add a `git+` source to your `config.toml` file:
+Use `git+<url>` for a registry stored in a Git repository.
 
 ```toml
 [registries.example]
@@ -80,7 +132,25 @@ source = "git+https://example.com/fonts/example-registry.git"
 enabled = true
 ```
 
-Then use it the same way:
+`foton` caches Git registries locally and updates the cached repository when it
+fetches registry contents.
+
+### Enable or disable a registry
+
+Each registry entry has an `enabled` flag.
+If omitted, it defaults to `true`.
+Set it to `false` when you want to keep the registry definition in your
+`config.toml` file without using it by default.
+
+```toml
+[registries.example]
+source = "local+C:/path/to/experimental-registry"
+enabled = false
+```
+
+## Use the registry from `foton`
+
+Search or install from that package registry by ID:
 
 ```console
 foton search --registry example <query>
@@ -90,38 +160,10 @@ foton search --registry example <query>
 foton install --registry example <package-name>
 ```
 
-`foton` caches Git registries locally and updates the cached repository when it
-fetches registry contents.
-
-## Enable or disable a registry
-
-Each registry entry has an `enabled` flag.
-If omitted, it defaults to `true`.
-Set it to `false` when you want to keep the registry definition in your
-`config.toml` file without using it by default.
-You can still opt in to a disabled package registry explicitly with
+You can also opt in to a disabled package registry explicitly with
 `--registry <registry-id>`.
-If all configured package registries are disabled, commands such as `search`,
-`install`, and `update` fail unless you specify `--registry`.
-
-```toml
-[registries.example]
-source = "local+C:/path/to/experimental-registry"
-enabled = false
-```
-
-## Publish your own packages
-
-A common workflow is:
-
-1. Write and validate a manifest locally
-2. Place the manifest at `packages/<package-name>/<version>/manifest.toml` in your
-   registry
-3. Add the registry to your `config.toml` file
-4. Search or install from that package registry with `--registry <registry-id>`
-
-If you enable multiple package registries that contain the same package name,
-`install` and `update` may ask you to disambiguate by narrowing `--registry`.
+If multiple package registries contain the same package name, use
+`--registry` to choose which registry to use.
 
 ## Related pages
 

@@ -38,10 +38,12 @@ foton uninstall <package-name>
 foton uninstall <package-name-1> <package-name-2>
 ```
 
+```console
+foton uninstall <package-name>@<version>
+```
+
 ## Notes
 
-- If the selected package is already absent, `foton` reports that there is
-  nothing to do.
 - If an uninstall does not complete cleanly, use `repair` to clean up any
   packages it leaves behind.
 - `uninstall` operates on packages recorded in the local package database and

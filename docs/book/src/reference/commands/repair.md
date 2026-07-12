@@ -49,8 +49,6 @@ foton repair <package-name>@<version>
 
 ## Notes
 
-- If a selected package does not need cleanup, `foton` reports that there is
-  nothing to do.
 - If cleanup cannot be completed, the package may remain in the local package
   database so that you can retry `repair` later.
 

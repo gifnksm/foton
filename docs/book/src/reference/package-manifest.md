@@ -40,7 +40,9 @@ Use `foton manifest check` to validate a manifest.
 The command checks both installation errors and quality issues.
 For example, it can report:
 
-- missing recommended fields such as `description` or `license`
+- missing recommended metadata such as `description` or `license`
+- metadata issues such as an empty or whitespace-padded `description`, an invalid `homepage` or `repository`, identical `homepage` and `repository` values, or an invalid `license`
+- for manifests treated as part of a package registry, a path that does not match the registry path for the manifest's package ID
 - source-content issues such as:
   - for sources with `contents.type = "archive"`:
     - `glob` entries in `fonts`
@@ -172,10 +174,10 @@ Use a version string that identifies an immutable package release.
 
 A short description of the font family, collection, or bundle provided by the
 package.
+Use this field for a concise, user-facing summary of what the package provides.
+Keep this field non-empty and free of leading or trailing whitespace.
 
 - **Type**: string
-- **Constraints**: must be non-empty and must not have leading or trailing
-  whitespace
 - **Recommended because**: it appears in search results and can help users
   find the package
 - **Example**:
@@ -188,13 +190,14 @@ package.
 
 The upstream homepage for the font project or distribution represented by the
 package.
+When setting this field, use a valid `http` or `https` URL.
+Omit this field if there is no distinct upstream homepage.
 
 - **Type**: URL string
-- **Constraints**: the URL scheme must be `http` or `https`; omit this field if
-  there is no distinct upstream homepage
 - **Recommended because**: it gives users a homepage for more information about
   the fonts provided by the package
-- **Note**: do not duplicate `repository` here when both would be the same URL
+- **Note**: if the upstream homepage and source repository would be the same
+  URL, prefer `repository` and omit `homepage`
 - **Example**:
 
   ```toml
@@ -204,10 +207,10 @@ package.
 ### `repository` (optional, recommended)
 
 The upstream source repository for the font project represented by the package.
+When setting this field, use a valid `http` or `https` URL.
+Omit this field if there is no suitable public upstream repository.
 
 - **Type**: URL string
-- **Constraints**: the URL scheme must be `http` or `https`; omit this field if
-  there is no suitable public upstream repository
 - **Recommended because**: it gives users a source repository for the upstream
   font project
 - **Example**:
@@ -220,9 +223,11 @@ The upstream source repository for the font project represented by the package.
 
 The SPDX license expression for the upstream font files included in the
 package.
+When setting this field, use a valid SPDX expression.
+Use the license of the upstream font files included in the package, not the
+license of the manifest itself.
 
 - **Type**: SPDX expression string
-- **Constraints**: must be a valid SPDX expression
 - **Recommended because**: it tells users the licensing terms of the font files
   included in the package
 - **Example**:
@@ -286,8 +291,8 @@ The expected digest used to verify source integrity.
 A table that describes what the downloaded source contains.
 Use `contents.type = "font-file"` when the downloaded source is itself one
 font file.
-Use `contents.type = "archive"` when the downloaded source is an archive that
-contains one or more font files.
+Use `contents.type = "archive"` when the downloaded source is a ZIP archive
+that contains one or more font files.
 
 - **Type**: contents table
 - **Example**:
@@ -307,8 +312,13 @@ The kind of downloaded source.
 
 - **Type**: string
 - **Allowed values**:
-  - `"font-file"` — the downloaded source is one font file
-  - `"archive"` — the downloaded source is an archive that contains font files
+  - `"font-file"`: the downloaded source is one font file
+  - `"archive"`: the downloaded source is a ZIP archive that contains one or
+    more font files
+- **Note**: support for ZIP compression methods and related ZIP features depends
+  on `foton`'s current ZIP reader implementation. See the `zip` crate
+  documentation for the currently supported methods and extensions:
+  <https://docs.rs/zip/8.6.0/zip/>
 - **Example**:
 
   ```toml

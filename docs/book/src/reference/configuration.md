@@ -190,8 +190,8 @@ it unless you opt in explicitly.
 If you pass `--registry <REGISTRY_ID>`, `foton` can still use that package
 registry even when `enabled = false`.
 If all configured package registries are disabled and you do not pass
-`--registry`, commands such as `search`, `install`, and `update` fail because
-there are no enabled package registries to use.
+`--registry`, commands that rely on package registries fail because there are
+no enabled package registries to use.
 
 - **Type**: boolean
 - **Default**: `true`

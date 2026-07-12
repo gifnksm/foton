@@ -19,9 +19,8 @@ Search with multiple query terms:
 foton search <query-word-1> <query-word-2>
 ```
 
-All query terms must match within a single searchable field.
-In practice, a query can match either a package name or a description, but
-not a combination of both.
+For multi-term searches, all query terms must match either the package name
+or the description.
 
 ## Restrict the search to specific registries
 
@@ -54,8 +53,7 @@ example-font@1.2.3 [example]
   Example font family for UI and coding
 ```
 
-By default, `search` does not include pre-release versions when it
-selects the latest version of each package in each selected registry.
+By default, `search` does not include pre-release versions.
 Use `--pre-release` if you want search results to include pre-release
 versions.
 Once you have found a package you want, install it with `foton install`.
