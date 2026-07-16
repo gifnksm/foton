@@ -9,6 +9,12 @@ insert_final_newline = true
 trim_trailing_whitespace = true
 
 [*.rs]
+# Rust sources can contain leading spaces that are not indent-size policy
+# violations, for example when rustfmt moves `{` onto its own line for some
+# long nested zero-arg functions, or when test fixtures in raw strings /
+# `indoc!` encode their own indentation. editorconfig-checker cannot
+# distinguish those cases from code indentation, so disable Rust indent-size
+# checks here.
 indent_size = unset
 
 [*.{toml,json}]
