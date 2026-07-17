@@ -168,7 +168,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        rust: [nightly]
+        rust: [stable]
         os: ${{ fromJSON(needs.set-matrix.outputs.os) }}
     runs-on: ${{ matrix.os }}
     steps:
@@ -180,6 +180,8 @@ jobs:
         with:
           tool: just,cargo-hack,cargo-sync-rdme
       - uses: Swatinem/rust-cache@v2
+      - run: rustup toolchain install nightly --profile minimal
+        shell: bash
       - run: just ci-sync-rdme
         shell: bash
 
