@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+## [0.1.2] - 2026-07-31
+
 ### Fixed
 
 * Use `zip` release assets for `cargo binstall` on Windows
@@ -25,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * First release
 
 <!-- next-url -->
-[Unreleased]: https://github.com/gifnksm/foton/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/gifnksm/foton/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/gifnksm/foton/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/gifnksm/foton/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/gifnksm/foton/commits/v0.1.0
