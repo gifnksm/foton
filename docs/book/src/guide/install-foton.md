@@ -2,6 +2,14 @@
 
 `foton` is supported on Windows only.
 
+## Install a released version with winget
+
+If you have [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) installed, you can install the latest released version of `foton` with:
+
+```console
+winget install -e --id gifnksm.foton
+```
+
 ## Install a pre-built binary
 
 Pre-built binaries are published on the [GitHub Releases page](https://github.com/gifnksm/foton/releases).
