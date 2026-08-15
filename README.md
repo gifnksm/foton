@@ -34,6 +34,9 @@ For detailed installation instructions, see the [installation guide](https://fot
 Quick install options:
 
 ```console
+# Install the latest released version from winget
+$ winget install -e --id gifnksm.foton
+
 # Install the latest released version from pre-built binaries
 $ cargo binstall foton
 
