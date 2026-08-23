@@ -264,11 +264,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        assert_matches,
-        io::{Seek as _, Write as _},
-        num::NonZero,
-    };
+    use std::{assert_matches, io::Seek as _, num::NonZero};
 
     use tempfile::TempDir;
     use zip::{ZipWriter, write::SimpleFileOptions};
