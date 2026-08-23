@@ -112,8 +112,6 @@ impl<'de> Deserialize<'de> for RegistrySource {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr as _;
-
     use serde_json::{from_str, to_string};
 
     use super::*;
