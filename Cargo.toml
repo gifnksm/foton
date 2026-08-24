@@ -79,7 +79,7 @@ derive_more = { version = "2.1.1", features = ["display", "from", "is_variant"] 
 dialoguer = { version = "0.12.0", default-features = false }
 directories = "6.0.0"
 dunce = "1.0.5"
-either = "1.17.0"
+either = "1.18.0"
 futures-core = "0.3.34"
 futures-util = "0.3.34"
 git2 = { version = "0.21.0", default-features = false, features = ["https", "vendored-libgit2"] }
