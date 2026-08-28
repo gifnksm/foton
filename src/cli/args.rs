@@ -4,6 +4,7 @@ use crate::{package::PackageSpec, registry::RegistryId, util::text::QueryString}
 
 /// Manage font packages from package registries and manifest files.
 #[derive(clap::Parser)]
+#[command(version, propagate_version = true)]
 pub(crate) struct Args {
     #[clap(flatten)]
     pub(crate) global_args: GlobalArgs,
