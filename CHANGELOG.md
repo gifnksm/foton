@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * Add `-V` and `--version`
+* Embed Windows version information in `foton.exe`
 
 ## [0.1.2] - 2026-07-31
 
