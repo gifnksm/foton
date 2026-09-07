@@ -102,7 +102,7 @@ spdx = "0.13.5"
 tempfile = "3.27.0"
 tokio = { version = "1.53.1", features = ["fs", "rt-multi-thread", "signal"] }
 tokio-util = "0.7.19"
-toml = "1.1.4"
+toml = "1.1.5"
 url = { version = "2.5.8", features = ["serde"] }
 wild = "2.2.1"
 windows = {
