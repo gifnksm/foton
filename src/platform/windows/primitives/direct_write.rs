@@ -8,24 +8,26 @@ use std::{
 };
 
 use snafu::{IntoError as _, OptionExt as _, ResultExt as _, Snafu};
-use windows::Win32::{
-    Foundation::E_NOINTERFACE,
-    Graphics::DirectWrite::{
-        self, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_PROPERTY_ID,
-        DWRITE_FONT_PROPERTY_ID_FACE_NAME, DWRITE_FONT_PROPERTY_ID_FAMILY_NAME,
-        DWRITE_FONT_PROPERTY_ID_PREFERRED_FAMILY_NAME,
-        DWRITE_FONT_PROPERTY_ID_TYPOGRAPHIC_FACE_NAME, IDWriteFactory3, IDWriteFactory6,
-        IDWriteFontSet1, IDWriteLocalFontFileLoader, IDWriteLocalizedStrings,
+use windows::{
+    Win32::{
+        Foundation::E_NOINTERFACE,
+        Graphics::DirectWrite::{
+            self, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_PROPERTY_ID,
+            DWRITE_FONT_PROPERTY_ID_FACE_NAME, DWRITE_FONT_PROPERTY_ID_FAMILY_NAME,
+            DWRITE_FONT_PROPERTY_ID_PREFERRED_FAMILY_NAME,
+            DWRITE_FONT_PROPERTY_ID_TYPOGRAPHIC_FACE_NAME, IDWriteFactory3, IDWriteFactory6,
+            IDWriteFontSet1, IDWriteLocalFontFileLoader, IDWriteLocalizedStrings,
+        },
     },
+    core::{HSTRING, Interface as _},
 };
-use windows_core::{HSTRING, Interface as _};
 
 use crate::platform::windows::primitives::ui_languages::UiLanguages;
 
 #[derive(Debug, Snafu)]
 pub(crate) enum DirectWriteFactoryError {
     #[snafu(display("failed to create DirectWrite factory"))]
-    CreateFactory { source: windows_core::Error },
+    CreateFactory { source: windows::core::Error },
 }
 
 #[derive(Debug)]
@@ -48,32 +50,32 @@ impl DirectWriteFactory {
 #[derive(Debug, Snafu)]
 pub(crate) enum DirectWriteFontSetError {
     #[snafu(display("failed to create font set builder"))]
-    CreateFontSetBuilder { source: windows_core::Error },
+    CreateFontSetBuilder { source: windows::core::Error },
     #[snafu(display("failed to add font file to font set builder: {path}", path = path.display()))]
     AddFontFile {
         path: PathBuf,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
     #[snafu(display("failed to create font set for font file: {path}", path = path.display()))]
     CreateFontSet {
         path: PathBuf,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
     #[snafu(display("failed to cast font set for font file: {path}", path = path.display()))]
     CastFontSet {
         path: PathBuf,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
     #[snafu(display("failed to cast DirectWrite factory"))]
-    CastFactory { source: windows_core::Error },
+    CastFactory { source: windows::core::Error },
     #[snafu(display("failed to get system font collection"))]
-    GetSystemFontCollection { source: windows_core::Error },
+    GetSystemFontCollection { source: windows::core::Error },
     #[snafu(display("system font collection is empty"))]
     GotSystemFontCollectionIsEmpty,
     #[snafu(display("failed to get font set from collection"))]
-    GetFontSetFromCollection { source: windows_core::Error },
+    GetFontSetFromCollection { source: windows::core::Error },
     #[snafu(display("failed to cast system font set"))]
-    CastSystemFontSet { source: windows_core::Error },
+    CastSystemFontSet { source: windows::core::Error },
 }
 
 #[derive(Debug)]
@@ -202,7 +204,7 @@ pub(crate) enum DirectWriteFontSetEntryError {
     GetFontPropertyValues {
         index: u32,
         property_id: DWRITE_FONT_PROPERTY_ID,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
     #[snafu(display("font file is missing family name at font set entry at index {index}"))]
     MissingFontFamilyName { index: u32 },
@@ -211,41 +213,41 @@ pub(crate) enum DirectWriteFontSetEntryError {
     #[snafu(display("failed to get font face reference for font set entry at index {index}"))]
     GetFontFaceReference {
         index: u32,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
     #[snafu(display("failed to get font file for font set entry at index {index}"))]
     GetFontFile {
         index: u32,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
     #[snafu(display("failed to get font loader for font set entry at index {index}"))]
     GetFontFileLoader {
         index: u32,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
     #[snafu(display(
         "failed to cast font loader to local file loader for font set entry at index {index}"
     ))]
     CastFontFileLoader {
         index: u32,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
     #[snafu(display("failed to get font file reference key for font set entry at index {index}"))]
     GetFontFileReferenceKey {
         index: u32,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
     #[snafu(display("failed to get font file path length for font set entry at index {index}"))]
     GetFontFilePathLength {
         index: u32,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
     #[snafu(display(
         "failed to get font file path from reference key for font set entry at index {index}"
     ))]
     GetFontFilePathFromKey {
         index: u32,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
 }
 
@@ -383,17 +385,17 @@ pub(crate) enum DirectWriteLocalizedStringsError {
     FindLocaleName {
         index: u32,
         locale_name: OsString,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
     #[snafu(display("failed to get string length at index {index}"))]
     GetStringLength {
         index: u32,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
     #[snafu(display("failed to get string at index {index}"))]
     GetString {
         index: u32,
-        source: windows_core::Error,
+        source: windows::core::Error,
     },
 }
 

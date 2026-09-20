@@ -9,14 +9,14 @@ use windows::Win32::{
 #[derive(Debug, Snafu)]
 pub(crate) enum KnownFoldersError {
     #[snafu(display("failed to get system fonts directory"))]
-    GetSystemFontsDir { source: windows_core::Error },
+    GetSystemFontsDir { source: windows::core::Error },
 }
 
 pub(crate) fn system_fonts_dir() -> Result<PathBuf, KnownFoldersError> {
     get_dir(&FOLDERID_Fonts)
 }
 
-fn get_dir(folder_id: &windows_core::GUID) -> Result<PathBuf, KnownFoldersError> {
+fn get_dir(folder_id: &windows::core::GUID) -> Result<PathBuf, KnownFoldersError> {
     let path;
     // SAFETY: `SHGetKnownFolderPath` returns a COM-task-allocated, NUL-terminated UTF-16 path
     // buffer that remains valid until it is released with `CoTaskMemFree`. We read the string and
