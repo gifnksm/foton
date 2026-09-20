@@ -1,13 +1,15 @@
 use std::{ffi::OsString, iter, os::windows::ffi::OsStringExt as _};
 
 use snafu::{ResultExt as _, Snafu};
-use windows::Win32::Globalization::{self, MUI_LANGUAGE_NAME};
-use windows_core::PWSTR;
+use windows::{
+    Win32::Globalization::{self, MUI_LANGUAGE_NAME},
+    core::PWSTR,
+};
 
 #[derive(Debug, Snafu)]
 pub(crate) enum UiLanguagesError {
     #[snafu(display("failed to get user preferred UI languages"))]
-    GetUserPreferredUILanguages { source: windows_core::Error },
+    GetUserPreferredUILanguages { source: windows::core::Error },
     #[snafu(display(
         "failed to convert preferred UI language to string: {invalid_string}",
         invalid_string = invalid_string.display()

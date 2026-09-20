@@ -723,9 +723,7 @@ dependencies = [
  "url",
  "wild",
  "windows",
- "windows-core",
  "windows-registry",
- "windows-result",
  "winresource",
  "zip",
 ]

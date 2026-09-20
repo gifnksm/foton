@@ -6,7 +6,7 @@ use windows::Win32::System::Com::{self, COINIT_MULTITHREADED};
 #[derive(Debug, Snafu)]
 pub(crate) enum ComError {
     #[snafu(display("failed to initialize COM library"))]
-    Initialize { source: windows_core::Error },
+    Initialize { source: windows::core::Error },
 }
 
 pub(crate) fn init() -> Result<ComGuard, ComError> {
