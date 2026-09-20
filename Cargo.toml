@@ -120,7 +120,7 @@ windows = {
     "Win32_UI_WindowsAndMessaging",
   ]
 }
-windows-core = "0.62.2"
+windows-core = "0.100.0"
 windows-registry = "0.6.1"
 windows-result = "0.4.1"
 zip = "8.6.0"
