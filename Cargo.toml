@@ -120,7 +120,7 @@ windows = {
     "Win32_UI_WindowsAndMessaging",
   ]
 }
-windows-registry = "0.6.1"
+windows-registry = "0.100.0"
 zip = "8.6.0"
 
 [dev-dependencies]
