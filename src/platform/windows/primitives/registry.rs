@@ -432,7 +432,7 @@ mod tests {
         with_registry_test(|reg_key| {
             let pkg_id = test_package_id("missing-list");
             let fonts = reg_key.list_valid_package_fonts(&pkg_id).unwrap();
-            assert!(fonts.is_empty());
+            assert_eq!(fonts, []);
         });
     }
 
@@ -473,7 +473,7 @@ mod tests {
             reg_key.unregister_package_fonts(&pkg_id).unwrap();
 
             let fonts_after_unregister = reg_key.list_valid_package_fonts(&pkg_id).unwrap();
-            assert!(fonts_after_unregister.is_empty());
+            assert_eq!(fonts_after_unregister, []);
         });
     }
 
@@ -559,7 +559,7 @@ mod tests {
             key.set_u32(&value_name, 42).unwrap();
 
             reg_key.unregister_package_fonts(&pkg_id).unwrap();
-            assert!(list_value_names(reg_key).is_empty());
+            assert_eq!(list_value_names(reg_key), <[&str; 0]>::default());
         });
     }
 
@@ -587,8 +587,8 @@ mod tests {
 
             let fonts_v1 = reg_key.list_valid_package_fonts(&pkg_id_v1).unwrap();
             let fonts_v2 = reg_key.list_valid_package_fonts(&pkg_id_v2).unwrap();
-            assert!(fonts_v1.is_empty());
-            assert!(!fonts_v2.is_empty());
+            assert_eq!(fonts_v1, []);
+            assert_ne!(fonts_v2, []);
         });
     }
 

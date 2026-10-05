@@ -235,7 +235,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["*/*.ttf"]
         );
-        assert!(archive.ignore.is_empty());
+        assert_eq!(archive.ignore, []);
     }
 
     #[test]
@@ -368,7 +368,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["**/*.ttf", "**/*.otf", "**/*.ttc", "**/*.otc"]
         );
-        assert!(archive.ignore.is_empty());
+        assert_eq!(archive.ignore, []);
     }
 
     #[test]
