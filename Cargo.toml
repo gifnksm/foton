@@ -76,10 +76,10 @@ unused_qualifications = "warn"
 [dependencies]
 async-trait = "0.1.92"
 bytes = "1.12.1"
-clap = { version = "4.6", features = ["derive"] }
-clap_complete = "4.6"
-clap_complete_nushell = "4.6"
-clap_mangen = "0.3"
+clap = { version = "4.6.7", features = ["derive"] }
+clap_complete = "4.6.11"
+clap_complete_nushell = "4.6.2"
+clap_mangen = "0.3.3"
 config = { version = "0.15.27", default-features = false, features = ["toml"] }
 console = "0.16.6"
 derive_more = { version = "2.1.1", features = ["display", "from", "is_variant"] }
