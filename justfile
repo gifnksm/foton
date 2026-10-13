@@ -64,7 +64,7 @@ machete *args:
 
 # Check workflow files.
 actionlint *args:
-    actionlint {{ args }}
+    jactionlint {{ args }}
 
 # Check spelling of entire workspace.
 typos *args:
@@ -72,15 +72,15 @@ typos *args:
 
 # Lint markdown files.
 markdownlint *args:
-    npx markdownlint-cli {{ args }} .
+    markdownlint {{ args }} .
 
 # Format TOML files.
 tombi-format *args:
-    uvx tombi format {{ args }}
+    tombi format {{ args }}
 
 # Lint TOML files.
 tombi-lint *args:
-    uvx tombi lint {{ args }}
+    tombi lint {{ args }}
 
 # Check EditorConfig compliance.
 editorconfig *args:
