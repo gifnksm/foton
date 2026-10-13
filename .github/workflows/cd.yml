@@ -13,10 +13,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.ref_name != github.event.repository.default_branch }}
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
-
-permissions: {}
+  CARGO_INCREMENTAL: 0
+  MISE_CARGO_BINSTALL_ONLY: true
+  MISE_LOCKED: true
 
 jobs:
   build-release-assets:
@@ -36,9 +40,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ matrix.rust }}
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          tool: cargo-about
+          github_token: ${{ github.token }}
+          persist_github_token: true
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: ${{ matrix.job.target }}
