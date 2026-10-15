@@ -20,6 +20,6 @@ editorconfig-checker = { version = "4.0.2", lazy = true, lazy_bins = ["editorcon
 jactionlint = { version = "1.8.2", lazy = true }
 mdbook = { version = "0.5.4", lazy = true }
 just = "1.58.0"
-tombi = { version = "1.8.2", lazy = true }
+tombi = { version = "1.8.3", lazy = true }
 typos = { version = "1.51.1", lazy = true }
 "npm:markdownlint-cli" = { version = "0.49.1", lazy = true, lazy_bins = ["markdownlint"] }
