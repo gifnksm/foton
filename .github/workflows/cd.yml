@@ -74,7 +74,7 @@ jobs:
       - build-release-assets
     permissions:
       contents: write # Allow creating releases and uploading release assets
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - name: Download built artifacts
@@ -100,7 +100,7 @@ jobs:
     needs:
       - build-release-assets
       - release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - name: CD complete
