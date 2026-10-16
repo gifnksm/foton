@@ -71,8 +71,8 @@ typos *args:
     typos {{ args }}
 
 # Lint markdown files.
-markdownlint *args:
-    markdownlint {{ args }} .
+lint-markdown *args:
+    rumdl check {{ args }} .
 
 # Format TOML files.
 tombi-format *args:
@@ -95,7 +95,7 @@ test-guide *args:
     mdbook test ./docs/book {{ args }}
 
 # Run lint and static checks used for day-to-day local verification.
-ci-lint: ci-rustfmt ci-tombi-format ci-tombi-lint ci-check ci-clippy ci-machete ci-actionlint ci-typos ci-markdownlint ci-editorconfig
+ci-lint: ci-rustfmt ci-tombi-format ci-tombi-lint ci-check ci-clippy ci-machete ci-actionlint ci-typos ci-lint-markdown ci-editorconfig
 
 # Run all CI-equivalent checks.
 ci: ci-lint ci-rustdoc ci-sync-rdme ci-test ci-coverage ci-build-guide ci-test-guide
@@ -143,8 +143,8 @@ ci-typos:
     just typos
 
 # CI: lint markdown files.
-ci-markdownlint:
-    just markdownlint
+ci-lint-markdown:
+    just lint-markdown
 
 # CI: check EditorConfig compliance.
 ci-editorconfig *args:

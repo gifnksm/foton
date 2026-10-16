@@ -4,7 +4,7 @@ A package manifest is a TOML file that defines a font package.
 It tells `foton` what the package is called, where its downloadable sources are,
 and which fonts from those sources should be installed.
 
-## Typical workflow
+## Typical Workflow
 
 A practical workflow for authoring a package is:
 
@@ -13,7 +13,7 @@ A practical workflow for authoring a package is:
 3. Install it locally with `foton install --manifest`
 4. Add it to a package registry if you want to publish it
 
-## Example manifest
+## Example Manifest
 
 ```toml
 name = "example-font"
@@ -37,51 +37,51 @@ fonts = [
 ]
 ```
 
-## Required fields
+## Required Fields
 
 This section is a quick checklist, not a complete field reference.
 See [Package Manifest Reference](../../reference/package-manifest.md) for a detailed description of every field.
 
 At minimum, a manifest must define:
 
-- `name`
-- `version`
-- `sources`
+* `name`
+* `version`
+* `sources`
 
 For the exact fields inside each source entry, see
 [Package Manifest Reference](../../reference/package-manifest.md).
 
-## Choosing a package version
+## Choosing a Package Version
 
 Choose a `version` that identifies one specific immutable release and sorts in
 release order for that package.
 
 A practical way to choose package versions is:
 
-- Use the upstream release version when it already fits `foton`'s
+* Use the upstream release version when it already fits `foton`'s
   package-version format.
-- If there is no usable upstream version, use a calendar-based version such as
+* If there is no usable upstream version, use a calendar-based version such as
   `2024.05.11`.
-- If you need to publish a pre-release, add a suffix to the final part. A
+* If you need to publish a pre-release, add a suffix to the final part. A
   suffix marks the version as a pre-release and sorts it before the
   corresponding version without a suffix, such as `1.4.0-rc-1 < 1.4.0` or
   `2024.05.11-beta-2 < 2024.05.11`.
-- If the upstream version does not fit `foton`'s package-version syntax,
+* If the upstream version does not fit `foton`'s package-version syntax,
   rewrite it in a form that still preserves the upstream release ordering and
   whether the release is stable or pre-release. For example, rewrite `v1.4.0`
   as `1.4.0`, and rewrite `1.4.0-rc10` as `1.4.0-rc-10`.
-- Keep the notation consistent within the same package to avoid non-intuitive
+* Keep the notation consistent within the same package to avoid non-intuitive
   ordering results:
-  - Do not mix forms such as `2024.5.11` and `2024.05.11`, because they are
+  * Do not mix forms such as `2024.5.11` and `2024.05.11`, because they are
     different versions.
-  - Keep the same number of numeric parts within a package. For example,
+  * Keep the same number of numeric parts within a package. For example,
     prefer a consistent series such as `1.2.0`, `1.3.0`, and `1.4.0-rc-1`
     over mixing forms such as `1.2`, `1.3.0`, and `1.4-rc-1`.
 
 For the exact package-version syntax and ordering rules, see
 [Package Manifest Reference](../../reference/package-manifest.md).
 
-## Recommended fields
+## Recommended Fields
 
 These fields are optional, but strongly recommended because they help users
 understand the package and the fonts it provides. In particular,
@@ -91,10 +91,10 @@ complete field definitions and constraints.
 
 These fields are recommended:
 
-- `description`
-- `license`
-- `homepage`
-- `repository`
+* `description`
+* `license`
+* `homepage`
+* `repository`
 
 These metadata fields describe the package and the fonts it provides, not the
 manifest structure itself. In particular, `homepage`, `repository`, and
@@ -106,13 +106,13 @@ not repeat `repository` in `homepage` just to fill both fields.
 
 `foton manifest check` warns if `description` or `license` is missing.
 
-## Prepare source information
+## Prepare Source Information
 
 Each `sources[]` entry needs a source digest.
 For archive sources, you also need the exact archive entry paths for the font
 files you want to install.
 
-### Get the source hash
+### Get the Source Hash
 
 The `hash` field stores the SHA-256 digest of the downloaded source file,
 written as `sha256:<hex-digest>`.
@@ -131,7 +131,7 @@ Then write the result in the manifest as:
 hash = "sha256:<hex-digest>"
 ```
 
-### Find archive entry paths
+### Find Archive Entry Paths
 
 For `contents.type = "archive"`, the `fonts` and `ignore` rules use paths
 inside the ZIP archive, not paths from an extracted directory on disk.
@@ -142,7 +142,7 @@ For example, if the archive contains
 `example-font-1.2.3/ExampleFont-Regular.ttf`, use that full archive path in
 `fonts`.
 
-## Choosing fonts from a source
+## Choosing Fonts from a Source
 
 Each `sources[]` entry must define a `[sources.contents]` table.
 That table tells `foton` what kind of downloaded source it is working with and,
@@ -155,16 +155,16 @@ contains one or more font files.
 See [Package Manifest Reference](../../reference/package-manifest.md) for the exact
 field definitions and constraints.
 
-### Archive sources (`contents.type = "archive"`)
+### Archive Sources (`contents.type = "archive"`)
 
 For an archive source, the `fonts` field under `[sources.contents]` selects
 which archive entries should be installed as fonts.
 If you omit `fonts`, `foton` uses these default glob rules:
 
-- `**/*.ttf`
-- `**/*.otf`
-- `**/*.ttc`
-- `**/*.otc`
+* `**/*.ttf`
+* `**/*.otf`
+* `**/*.ttc`
+* `**/*.otc`
 
 Prefer `fonts` entries that list each font file path explicitly.
 If the archive entry's file name is unsuitable, you can also specify
@@ -181,7 +181,7 @@ If the source archive contains other font-like files such as `*.ttf`, `*.otf`,
 That makes the omission visible in the manifest and shows that the files were
 left out intentionally.
 
-### Direct font sources (`contents.type = "font-file"`)
+### Direct Font Sources (`contents.type = "font-file"`)
 
 For a source with `contents.type = "font-file"`, the downloaded source itself
 is installed as one font file.
@@ -198,7 +198,7 @@ type = "font-file"
 file-name = "Example-Regular.ttf"
 ```
 
-## Validate the manifest
+## Validate the Manifest
 
 Run:
 
@@ -221,7 +221,7 @@ If you want warnings to fail the command, use the global
 foton --warnings-as-errors manifest check <manifest-path>
 ```
 
-## Test the manifest locally
+## Test the Manifest Locally
 
 You can install a package directly from a local manifest file:
 
@@ -232,13 +232,13 @@ foton install --manifest <manifest-path>
 This is useful before publishing the manifest in a registry.
 It lets you test the actual install workflow with the same manifest content.
 
-## Publish through a registry
+## Publish Through a Registry
 
 Once a manifest works locally, place it in a package registry so it can be
 resolved by package name.
-See [Setting Up Your Own Package Registry](setup-package-registry.md).
+See [Setting up Your Own Package Registry](setup-package-registry.md).
 
-## Related pages
+## Related Pages
 
-- [Package Manifest Reference](../../reference/package-manifest.md)
-- [manifest check command reference](../../reference/commands/manifest/check.md)
+* [Package Manifest Reference](../../reference/package-manifest.md)
+* [manifest check command reference](../../reference/commands/manifest/check.md)

@@ -1,3 +1,4 @@
+<!-- rumdl-disable MD082 -->
 # Configuration File Reference
 
 `foton` loads configuration from a `config.toml` file in its configuration
@@ -10,27 +11,27 @@ On Windows, the configuration file is stored at:
 %APPDATA%\io.github.gifnksm\foton\config\config.toml
 ```
 
-## What configuration controls
+## What Configuration Controls
 
 The configuration file currently controls:
 
-- install-time safety limits for downloaded package sources and the font files
+* install-time safety limits for downloaded package sources and the font files
   selected from them
-- the set of configured package registries
-- whether each configured registry is enabled by default
+* the set of configured package registries
+* whether each configured registry is enabled by default
 
-## Default behavior and merge rules
+## Default Behavior and Merge Rules
 
 `config.toml` is optional.
 If it is present, `foton` merges it onto built-in defaults.
 
 This means:
 
-- omitted sections and keys keep their default values
-- unknown keys are rejected
-- the default configuration already includes the public `foton` package registry
+* omitted sections and keys keep their default values
+* unknown keys are rejected
+* the default configuration already includes the public `foton` package registry
 
-## Example configuration
+## Example Configuration
 
 ```toml
 [install]
@@ -51,20 +52,20 @@ source = "git+https://example.com/fonts/experimental-registry.git"
 enabled = false
 ```
 
-## Top-level sections
+## Top-Level Sections
 
 Field headings indicate whether a section or key is optional.
 Defaults are listed in the metadata bullets for the relevant sections and keys.
 
-### `install` (optional)
+### `install` (Optional)
 
 The `install` section defines safety limits used while processing package
 sources.
 All install limit values must be positive integers greater than zero.
 
-- **Type**: table
-- **Default**: built-in install limits are used if this section is omitted
-- **Example**:
+* **Type**: table
+* **Default**: built-in install limits are used if this section is omitted
+* **Example**:
 
   ```toml
   [install]
@@ -73,17 +74,17 @@ All install limit values must be positive integers greater than zero.
   max-font-file-size-bytes = 134217728
   ```
 
-### `registries` (optional)
+### `registries` (Optional)
 
 The `registries` table contains `registries.<registry-id>` entries keyed by
 registry ID.
 Each `registries.<registry-id>` entry configures one registry that `foton` can
 search or install from.
 
-- **Type**: table of registry entries
-- **Default**: the built-in `registries.foton` entry is present even if this
+* **Type**: table of registry entries
+* **Default**: the built-in `registries.foton` entry is present even if this
   section is omitted
-- **Example**:
+* **Example**:
 
   ```toml
   [registries.example]
@@ -91,24 +92,24 @@ search or install from.
   enabled = true
   ```
 
-## Install section fields
+## Install Section Fields
 
-### `install.max-source-size-bytes` (optional)
+### `install.max-source-size-bytes` (Optional)
 
 The maximum allowed size, in bytes, of one downloaded package source.
 This limit applies before `foton` interprets the source as a direct font file or
 as an archive.
 
-- **Type**: positive unsigned integer
-- **Default**: `536870912` (512MiB)
-- **Example**:
+* **Type**: positive unsigned integer
+* **Default**: `536870912` (512MiB)
+* **Example**:
 
   ```toml
   [install]
   max-source-size-bytes = 536870912
   ```
 
-### `install.max-fonts-per-package-source` (optional)
+### `install.max-fonts-per-package-source` (Optional)
 
 The maximum number of font files that `foton` may take from one package
 source.
@@ -117,44 +118,44 @@ entries may become installed font files.
 For sources with `contents.type = "font-file"`, the source itself counts as
 one font file.
 
-- **Type**: positive unsigned integer
-- **Default**: `1000`
-- **Example**:
+* **Type**: positive unsigned integer
+* **Default**: `1000`
+* **Example**:
 
   ```toml
   [install]
   max-fonts-per-package-source = 1000
   ```
 
-### `install.max-font-file-size-bytes` (optional)
+### `install.max-font-file-size-bytes` (Optional)
 
 The maximum allowed size, in bytes, of one font file selected for
 installation.
 This limit applies both to sources with `contents.type = "font-file"` and to
 individual font files selected from sources with `contents.type = "archive"`.
 
-- **Type**: positive unsigned integer
-- **Default**: `134217728` (128MiB)
-- **Example**:
+* **Type**: positive unsigned integer
+* **Default**: `134217728` (128MiB)
+* **Example**:
 
   ```toml
   [install]
   max-font-file-size-bytes = 134217728
   ```
 
-## Registry entry fields
+## Registry Entry Fields
 
-### `registries.<registry-id>` (optional)
+### `registries.<registry-id>` (Optional)
 
 A single registry entry.
 `<registry-id>` is a user-defined registry ID.
 Commands such as `foton search --registry ...` and `foton install --registry ...`
 use these registry IDs.
 
-- **Type**: table
-- **Constraints**: the registry ID must start with a lowercase ASCII letter and
+* **Type**: table
+* **Constraints**: the registry ID must start with a lowercase ASCII letter and
   contain only lowercase ASCII letters, digits, or `-`
-- **Example**:
+* **Example**:
 
   ```toml
   [registries.example]
@@ -162,14 +163,14 @@ use these registry IDs.
   enabled = true
   ```
 
-### `registries.<registry-id>.source` (required)
+### `registries.<registry-id>.source` (Required)
 
 The source from which `foton` loads the registry.
 Use `local+...` for a local directory or `git+...` for a Git-backed registry.
 
-- **Type**: registry source string
-- **Constraints**: must be either `local+<absolute-path>` or `git+<url>`
-- **Example**:
+* **Type**: registry source string
+* **Constraints**: must be either `local+<absolute-path>` or `git+<url>`
+* **Example**:
 
   ```toml
   [registries.example]
@@ -181,7 +182,7 @@ Use `local+...` for a local directory or `git+...` for a Git-backed registry.
   source = "git+https://example.com/fonts/example-registry.git"
   ```
 
-### `registries.<registry-id>.enabled` (optional)
+### `registries.<registry-id>.enabled` (Optional)
 
 Whether the registry is enabled by default.
 Set this to `false` when you want to keep the registry configured but not use
@@ -193,16 +194,16 @@ If all configured package registries are disabled and you do not pass
 `--registry`, commands that rely on package registries fail because there are
 no enabled package registries to use.
 
-- **Type**: boolean
-- **Default**: `true`
-- **Example**:
+* **Type**: boolean
+* **Default**: `true`
+* **Example**:
 
   ```toml
   [registries.example]
   enabled = false
   ```
 
-## Related pages
+## Related Pages
 
-- [Package Registry Reference](package-registry.md)
-- [Setting Up Your Own Package Registry](../guide/advanced/setup-package-registry.md)
+* [Package Registry Reference](package-registry.md)
+* [Setting up Your Own Package Registry](../guide/advanced/setup-package-registry.md)

@@ -1,4 +1,5 @@
-# uninstall
+<!-- rumdl-disable MD082 -->
+# Uninstall
 
 Uninstall packages recorded in the local package database.
 
@@ -14,7 +15,7 @@ foton uninstall [OPTIONS] <PACKAGE>...
 
 Package names, optionally with an exact version as `<package-name>@<version>`.
 
-## Global options
+## Global Options
 
 ### `--exit-on-lock`
 
@@ -44,14 +45,14 @@ foton uninstall <package-name>@<version>
 
 ## Notes
 
-- If an uninstall does not complete cleanly, use `repair` to clean up any
+* If an uninstall does not complete cleanly, use `repair` to clean up any
   packages it leaves behind.
-- `uninstall` operates on packages recorded in the local package database and
+* `uninstall` operates on packages recorded in the local package database and
   does not access package registries.
 
-## Related pages
+## Related Pages
 
-- [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
-- [repair command reference](repair.md)
-- [list command reference](list.md)
-- [info command reference](info.md)
+* [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
+* [repair command reference](repair.md)
+* [list command reference](list.md)
+* [info command reference](info.md)

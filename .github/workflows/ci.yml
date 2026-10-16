@@ -447,8 +447,8 @@ jobs:
       - run: just ci-typos
         shell: bash
 
-  markdownlint:
-    name: Markdownlint
+  lint-markdown:
+    name: Lint (markdown)
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
@@ -459,7 +459,7 @@ jobs:
         with:
           github_token: ${{ github.token }}
           persist_github_token: true
-      - run: just ci-markdownlint
+      - run: just ci-lint-markdown
         shell: bash
 
   editorconfig:
@@ -531,7 +531,7 @@ jobs:
       - scenario-coverage
       - actionlint
       - typos
-      - markdownlint
+      - lint-markdown
       - editorconfig
       - build-guide
       - test-guide

@@ -4,7 +4,7 @@ A package registry is a collection of package manifests that `foton` can search
 and install from.
 A registry may be stored in a local directory or in a Git repository.
 
-## Directory layout
+## Directory Layout
 
 A registry is organized by package name and package version:
 
@@ -42,14 +42,14 @@ when validating manifests by file path.
 
 When `foton` scans the registry layout:
 
-- under `packages`, only directories are considered package-name entries;
+* under `packages`, only directories are considered package-name entries;
   hidden entries and other non-directory entries are ignored
-- under each `<package-name>` directory, only directories are considered
+* under each `<package-name>` directory, only directories are considered
   version entries; hidden entries and other non-directory entries are ignored
-- within each `<version>` directory, `foton` reads `manifest.toml`; other files
+* within each `<version>` directory, `foton` reads `manifest.toml`; other files
   are ignored for package discovery
 
-## Registry configuration
+## Registry Configuration
 
 Registries are configured in your `config.toml` file under
 `[registries.<registry-id>]`.
@@ -60,8 +60,8 @@ Commands that support `--registry` use these registry IDs, not paths or URLs.
 Each registry entry specifies a `source`.
 `foton` currently supports these source formats:
 
-- `local+<absolute-path>`
-- `git+<url>`
+* `local+<absolute-path>`
+* `git+<url>`
 
 A `local+...` source points directly at a directory on your machine.
 A `git+...` source points at a Git repository URL and is fetched into a local
@@ -82,9 +82,9 @@ foton search --registry example <query>
 For the exact configuration format, see
 [Configuration File Reference](configuration.md).
 
-## Related pages
+## Related Pages
 
-- [Setting Up Your Own Package Registry](../guide/advanced/setup-package-registry.md)
-- [Configuration File Reference](configuration.md)
-- [search command reference](commands/search.md)
-- [install command reference](commands/install.md)
+* [Setting up Your Own Package Registry](../guide/advanced/setup-package-registry.md)
+* [Configuration File Reference](configuration.md)
+* [search command reference](commands/search.md)
+* [install command reference](commands/install.md)

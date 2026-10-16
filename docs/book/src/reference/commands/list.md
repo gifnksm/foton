@@ -1,4 +1,5 @@
-# list
+<!-- rumdl-disable MD082 -->
+# List
 
 List packages recorded in the local package database.
 
@@ -22,10 +23,10 @@ If not specified, show all packages in the local package database.
 
 Select the output format.
 
-- **Default**: `text`
-- **Possible values**: `text`, `jsonl`
+* **Default**: `text`
+* **Possible values**: `text`, `jsonl`
 
-## Global options
+## Global Options
 
 ### `--exit-on-lock`
 
@@ -68,14 +69,14 @@ in JSON Lines format.
 
 ## Notes
 
-- `list` reads the local package database and does not access package registries.
-- Use `info` when you want more than the package name, version, and recorded
+* `list` reads the local package database and does not access package registries.
+* Use `info` when you want more than the package name, version, and recorded
   states.
 
-## Related pages
+## Related Pages
 
-- [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
-- [activate command reference](activate.md)
-- [deactivate command reference](deactivate.md)
-- [info command reference](info.md)
-- [repair command reference](repair.md)
+* [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
+* [activate command reference](activate.md)
+* [deactivate command reference](deactivate.md)
+* [info command reference](info.md)
+* [repair command reference](repair.md)

@@ -1,4 +1,5 @@
-# activate
+<!-- rumdl-disable MD082 -->
+# Activate
 
 Activate installed packages.
 
@@ -14,7 +15,7 @@ foton activate [OPTIONS] <PACKAGE>...
 
 Package names, optionally with an exact version as `<package-name>@<version>`.
 
-## Global options
+## Global Options
 
 ### `--exit-on-lock`
 
@@ -44,15 +45,15 @@ foton activate <package-name-1> <package-name-2>
 
 ## Notes
 
-- `activate` operates on packages recorded in the local package database and
+* `activate` operates on packages recorded in the local package database and
   does not access package registries.
-- Only one version of a package name can be active at a time.
+* Only one version of a package name can be active at a time.
   Activating one version deactivates any other active version of the same
   package name.
 
-## Related pages
+## Related Pages
 
-- [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
-- [deactivate command reference](deactivate.md)
-- [install command reference](install.md)
-- [info command reference](info.md)
+* [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
+* [deactivate command reference](deactivate.md)
+* [install command reference](install.md)
+* [info command reference](info.md)

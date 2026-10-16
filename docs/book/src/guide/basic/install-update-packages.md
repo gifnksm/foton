@@ -6,7 +6,7 @@ package: `install` and `update`.
 In the examples below, replace placeholders such as `<package-name>`,
 `<version>`, and `<registry-id>` with real values.
 
-## Install packages from package registries
+## Install Packages from Package Registries
 
 Install a package by name:
 
@@ -34,7 +34,7 @@ To resolve packages only from specific package registries, pass `--registry`.
 foton install --registry <registry-id-1>,<registry-id-2> <package-name>
 ```
 
-## Install without activating immediately
+## Install Without Activating Immediately
 
 By default, `install` activates the selected packages after they are installed.
 If you only want to download and record the package first, pass
@@ -46,7 +46,7 @@ foton install --no-activate <package-name>
 
 You can activate the package later with `foton activate`.
 
-## Update installed packages
+## Update Installed Packages
 
 Update installed packages when newer versions are available:
 
@@ -70,7 +70,7 @@ If you want to control which package registries are used to find updates, pass
 foton update --registry <registry-id-1>,<registry-id-2> <package-name>
 ```
 
-## Confirmation prompts
+## Confirmation Prompts
 
 Commands that change installed packages ask for confirmation before applying
 changes.
@@ -86,14 +86,14 @@ foton --no-confirm update
 
 ## Notes
 
-- If an install or update does not complete cleanly, use `foton repair` to
+* If an install or update does not complete cleanly, use `foton repair` to
   clean up any packages left behind.
-- See the command reference for additional options and details.
+* See the command reference for additional options and details.
 
-## Related pages
+## Related Pages
 
-- [Discovering Packages](discover-packages.md)
-- [Managing Installed Packages](manage-installed-packages.md)
-- [install command reference](../../reference/commands/install.md)
-- [update command reference](../../reference/commands/update.md)
-- [repair command reference](../../reference/commands/repair.md)
+* [Discovering Packages](discover-packages.md)
+* [Managing Installed Packages](manage-installed-packages.md)
+* [install command reference](../../reference/commands/install.md)
+* [update command reference](../../reference/commands/update.md)
+* [repair command reference](../../reference/commands/repair.md)

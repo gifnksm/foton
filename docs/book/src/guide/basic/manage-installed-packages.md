@@ -7,7 +7,7 @@ It also explains how to recover from incomplete operations with `repair`.
 In the examples below, replace placeholders such as `<package-name>` and
 `<version>` with real values.
 
-## List packages
+## List Packages
 
 Show packages recorded in the local package database:
 
@@ -27,7 +27,7 @@ If you want machine-readable output, use JSON Lines:
 foton list --format jsonl
 ```
 
-## Inspect a package in detail
+## Inspect a Package in Detail
 
 Show detailed information about one or more packages recorded in the local package database:
 
@@ -49,7 +49,7 @@ This can include packages left by incomplete operations.
 Use this command when you want to confirm exactly what is recorded in the local
 package database.
 
-## Change whether an installed package is active
+## Change Whether an Installed Package Is Active
 
 Installed packages can stay available in `foton`'s local package storage while
 being either `active` or `inactive`.
@@ -95,7 +95,7 @@ Like other commands that change installed packages, `activate` and
 `deactivate` ask for confirmation before applying changes.
 Use the global `--no-confirm` option if you want to skip the prompt.
 
-## Recover from operations that did not complete cleanly
+## Recover from Operations That Did Not Complete Cleanly
 
 Sometimes a package command such as `install` or `activate` does not complete
 cleanly. It may leave packages in incomplete states. If `list` shows such
@@ -118,7 +118,7 @@ foton repair <package-name>@<version>
 `repair` cleans up those packages. It does not retry or resume the command
 that left them in those states.
 
-## Remove a package
+## Remove a Package
 
 Uninstall one or more packages:
 
@@ -147,7 +147,7 @@ If you want to skip the prompt, pass the global `--no-confirm` option.
 foton --no-confirm uninstall <package-name>
 ```
 
-## Typical workflow
+## Typical Workflow
 
 A common workflow is:
 
@@ -156,11 +156,11 @@ A common workflow is:
 3. Run `foton activate <package-name>` or `foton deactivate <package-name>` when you want to change whether an installed package is active
 4. Run `foton uninstall <package-name>` to remove a package you no longer need
 
-## Related pages
+## Related Pages
 
-- [list command reference](../../reference/commands/list.md)
-- [info command reference](../../reference/commands/info.md)
-- [activate command reference](../../reference/commands/activate.md)
-- [deactivate command reference](../../reference/commands/deactivate.md)
-- [repair command reference](../../reference/commands/repair.md)
-- [uninstall command reference](../../reference/commands/uninstall.md)
+* [list command reference](../../reference/commands/list.md)
+* [info command reference](../../reference/commands/info.md)
+* [activate command reference](../../reference/commands/activate.md)
+* [deactivate command reference](../../reference/commands/deactivate.md)
+* [repair command reference](../../reference/commands/repair.md)
+* [uninstall command reference](../../reference/commands/uninstall.md)

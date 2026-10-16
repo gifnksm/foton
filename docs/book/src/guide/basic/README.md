@@ -12,11 +12,11 @@ A typical workflow looks like this:
 3. Update installed packages when newer versions are available
 4. Inspect, activate or deactivate, or remove packages that are already installed
 
-## Chapters in this section
+## Chapters in This Section
 
-- [Discovering Packages](discover-packages.md)
-- [Installing and Updating Packages](install-update-packages.md)
-- [Managing Installed Packages](manage-installed-packages.md)
+* [Discovering Packages](discover-packages.md)
+* [Installing and Updating Packages](install-update-packages.md)
+* [Managing Installed Packages](manage-installed-packages.md)
 
 If you want to install a package directly from a local manifest file or define
 your own package registry, continue to [Advanced Usage](../advanced/README.md).

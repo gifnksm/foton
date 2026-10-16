@@ -2,7 +2,7 @@
 
 `foton` is supported on Windows only.
 
-## Install a released version with winget
+## Install a Released Version with Winget
 
 If you have [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) installed, you can install the latest released version of `foton` with:
 
@@ -10,7 +10,7 @@ If you have [winget](https://learn.microsoft.com/en-us/windows/package-manager/w
 winget install -e --id gifnksm.foton
 ```
 
-## Install a pre-built binary
+## Install a Pre-Built Binary
 
 Pre-built binaries are published on the [GitHub Releases page](https://github.com/gifnksm/foton/releases).
 
@@ -39,7 +39,7 @@ cargo install foton
 cargo install --git https://github.com/gifnksm/foton.git foton
 ```
 
-## Verify the installation
+## Verify the Installation
 
 Run:
 
@@ -49,7 +49,7 @@ foton --help
 
 If the command succeeds, `foton` is installed and available on your `PATH`.
 
-## Next steps
+## Next Steps
 
 If you are new to `foton`, read [Core Concepts](core-concepts.md) first.
 Then continue with [Basic Usage](basic/README.md) to learn the everyday
