@@ -1,16 +1,15 @@
 # Package Manifest Reference
 
-A package manifest is a TOML document that defines a single package version.
-It is used both for packages stored in registries and for local manifest files
+A package manifest is a TOML document that defines a single package version. It
+is used both for packages stored in registries and for local manifest files
 installed with `foton install --manifest`.
 
 ## Format Overview
 
-A manifest uses kebab-case field names.
-Unknown fields are rejected.
+A manifest uses kebab-case field names. Unknown fields are rejected.
 
-At the top level, a manifest contains package metadata and a non-empty
-`sources` array.
+At the top level, a manifest contains package metadata and a non-empty `sources`
+array.
 
 ## Example
 
@@ -36,13 +35,15 @@ fonts = [
 
 ## Validation and Quality Checks
 
-Use `foton manifest check` to validate a manifest.
-The command checks both installation errors and quality issues.
-For example, it can report:
+Use `foton manifest check` to validate a manifest. The command checks both
+installation errors and quality issues. For example, it can report:
 
 * missing recommended metadata such as `description` or `license`
-* metadata issues such as an empty or whitespace-padded `description`, an invalid `homepage` or `repository`, identical `homepage` and `repository` values, or an invalid `license`
-* for manifests treated as part of a package registry, a path that does not match the registry path for the manifest's package ID
+* metadata issues such as an empty or whitespace-padded `description`, an
+  invalid `homepage` or `repository`, identical `homepage` and `repository`
+  values, or an invalid `license`
+* for manifests treated as part of a package registry, a path that does not
+  match the registry path for the manifest's package ID
 * source-content issues such as:
   * for sources with `contents.type = "archive"`:
     * `glob` entries in `fonts`
@@ -52,9 +53,8 @@ For example, it can report:
 ## Package Version Format and Ordering
 
 In a package manifest, the `version` field uses `foton`'s package-version
-format.
-It identifies a single immutable package release and is also used to order
-package versions when `foton` selects newer or older releases.
+format. It identifies a single immutable package release and is also used to
+order package versions when `foton` selects newer or older releases.
 
 ### Format
 
@@ -75,8 +75,8 @@ Additional rules:
 * `<suffix>` may appear only after the final `<numeric-part>`
 * `<suffix>` denotes a pre-release of the same `<package-version>` without the
   `<suffix>`
-* `<suffix-identifier>` values are written as separate `-`-delimited tokens,
-  so use `1.0.0-rc-10`, not `1.0.0-rc10`
+* `<suffix-identifier>` values are written as separate `-`-delimited tokens, so
+  use `1.0.0-rc-10`, not `1.0.0-rc10`
 
 Valid examples:
 
@@ -108,8 +108,8 @@ Versions are compared in this order:
    `<suffix-identifier>` values from left to right.
 7. Numeric `<suffix-identifier>` values are compared by numeric value and are
    older than alphabetic `<suffix-identifier>` values.
-8. If two numeric `<suffix-identifier>` values have the same numeric value,
-   the one with fewer leading zeros is older.
+8. If two numeric `<suffix-identifier>` values have the same numeric value, the
+   one with fewer leading zeros is older.
 9. If all shared `<suffix-identifier>` values are equal and one `<suffix>` has
    fewer identifiers, the shorter suffix is older.
 
@@ -133,20 +133,18 @@ Versions are compared in this order:
 
 ## Top-Level Fields
 
-Field headings indicate whether a field is required or optional.
-Fields marked recommended are optional, but strongly recommended because they
-help users understand the package and the fonts it provides. In particular,
-`description` appears in search results and is used by `foton search`.
-Metadata fields such as `description`, `homepage`, `repository`, and `license`
-describe the package and the fonts it provides.
-Packaging fields such as `name`, `version`, and `sources` describe how `foton`
-identifies and installs the package.
+Field headings indicate whether a field is required or optional. Fields marked
+recommended are optional, but strongly recommended because they help users
+understand the package and the fonts it provides. In particular, `description`
+appears in search results and is used by `foton search`. Metadata fields such as
+`description`, `homepage`, `repository`, and `license` describe the package and
+the fonts it provides. Packaging fields such as `name`, `version`, and `sources`
+describe how `foton` identifies and installs the package.
 
 ### `name` (Required)
 
 The canonical package name used in commands such as
-`foton install <package-name>`.
-This is the stable identifier for the package.
+`foton install <package-name>`. This is the stable identifier for the package.
 
 * **Type**: package name string
 * **Constraints**: must start with a lowercase ASCII letter and contain only
@@ -159,8 +157,8 @@ This is the stable identifier for the package.
 
 ### `version` (Required)
 
-The package version.
-Use a version string that identifies an immutable package release.
+The package version. Use a version string that identifies an immutable package
+release.
 
 * **Type**: package version string
 * **Constraints**: must follow the package-version format described above
@@ -173,13 +171,12 @@ Use a version string that identifies an immutable package release.
 ### `description` (Optional, Recommended)
 
 A short description of the font family, collection, or bundle provided by the
-package.
-Use this field for a concise, user-facing summary of what the package provides.
-Keep this field non-empty and free of leading or trailing whitespace.
+package. Use this field for a concise, user-facing summary of what the package
+provides. Keep this field non-empty and free of leading or trailing whitespace.
 
 * **Type**: string
-* **Recommended because**: it appears in search results and can help users
-  find the package
+* **Recommended because**: it appears in search results and can help users find
+  the package
 * **Example**:
 
   ```toml
@@ -189,9 +186,8 @@ Keep this field non-empty and free of leading or trailing whitespace.
 ### `homepage` (Optional, Recommended)
 
 The upstream homepage for the font project or distribution represented by the
-package.
-When setting this field, use a valid `http` or `https` URL.
-Omit this field if there is no distinct upstream homepage.
+package. When setting this field, use a valid `http` or `https` URL. Omit this
+field if there is no distinct upstream homepage.
 
 * **Type**: URL string
 * **Recommended because**: it gives users a homepage for more information about
@@ -207,8 +203,8 @@ Omit this field if there is no distinct upstream homepage.
 ### `repository` (Optional, Recommended)
 
 The upstream source repository for the font project represented by the package.
-When setting this field, use a valid `http` or `https` URL.
-Omit this field if there is no suitable public upstream repository.
+When setting this field, use a valid `http` or `https` URL. Omit this field if
+there is no suitable public upstream repository.
 
 * **Type**: URL string
 * **Recommended because**: it gives users a source repository for the upstream
@@ -221,11 +217,10 @@ Omit this field if there is no suitable public upstream repository.
 
 ### `license` (Optional, Recommended)
 
-The SPDX license expression for the upstream font files included in the
-package.
-When setting this field, use a valid SPDX expression.
-Use the license of the upstream font files included in the package, not the
-license of the manifest itself.
+The SPDX license expression for the upstream font files included in the package.
+When setting this field, use a valid SPDX expression. Use the license of the
+upstream font files included in the package, not the license of the manifest
+itself.
 
 * **Type**: SPDX expression string
 * **Recommended because**: it tells users the licensing terms of the font files
@@ -238,9 +233,8 @@ license of the manifest itself.
 
 ### `sources` (Required)
 
-A non-empty array of source objects.
-Each source describes one downloadable font file or archive from which `foton`
-can install fonts.
+A non-empty array of source objects. Each source describes one downloadable font
+file or archive from which `foton` can install fonts.
 
 * **Type**: non-empty array of source objects
 * **Example**:
@@ -256,8 +250,8 @@ can install fonts.
 
 ## Source Fields
 
-Field headings indicate whether a field is required or optional.
-Each entry in `sources` supports the following fields.
+Field headings indicate whether a field is required or optional. Each entry in
+`sources` supports the following fields.
 
 ### `sources[].url` (Required)
 
@@ -277,8 +271,8 @@ The downloadable archive or file that contains the package contents.
 The expected digest used to verify source integrity.
 
 * **Type**: digest string
-* **Constraints**: must include an algorithm prefix such as `sha256:`;
-  currently `sha256` is supported
+* **Constraints**: must include an algorithm prefix such as `sha256:`; currently
+  `sha256` is supported
 * **Example**:
 
   ```toml
@@ -288,11 +282,10 @@ The expected digest used to verify source integrity.
 
 ### `sources[].contents` (Required)
 
-A table that describes what the downloaded source contains.
-Use `contents.type = "font-file"` when the downloaded source is itself one
-font file.
-Use `contents.type = "archive"` when the downloaded source is a ZIP archive
-that contains one or more font files.
+A table that describes what the downloaded source contains. Use
+`contents.type = "font-file"` when the downloaded source is itself one font
+file. Use `contents.type = "archive"` when the downloaded source is a ZIP
+archive that contains one or more font files.
 
 * **Type**: contents table
 * **Example**:
@@ -326,11 +319,11 @@ The kind of downloaded source.
   type = "font-file"
   ```
 
-### `sources[].contents.file-name` (Optional, for Sources with `contents.type = "font-file"`)
+### `sources[].contents.file-name` (Optional)
 
 The file name that `foton` should use for a source with
-`contents.type = "font-file"`.
-When omitted, `foton` derives the file name from the URL path.
+`contents.type = "font-file"`. When omitted, `foton` derives the file name from
+the URL path.
 
 * **Type**: file name string
 * **Constraints**: must be a valid plain file name
@@ -346,20 +339,18 @@ When omitted, `foton` derives the file name from the URL path.
   file-name = "Example-Regular.ttf"
   ```
 
-### `sources[].contents.fonts` (Optional, Recommended for Sources with `contents.type = "archive"`)
+### `sources[].contents.fonts` (Optional, Recommended)
 
-Rules that select font files from a source with
-`contents.type = "archive"`.
+Rules that select font files from a source with `contents.type = "archive"`.
 Each entry is either:
 
 * a `path` entry, written either as a string or as `{ path = ... }`
 * a `glob` entry, written as `{ glob = ... }`
 
-A string `path` entry is shorthand for `{ path = "..." }`.
-Only `path` entries written as `{ path = ... }` may also specify
-`file-name`.
-`glob` entries must not specify `file-name`.
-If omitted, `foton` uses the default font-file glob rules.
+A string `path` entry is shorthand for `{ path = "..." }`. Only `path` entries
+written as `{ path = ... }` may also specify `file-name`. `glob` entries must
+not specify `file-name`. If omitted, `foton` uses the default font-file glob
+rules.
 
 * **Type**: non-empty array of font rules
 * **Constraints**:
@@ -373,13 +364,13 @@ If omitted, `foton` uses the default font-file glob rules.
 * **Recommended because**: it makes the package contents explicit and reduces
   unintended matches from the source archive
 * **Notes**:
-  * if a `path` entry written as `{ path = ... }` specifies `file-name`,
-    `foton` stores the extracted font file using that file name instead of
-    the archive entry's original file name
-  * if a `path` entry written as `{ path = ... }` does not specify
-    `file-name`, `foton` keeps the archive entry's original file name
-  * string `path` entries and `glob` entries keep each archive entry's
-    original file name
+  * if a `path` entry written as `{ path = ... }` specifies `file-name`, `foton`
+    stores the extracted font file using that file name instead of the archive
+    entry's original file name
+  * if a `path` entry written as `{ path = ... }` does not specify `file-name`,
+    `foton` keeps the archive entry's original file name
+  * string `path` entries and `glob` entries keep each archive entry's original
+    file name
 * **Examples**:
 
   ```toml
@@ -396,11 +387,11 @@ If omitted, `foton` uses the default font-file glob rules.
   ]
   ```
 
-### `sources[].contents.ignore` (Optional, for Sources with `contents.type = "archive"`)
+### `sources[].contents.ignore` (Optional)
 
 Rules that exclude archive entries from a source with
-`contents.type = "archive"` even if they match `fonts`.
-Each entry may be written as:
+`contents.type = "archive"` even if they match `fonts`. Each entry may be
+written as:
 
 * a `path` entry, written either as a string or as `{ path = ... }`
 * a `glob` entry, written as `{ glob = ... }`

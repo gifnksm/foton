@@ -67,8 +67,8 @@ foton search --registry <registry-id-1>,<registry-id-2> <query>
 
 ## Output
 
-Each result shows the package name with version and the package registry ID in brackets.
-If the package has a description, it is printed on the next line.
+Each result shows the package name with version and the package registry ID in
+brackets. If the package has a description, it is printed on the next line.
 
 Example:
 
@@ -79,8 +79,8 @@ example-font@1.2.3 [example]
 
 ## Notes
 
-* By default, `search` does not include pre-release versions.
-  Use `--pre-release` if you want pre-release versions to be included.
+* By default, `search` does not include pre-release versions. Use
+  `--pre-release` if you want pre-release versions to be included.
 * Search matches package names and descriptions only.
 
 ## Related Pages

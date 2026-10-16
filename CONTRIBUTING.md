@@ -47,7 +47,8 @@ If the required subsection does not exist yet under **Unreleased**, create it!
 
 ## Developing
 
-If you want to contribute to the development of `foton`, you can follow the steps below.
+If you want to contribute to the development of `foton`, you can follow the
+steps below.
 
 ### Set Up
 
@@ -67,7 +68,8 @@ cargo test
   just ci-lint
   ```
 
-* Run the full CI-equivalent suite, including docs and tests, before opening or updating a pull request:
+* Run the full CI-equivalent suite, including docs and tests, before opening or
+  updating a pull request:
 
   ```console
   just ci

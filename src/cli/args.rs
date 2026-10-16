@@ -38,11 +38,10 @@ pub(crate) enum Command {
     Activate(ActivateArgs),
     /// Deactivate installed packages.
     Deactivate(DeactivateArgs),
-    /// Clean up packages left in incomplete states when commands such as
-    /// `install` or `activate` do not complete cleanly.
+    /// Clean up packages left in incomplete states when commands such as `install` or
+    /// `activate` do not complete cleanly.
     ///
-    /// `repair` only performs cleanup. It does not retry or resume those
-    /// commands.
+    /// `repair` only performs cleanup. It does not retry or resume those commands.
     Repair(RepairArgs),
     /// List packages recorded in the local package database.
     List(ListArgs),
@@ -71,8 +70,8 @@ pub(crate) struct InstallArgs {
     pub(crate) manifests: Vec<PathBuf>,
     /// Package registry IDs to resolve packages from.
     ///
-    /// Use a comma-separated list such as `--registry local,foton`.
-    /// This option applies only to packages installed by `<PACKAGE>`.
+    /// Use a comma-separated list such as `--registry local,foton`. This option applies
+    /// only to packages installed by `<PACKAGE>`.
     #[clap(long = "registry", value_name = "REGISTRY_ID", value_delimiter = ',')]
     pub(crate) registries: Option<Vec<RegistryId>>,
     /// Package names, optionally with an exact version as `<package-name>@<version>`.
@@ -83,8 +82,8 @@ pub(crate) struct InstallArgs {
     /// Allow installing pre-release versions when resolving packages from registries.
     ///
     /// Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored
-    /// unless an exact version is specified.
-    /// This option applies only to packages installed by `<PACKAGE>`.
+    /// unless an exact version is specified. This option applies only to packages
+    /// installed by `<PACKAGE>`.
     #[clap(long)]
     pub(crate) pre_release: bool,
     /// Do not activate the installed packages.
@@ -171,7 +170,8 @@ pub(crate) struct InfoArgs {
     /// Package names, optionally with an exact version as `<package-name>@<version>`.
     #[clap(value_name = "PACKAGE", required = true)]
     pub(crate) pkg_specs: Vec<PackageSpec>,
-    /// For installed packages, also include the fonts directory and installed font files.
+    /// For installed packages, also include the fonts directory and installed font
+    /// files.
     #[clap(long)]
     pub(crate) include_files: bool,
 }
@@ -212,7 +212,8 @@ pub(crate) struct CheckManifestArgs {
     /// Skip checks that require downloading and examining the source archives or files.
     #[clap(long)]
     pub(crate) no_source_checks: bool,
-    /// Treat the given manifest files as belonging to the package registry rooted at this directory.
+    /// Treat the given manifest files as belonging to the package registry rooted at
+    /// this directory.
     #[clap(long, value_name = "REGISTRY_ROOT")]
     pub(crate) registry_root: Option<PathBuf>,
 }

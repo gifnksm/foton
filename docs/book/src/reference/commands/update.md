@@ -61,11 +61,12 @@ foton update --registry <registry-id-1>,<registry-id-2> <package-name>
 
 ## Notes
 
-* If an update does not complete cleanly, use `repair` to clean up any
-  packages it leaves behind.
+* If an update does not complete cleanly, use `repair` to clean up any packages
+  it leaves behind.
 * Updating a package installs the newer version without automatically removing
   older installed versions.
-* Update resolution uses package names and package registry IDs, not manifest files.
+* Update resolution uses package names and package registry IDs, not manifest
+  files.
 
 ## Related Pages
 

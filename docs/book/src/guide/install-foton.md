@@ -4,7 +4,9 @@
 
 ## Install a Released Version with Winget
 
-If you have [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) installed, you can install the latest released version of `foton` with:
+If you have
+[winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
+installed, you can install the latest released version of `foton` with:
 
 ```console
 winget install -e --id gifnksm.foton
@@ -12,24 +14,30 @@ winget install -e --id gifnksm.foton
 
 ## Install a Pre-Built Binary
 
-Pre-built binaries are published on the [GitHub Releases page](https://github.com/gifnksm/foton/releases).
+Pre-built binaries are published on the
+[GitHub Releases page](https://github.com/gifnksm/foton/releases).
 
-If you already use [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall), you can install `foton` with:
+If you already use
+[`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall), you can
+install `foton` with:
 
 ```console
 cargo binstall foton
 ```
 
-If you prefer, you can also download a release archive manually from the Releases page.
-When installing this way, make sure `foton.exe` is placed in a directory on
-your `PATH`, or add the extraction directory to your `PATH` yourself.
+If you prefer, you can also download a release archive manually from the
+Releases page. When installing this way, make sure `foton.exe` is placed in a
+directory on your `PATH`, or add the extraction directory to your `PATH`
+yourself.
 
 ## Install with Cargo
 
-To install `foton` with Cargo, first install the Rust toolchain.
-See [the Rust installation guide](https://www.rust-lang.org/tools/install) if you do not have Rust yet.
+To install `foton` with Cargo, first install the Rust toolchain. See
+[the Rust installation guide](https://www.rust-lang.org/tools/install) if you do
+not have Rust yet.
 
-Then install either the latest released version or the current development version from the [GitHub repository](https://github.com/gifnksm/foton).
+Then install either the latest released version or the current development
+version from the [GitHub repository](https://github.com/gifnksm/foton).
 
 ```console
 cargo install foton
@@ -51,6 +59,6 @@ If the command succeeds, `foton` is installed and available on your `PATH`.
 
 ## Next Steps
 
-If you are new to `foton`, read [Core Concepts](core-concepts.md) first.
-Then continue with [Basic Usage](basic/README.md) to learn the everyday
+If you are new to `foton`, read [Core Concepts](core-concepts.md) first. Then
+continue with [Basic Usage](basic/README.md) to learn the everyday
 package-management workflow.

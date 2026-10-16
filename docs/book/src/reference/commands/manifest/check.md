@@ -23,7 +23,8 @@ Skip checks that require downloading and examining the source archives or files.
 
 ### `--registry-root <REGISTRY_ROOT>`
 
-Treat the given manifest files as belonging to the package registry rooted at this directory.
+Treat the given manifest files as belonging to the package registry rooted at
+this directory.
 
 ## Global Options
 
@@ -41,11 +42,10 @@ Treat warnings as errors, causing the command to fail if any warning is emitted.
 
 ## What the Command Checks
 
-By default, `manifest check` reads the manifest and then stages it as if it
-were going to be installed.
-This includes downloading and examining the source archives or files described
-by the manifest.
-Use `--no-source-checks` to skip those source-dependent checks.
+By default, `manifest check` reads the manifest and then stages it as if it were
+going to be installed. This includes downloading and examining the source
+archives or files described by the manifest. Use `--no-source-checks` to skip
+those source-dependent checks.
 
 The command reports:
 
@@ -63,7 +63,8 @@ For common warning types, see
 foton manifest check <manifest-path>
 ```
 
-Skip source-dependent checks when validating many manifests, for example in a registry:
+Skip source-dependent checks when validating many manifests, for example in a
+registry:
 
 ```console
 foton manifest check --no-source-checks <registry-root>\packages\**\manifest.toml
@@ -84,7 +85,8 @@ foton --warnings-as-errors manifest check <manifest-path>
 ## Notes
 
 * This command is primarily intended for package authors.
-* Because the command fetches sources by default, network access may be required.
+* Because the command fetches sources by default, network access may be
+  required.
 * A manifest that parses successfully can still fail `manifest check` if the
   sources are invalid or the selected fonts do not install correctly.
 

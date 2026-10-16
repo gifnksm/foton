@@ -20,20 +20,20 @@ pub(in crate::command) enum ScenarioCommand {
     Run {
         /// Dangerous: bypass the isolation safeguard and run the scenario directly.
         ///
-        /// These scenarios are development and testing helpers, not commands meant
-        /// for routine execution on the current environment. They may install,
-        /// uninstall, or update fonts, rewrite Windows registry entries under HKCU,
-        /// and otherwise modify state on the current system.
+        /// These scenarios are development and testing helpers, not commands meant for
+        /// routine execution on the current environment. They may install, uninstall, or
+        /// update fonts, rewrite Windows registry entries under HKCU, and otherwise modify
+        /// state on the current system.
         ///
-        /// Running a scenario without isolation may seriously damage the current
-        /// user environment and may leave the current system broken or unusable
-        /// for the current user.
+        /// Running a scenario without isolation may seriously damage the current user
+        /// environment and may leave the current system broken or unusable for the current
+        /// user.
         ///
-        /// Use this only if you fully understand exactly what will be executed and
-        /// exactly what state may be modified.
+        /// Use this only if you fully understand exactly what will be executed and exactly
+        /// what state may be modified.
         ///
-        /// Prefer `cargo xtask sandbox run --scenario <scenario>` unless you
-        /// intentionally need to run without isolation.
+        /// Prefer `cargo xtask sandbox run --scenario <scenario>` unless you intentionally
+        /// need to run without isolation.
         #[clap(
             long = "allow-unsafe-scenario-run-directly-without-isolation",
             env = "FOTON_ALLOW_UNSAFE_SCENARIO_RUN_DIRECTLY_WITHOUT_ISOLATION"
@@ -55,13 +55,16 @@ pub(in crate::command) enum ScenarioCommand {
 /// Common arguments for running a scenario.
 #[derive(clap::Args)]
 pub(in crate::command) struct RunArgs {
-    /// Path to the `foton` executable to run inside the scenario. If omitted, `foton` is built automatically.
+    /// Path to the `foton` executable to run inside the scenario. If omitted, `foton`
+    /// is built automatically.
     #[clap(long, env = FOTON_EXE_PATH_ENVVAR_NAME)]
     foton_exe: Option<Utf8PathBuf>,
-    /// Directory containing test fixtures. If omitted, the default fixture directory is used.
+    /// Directory containing test fixtures. If omitted, the default fixture directory is
+    /// used.
     #[clap(long, env = FOTON_FIXTURE_DIR_PATH_ENVVAR_NAME)]
     fixture_dir: Option<Utf8PathBuf>,
-    /// Directory where scenario outputs are written. If omitted, a temporary directory is used.
+    /// Directory where scenario outputs are written. If omitted, a temporary directory
+    /// is used.
     #[clap(long)]
     output_dir: Option<Utf8PathBuf>,
 }

@@ -56,20 +56,21 @@ foton list --format jsonl
 
 ## Output
 
-`list` prints packages recorded in the local package database.
-In text output, each line contains a package name, version, installation state,
-and activation state:
+`list` prints packages recorded in the local package database. In text output,
+each line contains a package name, version, installation state, and activation
+state:
 
 ```text
 example-font@1.2.3 (installed, active)
 ```
 
-With `--format jsonl`, `list` writes one JSON object per listed package
-in JSON Lines format.
+With `--format jsonl`, `list` writes one JSON object per listed package in JSON
+Lines format.
 
 ## Notes
 
-* `list` reads the local package database and does not access package registries.
+* `list` reads the local package database and does not access package
+  registries.
 * Use `info` when you want more than the package name, version, and recorded
   states.
 

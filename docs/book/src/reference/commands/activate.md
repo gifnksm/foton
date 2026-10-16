@@ -47,9 +47,8 @@ foton activate <package-name-1> <package-name-2>
 
 * `activate` operates on packages recorded in the local package database and
   does not access package registries.
-* Only one version of a package name can be active at a time.
-  Activating one version deactivates any other active version of the same
-  package name.
+* Only one version of a package name can be active at a time. Activating one
+  version deactivates any other active version of the same package name.
 
 ## Related Pages
 
