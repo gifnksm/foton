@@ -22,12 +22,15 @@ env:
 
 jobs:
   set-matrix:
-    runs-on: ubuntu-latest
+    name: set-matrix
     outputs:
       rust: ${{ steps.set-values.outputs.rust }}
-      os: ${{ steps.set-values.outputs.os }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: stable
@@ -43,18 +46,19 @@ jobs:
           rust="$(echo "[\"stable\", ${msrv}]" | jq -c)"
           echo "rust=${rust}" >> "$GITHUB_OUTPUT"
 
-          os="$(echo '["windows-latest"]' | jq -c)"
-          echo "os=${os}" >> "$GITHUB_OUTPUT"
-
-          jq -n --argjson rust "${rust}" --argjson os "${os}" '{ rust: $rust, os: $os }'
+          jq -n --argjson rust "${rust}" '{ rust: $rust }'
         shell: bash
 
   set-scenario-matrix:
-    runs-on: windows-latest
+    name: set-scenario-matrix
     outputs:
       scenario: ${{ steps.set-values.outputs.scenario }}
+    runs-on: windows-2025
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: stable
@@ -74,10 +78,13 @@ jobs:
       fail-fast: true
       matrix:
         rust: [stable]
-        os: [ubuntu-latest]
+        os: [ubuntu-24.04]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -91,9 +98,12 @@ jobs:
 
   tombi:
     name: Tombi
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           github_token: ${{ github.token }}
@@ -110,10 +120,13 @@ jobs:
       fail-fast: true
       matrix:
         rust: ${{ fromJSON(needs.set-matrix.outputs.rust) }}
-        os: ${{ fromJSON(needs.set-matrix.outputs.os) }}
+        os: [windows-2025]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -127,15 +140,17 @@ jobs:
 
   clippy:
     name: Clippy
-    needs: set-matrix
     strategy:
       fail-fast: true
       matrix:
         rust: [stable]
-        os: ${{ fromJSON(needs.set-matrix.outputs.os) }}
+        os: [windows-2025]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -150,15 +165,17 @@ jobs:
 
   rustdoc:
     name: Rustdoc
-    needs: set-matrix
     strategy:
       fail-fast: true
       matrix:
         rust: [stable]
-        os: ${{ fromJSON(needs.set-matrix.outputs.os) }}
+        os: [windows-2025]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -172,15 +189,17 @@ jobs:
 
   sync-rdme:
     name: Sync Readme
-    needs: set-matrix
     strategy:
       fail-fast: true
       matrix:
         rust: [stable]
-        os: ${{ fromJSON(needs.set-matrix.outputs.os) }}
+        os: [windows-2025]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -196,15 +215,17 @@ jobs:
 
   machete:
     name: Machete
-    needs: set-matrix
     strategy:
       fail-fast: true
       matrix:
         rust: [stable]
-        os: ${{ fromJSON(needs.set-matrix.outputs.os) }}
+        os: [windows-2025]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -223,10 +244,13 @@ jobs:
       fail-fast: true
       matrix:
         rust: ${{ fromJSON(needs.set-matrix.outputs.rust) }}
-        os: ${{ fromJSON(needs.set-matrix.outputs.os) }}
+        os: [windows-2025]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -240,17 +264,20 @@ jobs:
 
   registry-manifests:
     name: Registry manifest check
-    needs: set-matrix
     strategy:
       fail-fast: true
       matrix:
         rust: [stable]
-        os: ${{ fromJSON(needs.set-matrix.outputs.os) }}
+        os: [windows-2025]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           repository: gifnksm/foton-registry
           path: foton-registry
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
@@ -279,15 +306,17 @@ jobs:
 
   test-coverage:
     name: Test Coverage
-    needs: set-matrix
     strategy:
       fail-fast: true
       matrix:
         rust: [stable]
-        os: ${{ fromJSON(needs.set-matrix.outputs.os) }}
+        os: [windows-2025]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -312,10 +341,13 @@ jobs:
       fail-fast: true
       matrix:
         rust: [stable]
-        os: [windows-latest]
+        os: [windows-2025]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -333,14 +365,19 @@ jobs:
     strategy:
       fail-fast: true
       matrix: ${{ fromJSON(needs.set-scenario-matrix.outputs.scenario) }}
-    runs-on: windows-latest
+    runs-on: windows-2025
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo xtask scenario run "${{ matrix.scenario }}"
+      - run: cargo xtask scenario run "${SCENARIO}"
+        env:
+          SCENARIO: ${{ matrix.scenario }}
         shell: bash
 
   scenario-coverage:
@@ -349,9 +386,12 @@ jobs:
     strategy:
       fail-fast: true
       matrix: ${{ fromJSON(needs.set-scenario-matrix.outputs.scenario) }}
-    runs-on: windows-latest
+    runs-on: windows-2025
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: stable
@@ -365,8 +405,10 @@ jobs:
           # shellcheck source=/dev/null
           source <(cargo llvm-cov show-env --sh)
           cargo llvm-cov clean --workspace
-          cargo xtask scenario run "${{ matrix.scenario }}"
+          cargo xtask scenario run "${SCENARIO}"
           cargo llvm-cov report -p foton -p xtask --codecov --output-path target/codecov.json
+        env:
+          SCENARIO: ${{ matrix.scenario }}
         shell: bash
       - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
@@ -377,64 +419,87 @@ jobs:
 
   actionlint:
     name: Actionlint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           github_token: ${{ github.token }}
           persist_github_token: true
       - run: just ci-actionlint
+        shell: bash
 
   typos:
     name: Typos
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           github_token: ${{ github.token }}
           persist_github_token: true
       - run: just ci-typos
+        shell: bash
 
   markdownlint:
     name: Markdownlint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           github_token: ${{ github.token }}
           persist_github_token: true
       - run: just ci-markdownlint
+        shell: bash
 
   editorconfig:
     name: EditorConfig
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           github_token: ${{ github.token }}
           persist_github_token: true
       - run: just ci-editorconfig -format github-actions
+        shell: bash
 
   build-guide:
     name: Build guide
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           github_token: ${{ github.token }}
           persist_github_token: true
       - run: just ci-build-guide
+        shell: bash
 
   test-guide:
     name: Test guide
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           toolchain: stable
@@ -443,8 +508,11 @@ jobs:
           github_token: ${{ github.token }}
           persist_github_token: true
       - run: just ci-test-guide
+        shell: bash
 
   ci-complete:
+    name: ci-complete
+    if: ${{ always() }}
     needs:
       - set-matrix
       - set-scenario-matrix
@@ -467,12 +535,14 @@ jobs:
       - editorconfig
       - build-guide
       - test-guide
-    runs-on: ubuntu-latest
-    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: CI complete
+        env:
+          RESULT: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
         run: |
-          if ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}; then
+          if "${RESULT}"; then
             echo "CI succeeded"
           else
             echo "CI failed"
