@@ -12,26 +12,32 @@
 [![Codecov](https://img.shields.io/codecov/c/github/gifnksm/foton.svg?label=codecov&logo=codecov&style=flat-square&component=foton)](https://codecov.io/gh/gifnksm/foton)
 <!-- cargo-sync-rdme ]] -->
 
-`foton` is a font package manager for Windows that works without administrator privileges.
+`foton` is a font package manager for Windows that works without administrator
+privileges.
 
 ## Features
 
 * Install, update, and uninstall font packages
 * Font activation and deactivation on demand, without uninstalling font packages
 * No administrator privileges required
-* Install packages from the default package registry or your own custom registries
-* Use simple TOML manifests to define font packages from existing online distributions; see [`foton-registry`] for examples
+* Install packages from the default package registry or your own custom
+  registries
+* Use simple TOML manifests to define font packages from existing online
+  distributions; see [`foton-registry`] for examples
 
 [`foton-registry`]: https://github.com/gifnksm/foton-registry
 
 ## Documentation
 
-* [**Latest**](https://foton.readthedocs.io/en/latest/): documentation for the development version
-* [**Stable**](https://foton.readthedocs.io/en/stable/): documentation for the latest release
+* [**Latest**](https://foton.readthedocs.io/en/latest/): documentation for the
+  development version
+* [**Stable**](https://foton.readthedocs.io/en/stable/): documentation for the
+  latest release
 
 ## Installation
 
-For detailed installation instructions, see the [installation guide](https://foton.readthedocs.io/en/stable/guide/install-foton.html).
+For detailed installation instructions, see the
+[installation guide](https://foton.readthedocs.io/en/stable/guide/install-foton.html).
 
 Quick install options:
 
@@ -49,14 +55,17 @@ cargo install foton
 cargo install --git https://github.com/gifnksm/foton.git foton
 ```
 
-You can also download pre-built binaries manually from the [GitHub Releases page].
+You can also download pre-built binaries manually from the
+[GitHub Releases page].
 
 [GitHub Releases page]: https://github.com/gifnksm/foton/releases/
 
 ## Usage
 
-For tutorials and day-to-day workflows, see the [basic usage guide](https://foton.readthedocs.io/en/stable/guide/basic/).
-For the full CLI reference, see the [command reference](https://foton.readthedocs.io/en/stable/reference/commands/).
+For tutorials and day-to-day workflows, see the
+[basic usage guide](https://foton.readthedocs.io/en/stable/guide/basic/). For
+the full CLI reference, see the
+[command reference](https://foton.readthedocs.io/en/stable/reference/commands/).
 
 Common commands:
 
@@ -75,10 +84,10 @@ foton search <query>...
 
 This project is licensed under either of
 
-* Apache License, Version 2.0
-  ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
-* MIT license
-  ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+* Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
+  <http://www.apache.org/licenses/LICENSE-2.0>)
+* MIT license ([LICENSE-MIT](LICENSE-MIT) or
+  <http://opensource.org/licenses/MIT>)
 
 at your option.
 

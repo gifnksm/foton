@@ -27,8 +27,8 @@ foton install <package-name>@<version>
 ```
 
 By default, `foton` resolves packages from the package registries enabled in
-your configuration.
-To resolve packages only from specific package registries, pass `--registry`.
+your configuration. To resolve packages only from specific package registries,
+pass `--registry`.
 
 ```console
 foton install --registry <registry-id-1>,<registry-id-2> <package-name>
@@ -37,8 +37,7 @@ foton install --registry <registry-id-1>,<registry-id-2> <package-name>
 ## Install Without Activating Immediately
 
 By default, `install` activates the selected packages after they are installed.
-If you only want to download and record the package first, pass
-`--no-activate`.
+If you only want to download and record the package first, pass `--no-activate`.
 
 ```console
 foton install --no-activate <package-name>
@@ -73,8 +72,7 @@ foton update --registry <registry-id-1>,<registry-id-2> <package-name>
 ## Confirmation Prompts
 
 Commands that change installed packages ask for confirmation before applying
-changes.
-If you want to skip the prompt, pass the global `--no-confirm` option.
+changes. If you want to skip the prompt, pass the global `--no-confirm` option.
 
 ```console
 foton --no-confirm install <package-name>
@@ -86,8 +84,8 @@ foton --no-confirm update
 
 ## Notes
 
-* If an install or update does not complete cleanly, use `foton repair` to
-  clean up any packages left behind.
+* If an install or update does not complete cleanly, use `foton repair` to clean
+  up any packages left behind.
 * See the command reference for additional options and details.
 
 ## Related Pages

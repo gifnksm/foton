@@ -74,9 +74,9 @@ foton font list --format jsonl
 
 ## Output
 
-By default, `font list` prints text output grouped by font locations.
-Within each group, each line shows a font family followed by the faces
-recognized for that family.
+By default, `font list` prints text output grouped by font locations. Within
+each group, each line shows a font family followed by the faces recognized for
+that family.
 
 Example:
 
@@ -90,8 +90,8 @@ in JSON Lines format.
 
 ## Notes
 
-* By default, `font list` shows fonts attributed to foton-managed packages.
-  In uncommon cases, fonts from unknown locations may also appear when Windows
+* By default, `font list` shows fonts attributed to foton-managed packages. In
+  uncommon cases, fonts from unknown locations may also appear when Windows
   cannot attribute their backing files more precisely.
 * `--include-system-fonts` adds system fonts recognized by Windows.
 * `--include-user-fonts` adds user fonts recognized by Windows.

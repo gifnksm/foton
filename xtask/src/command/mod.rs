@@ -31,8 +31,8 @@ enum GlobalCommand {
     },
     /// Internal sandbox bootstrap command.
     ///
-    /// This subcommand is used by `cargo xtask sandbox run` inside Windows
-    /// Sandbox and is not intended for direct invocation.
+    /// This subcommand is used by `cargo xtask sandbox run` inside Windows Sandbox and
+    /// is not intended for direct invocation.
     #[clap(hide = true)]
     Bootstrap {
         /// Internal bootstrap arguments.

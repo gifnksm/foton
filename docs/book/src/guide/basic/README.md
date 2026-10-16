@@ -1,6 +1,7 @@
 # Basic Usage
 
-This section covers the everyday workflow for using `foton` as a font package manager.
+This section covers the everyday workflow for using `foton` as a font package
+manager.
 
 If terms like package, package registry, or manifest file are unfamiliar, read
 [Core Concepts](../core-concepts.md) first.
@@ -10,7 +11,8 @@ A typical workflow looks like this:
 1. Discover available packages
 2. Install the packages you want
 3. Update installed packages when newer versions are available
-4. Inspect, activate or deactivate, or remove packages that are already installed
+4. Inspect, activate or deactivate, or remove packages that are already
+   installed
 
 ## Chapters in This Section
 

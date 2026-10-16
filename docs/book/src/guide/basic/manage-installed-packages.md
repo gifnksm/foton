@@ -1,8 +1,8 @@
 # Managing Installed Packages
 
 This chapter covers the commands you use after packages have already been
-installed: `list`, `info`, `activate`, `deactivate`, and `uninstall`.
-It also explains how to recover from incomplete operations with `repair`.
+installed: `list`, `info`, `activate`, `deactivate`, and `uninstall`. It also
+explains how to recover from incomplete operations with `repair`.
 
 In the examples below, replace placeholders such as `<package-name>` and
 `<version>` with real values.
@@ -18,8 +18,8 @@ foton list
 `list` shows packages recorded in the local package database.
 
 If you see packages in incomplete states, inspect them with `foton info`, then
-clean them up with `foton repair`.
-Most of the time, you will work only with `installed` packages.
+clean them up with `foton repair`. Most of the time, you will work only with
+`installed` packages.
 
 If you want machine-readable output, use JSON Lines:
 
@@ -29,7 +29,8 @@ foton list --format jsonl
 
 ## Inspect a Package in Detail
 
-Show detailed information about one or more packages recorded in the local package database:
+Show detailed information about one or more packages recorded in the local
+package database:
 
 ```console
 foton info <package-name>
@@ -39,28 +40,25 @@ foton info <package-name>
 foton info <package-name>@<version>
 ```
 
-`info` prints the package ID, recorded states, and package metadata for
-matching packages recorded in the local package database.
-For packages in the `installed` state, it also shows a summary of the
-installed font families.
-Use `--include-files` when you also want the fonts directory and installed font
-files for packages in the `installed` state.
-This can include packages left by incomplete operations.
-Use this command when you want to confirm exactly what is recorded in the local
-package database.
+`info` prints the package ID, recorded states, and package metadata for matching
+packages recorded in the local package database. For packages in the `installed`
+state, it also shows a summary of the installed font families. Use
+`--include-files` when you also want the fonts directory and installed font
+files for packages in the `installed` state. This can include packages left by
+incomplete operations. Use this command when you want to confirm exactly what is
+recorded in the local package database.
 
 ## Change Whether an Installed Package Is Active
 
 Installed packages can stay available in `foton`'s local package storage while
-being either `active` or `inactive`.
-Active packages have their fonts registered in the Windows registry and
-available for normal use by applications.
-Inactive packages remain installed, but their fonts are not registered for use
-until you activate them.
+being either `active` or `inactive`. Active packages have their fonts registered
+in the Windows registry and available for normal use by applications. Inactive
+packages remain installed, but their fonts are not registered for use until you
+activate them.
 
-This is most useful when you installed a package with `--no-activate`, when
-you want to keep only the fonts you currently need active for day-to-day use,
-or when you want to switch versions manually.
+This is most useful when you installed a package with `--no-activate`, when you
+want to keep only the fonts you currently need active for day-to-day use, or
+when you want to switch versions manually.
 
 Activate one or more installed packages:
 
@@ -72,11 +70,11 @@ foton activate <package-name>
 foton activate <package-name>@<version>
 ```
 
-Only one version of a package name can be active at a time.
-When you activate one version, `foton` registers that version's fonts for use
-and deactivates any other active version of that package name automatically.
-Use an exact version when multiple versions of the same package are
-installed, or when you want to target a specific installed version.
+Only one version of a package name can be active at a time. When you activate
+one version, `foton` registers that version's fonts for use and deactivates any
+other active version of that package name automatically. Use an exact version
+when multiple versions of the same package are installed, or when you want to
+target a specific installed version.
 
 Deactivate one or more installed packages:
 
@@ -88,12 +86,12 @@ foton deactivate <package-name>
 foton deactivate <package-name>@<version>
 ```
 
-Use an exact version when multiple versions of the same package are
-installed, or when you want to target a specific installed version.
+Use an exact version when multiple versions of the same package are installed,
+or when you want to target a specific installed version.
 
-Like other commands that change installed packages, `activate` and
-`deactivate` ask for confirmation before applying changes.
-Use the global `--no-confirm` option if you want to skip the prompt.
+Like other commands that change installed packages, `activate` and `deactivate`
+ask for confirmation before applying changes. Use the global `--no-confirm`
+option if you want to skip the prompt.
 
 ## Recover from Operations That Did Not Complete Cleanly
 
@@ -115,8 +113,8 @@ foton repair <package-name>
 foton repair <package-name>@<version>
 ```
 
-`repair` cleans up those packages. It does not retry or resume the command
-that left them in those states.
+`repair` cleans up those packages. It does not retry or resume the command that
+left them in those states.
 
 ## Remove a Package
 
@@ -134,14 +132,13 @@ foton uninstall <package-name-1> <package-name-2>
 foton uninstall <package-name>@<version>
 ```
 
-Use an exact version when multiple versions of the same package are
-installed, or when you want to target a specific installed version.
+Use an exact version when multiple versions of the same package are installed,
+or when you want to target a specific installed version.
 
 Like `install` and `update`, `uninstall` asks for confirmation before applying
-changes.
-If an uninstall does not complete cleanly, use `foton repair` to clean up any
-packages it leaves behind.
-If you want to skip the prompt, pass the global `--no-confirm` option.
+changes. If an uninstall does not complete cleanly, use `foton repair` to clean
+up any packages it leaves behind. If you want to skip the prompt, pass the
+global `--no-confirm` option.
 
 ```console
 foton --no-confirm uninstall <package-name>
@@ -153,7 +150,8 @@ A common workflow is:
 
 1. Run `foton list` to see what is installed
 2. Run `foton info <package-name>` to inspect a package in detail
-3. Run `foton activate <package-name>` or `foton deactivate <package-name>` when you want to change whether an installed package is active
+3. Run `foton activate <package-name>` or `foton deactivate <package-name>` when
+   you want to change whether an installed package is active
 4. Run `foton uninstall <package-name>` to remove a package you no longer need
 
 ## Related Pages

@@ -1,8 +1,8 @@
 <!-- rumdl-disable MD082 -->
 # Repair
 
-Clean up packages left in incomplete states when commands such as `install`
-or `activate` do not complete cleanly.
+Clean up packages left in incomplete states when commands such as `install` or
+`activate` do not complete cleanly.
 
 `repair` only performs cleanup. It does not retry or resume those commands.
 

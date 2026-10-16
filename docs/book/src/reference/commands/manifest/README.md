@@ -15,8 +15,8 @@ foton manifest [OPTIONS] <COMMAND>
 
 ## Typical Usage
 
-The `manifest` command group is mainly intended for package authors.
-A common workflow is:
+The `manifest` command group is mainly intended for package authors. A common
+workflow is:
 
 1. Write a manifest file
 2. Run `foton manifest check <MANIFEST>`

@@ -19,7 +19,8 @@ Package names, optionally with an exact version as `<package-name>@<version>`.
 
 ### `--include-files`
 
-For installed packages, also include the fonts directory and installed font files.
+For installed packages, also include the fonts directory and installed font
+files.
 
 ## Global Options
 
@@ -51,25 +52,27 @@ foton info --include-files <package-name>
 
 ## Output
 
-`info` prints detailed information for matching packages recorded in the local package database, including:
+`info` prints detailed information for matching packages recorded in the local
+package database, including:
 
 * package ID
 * installation state and activation state
 * description, homepage, repository, and license
-* for packages in the `installed` state, a summary of the installed font families
+* for packages in the `installed` state, a summary of the installed font
+  families
 
 With `--include-files`, `info` also shows the fonts directory and the installed
 font files for packages in the `installed` state.
 
 ## Notes
 
-* `info` reads the local package database and does not search package registries.
-* Use `activate` or `deactivate` when you want to change a package's
-  activation state.
-* Use `repair` when you want to clean up packages left by incomplete
-  operations.
-* Use `search` when you want to inspect packages that are available in a
-  package registry but not yet installed.
+* `info` reads the local package database and does not search package
+  registries.
+* Use `activate` or `deactivate` when you want to change a package's activation
+  state.
+* Use `repair` when you want to clean up packages left by incomplete operations.
+* Use `search` when you want to inspect packages that are available in a package
+  registry but not yet installed.
 
 ## Related Pages
 

@@ -2,8 +2,7 @@
 # Configuration File Reference
 
 `foton` loads configuration from a `config.toml` file in its configuration
-directory.
-If the file does not exist, built-in defaults are used.
+directory. If the file does not exist, built-in defaults are used.
 
 On Windows, the configuration file is stored at:
 
@@ -22,8 +21,8 @@ The configuration file currently controls:
 
 ## Default Behavior and Merge Rules
 
-`config.toml` is optional.
-If it is present, `foton` merges it onto built-in defaults.
+`config.toml` is optional. If it is present, `foton` merges it onto built-in
+defaults.
 
 This means:
 
@@ -54,14 +53,13 @@ enabled = false
 
 ## Top-Level Sections
 
-Field headings indicate whether a section or key is optional.
+Field headings indicate whether a section or key is required or optional.
 Defaults are listed in the metadata bullets for the relevant sections and keys.
 
 ### `install` (Optional)
 
 The `install` section defines safety limits used while processing package
-sources.
-All install limit values must be positive integers greater than zero.
+sources. All install limit values must be positive integers greater than zero.
 
 * **Type**: table
 * **Default**: built-in install limits are used if this section is omitted
@@ -77,9 +75,8 @@ All install limit values must be positive integers greater than zero.
 ### `registries` (Optional)
 
 The `registries` table contains `registries.<registry-id>` entries keyed by
-registry ID.
-Each `registries.<registry-id>` entry configures one registry that `foton` can
-search or install from.
+registry ID. Each `registries.<registry-id>` entry configures one registry that
+`foton` can search or install from.
 
 * **Type**: table of registry entries
 * **Default**: the built-in `registries.foton` entry is present even if this
@@ -96,9 +93,9 @@ search or install from.
 
 ### `install.max-source-size-bytes` (Optional)
 
-The maximum allowed size, in bytes, of one downloaded package source.
-This limit applies before `foton` interprets the source as a direct font file or
-as an archive.
+The maximum allowed size, in bytes, of one downloaded package source. This limit
+applies before `foton` interprets the source as a direct font file or as an
+archive.
 
 * **Type**: positive unsigned integer
 * **Default**: `536870912` (512MiB)
@@ -111,12 +108,10 @@ as an archive.
 
 ### `install.max-fonts-per-package-source` (Optional)
 
-The maximum number of font files that `foton` may take from one package
-source.
+The maximum number of font files that `foton` may take from one package source.
 For sources with `contents.type = "archive"`, this limits how many archive
-entries may become installed font files.
-For sources with `contents.type = "font-file"`, the source itself counts as
-one font file.
+entries may become installed font files. For sources with
+`contents.type = "font-file"`, the source itself counts as one font file.
 
 * **Type**: positive unsigned integer
 * **Default**: `1000`
@@ -129,8 +124,7 @@ one font file.
 
 ### `install.max-font-file-size-bytes` (Optional)
 
-The maximum allowed size, in bytes, of one font file selected for
-installation.
+The maximum allowed size, in bytes, of one font file selected for installation.
 This limit applies both to sources with `contents.type = "font-file"` and to
 individual font files selected from sources with `contents.type = "archive"`.
 
@@ -147,10 +141,9 @@ individual font files selected from sources with `contents.type = "archive"`.
 
 ### `registries.<registry-id>` (Optional)
 
-A single registry entry.
-`<registry-id>` is a user-defined registry ID.
-Commands such as `foton search --registry ...` and `foton install --registry ...`
-use these registry IDs.
+A single registry entry. `<registry-id>` is a user-defined registry ID. Commands
+such as `foton search --registry ...` and `foton install --registry ...` use
+these registry IDs.
 
 * **Type**: table
 * **Constraints**: the registry ID must start with a lowercase ASCII letter and
@@ -165,8 +158,8 @@ use these registry IDs.
 
 ### `registries.<registry-id>.source` (Required)
 
-The source from which `foton` loads the registry.
-Use `local+...` for a local directory or `git+...` for a Git-backed registry.
+The source from which `foton` loads the registry. Use `local+...` for a local
+directory or `git+...` for a Git-backed registry.
 
 * **Type**: registry source string
 * **Constraints**: must be either `local+<absolute-path>` or `git+<url>`
@@ -184,15 +177,13 @@ Use `local+...` for a local directory or `git+...` for a Git-backed registry.
 
 ### `registries.<registry-id>.enabled` (Optional)
 
-Whether the registry is enabled by default.
-Set this to `false` when you want to keep the registry configured but not use
-it unless you opt in explicitly.
+Whether the registry is enabled by default. Set this to `false` when you want to
+keep the registry configured but not use it unless you opt in explicitly.
 
 If you pass `--registry <REGISTRY_ID>`, `foton` can still use that package
-registry even when `enabled = false`.
-If all configured package registries are disabled and you do not pass
-`--registry`, commands that rely on package registries fail because there are
-no enabled package registries to use.
+registry even when `enabled = false`. If all configured package registries are
+disabled and you do not pass `--registry`, commands that rely on package
+registries fail because there are no enabled package registries to use.
 
 * **Type**: boolean
 * **Default**: `true`

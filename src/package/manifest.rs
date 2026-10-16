@@ -28,10 +28,12 @@ pub(crate) struct PackageManifest {
     ///
     /// This identifies a specific immutable release of the package.
     pub(crate) version: PackageVersion,
-    /// Short description of the font family, collection, or bundle provided by the package.
+    /// Short description of the font family, collection, or bundle provided by the
+    /// package.
     #[serde(default)]
     pub(crate) description: Option<String>,
-    /// Upstream homepage for the font project or distribution represented by the package.
+    /// Upstream homepage for the font project or distribution represented by the
+    /// package.
     #[serde(default)]
     pub(crate) homepage: Option<String>,
     /// Upstream source repository for the font project represented by the package.

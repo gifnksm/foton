@@ -47,8 +47,8 @@ foton deactivate <package-name-1> <package-name-2>
 
 * `deactivate` operates on packages recorded in the local package database and
   does not access package registries.
-* Use `repair` when a package command such as `install` or `activate` does
-  not complete cleanly and leaves packages in incomplete states.
+* Use `repair` when a package command such as `install` or `activate` does not
+  complete cleanly and leaves packages in incomplete states.
 
 ## Related Pages
 

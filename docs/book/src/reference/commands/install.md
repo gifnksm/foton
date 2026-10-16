@@ -29,21 +29,21 @@ This option can be specified multiple times.
 
 Package registry IDs to resolve packages from.
 
-Use a comma-separated list such as `--registry local,foton`.
-This option applies only to packages installed by `<PACKAGE>`.
+Use a comma-separated list such as `--registry local,foton`. This option applies
+only to packages installed by `<PACKAGE>`.
 
 ### `--pre-release`
 
 Allow installing pre-release versions when resolving packages from registries.
 
 Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored
-unless an exact version is specified.
-This option applies only to packages installed by `<PACKAGE>`.
+unless an exact version is specified. This option applies only to packages
+installed by `<PACKAGE>`.
 
 ### `--no-activate`
 
-Do not activate the installed packages.
-Use `foton activate` later if you want to make them active manually.
+Do not activate the installed packages. Use `foton activate` later if you want
+to make them active manually.
 
 ## Global Options
 
@@ -81,8 +81,8 @@ foton install --manifest <manifest-path>
 
 * Use `foton update` when you want to look for newer versions of already
   installed packages in package registries.
-* If an install does not complete cleanly, use `repair` to clean up any
-  packages it leaves behind.
+* If an install does not complete cleanly, use `repair` to clean up any packages
+  it leaves behind.
 * Installing from a manifest file is useful for local testing before adding it
   to a package registry.
 
