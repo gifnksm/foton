@@ -24,32 +24,42 @@ env:
   MISE_LOCKED: true
 
 jobs:
-  security-audit:
-    name: cargo-audit / issue reporting
-    runs-on: ubuntu-latest
+  issue-reporting:
+    name: Audit (issue reporting)
     permissions:
-      issues: write
+      contents: read
+      issues: write # Allow creating issues for advisories and policy violations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: actions-rust-lang/audit@72c09e02f132669d52284a3323acdb503cfc1a24 # v1.2.7
 
-  cargo-deny-advisories:
-    name: cargo-deny / advisories
-    runs-on: ubuntu-latest
+  advisories:
+    name: Audit (advisories)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           rust-version: stable
           command: check advisories
 
-  cargo-deny-policy:
-    name: cargo-deny / bans licenses sources
-    runs-on: ubuntu-latest
+  policy:
+    name: Audit (bans, licenses, sources)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
@@ -57,19 +67,23 @@ jobs:
           command: check bans licenses sources
 
   audit-complete:
+    name: audit-complete
+    if: ${{ always() }}
     # Wait for cargo-audit and cargo-deny advisories to finish so issue reporting
     # and advisory results are visible, but intentionally exclude them from the
     # required status check so newly disclosed advisories do not suddenly fail CI.
     needs:
-      - security-audit
-      - cargo-deny-advisories
-      - cargo-deny-policy
-    runs-on: ubuntu-latest
-    if: ${{ always() }}
+      - issue-reporting
+      - advisories
+      - policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Audit complete
+        env:
+          RESULT: ${{ needs['policy'].result == 'success' }}
         run: |
-          if [[ "${{ needs['cargo-deny-policy'].result }}" == "success" ]]; then
+          if "${RESULT}"; then
             echo "Audit succeeded"
           else
             echo "Audit failed"
