@@ -1,4 +1,5 @@
-# font list
+<!-- rumdl-disable MD082 -->
+# Font List
 
 List fonts managed by foton.
 
@@ -22,10 +23,10 @@ Also include all user fonts recognized by Windows.
 
 Select the output format.
 
-- **Default**: `text`
-- **Possible values**: `text`, `jsonl`
+* **Default**: `text`
+* **Possible values**: `text`, `jsonl`
 
-## Global options
+## Global Options
 
 ### `--exit-on-lock`
 
@@ -89,15 +90,15 @@ in JSON Lines format.
 
 ## Notes
 
-- By default, `font list` shows fonts attributed to foton-managed packages.
+* By default, `font list` shows fonts attributed to foton-managed packages.
   In uncommon cases, fonts from unknown locations may also appear when Windows
   cannot attribute their backing files more precisely.
-- `--include-system-fonts` adds system fonts recognized by Windows.
-- `--include-user-fonts` adds user fonts recognized by Windows.
-- `font list` reads the font set recognized by Windows and classifies each
+* `--include-system-fonts` adds system fonts recognized by Windows.
+* `--include-user-fonts` adds user fonts recognized by Windows.
+* `font list` reads the font set recognized by Windows and classifies each
   visible font by the location of its backing file when possible.
 
-## Related pages
+## Related Pages
 
-- [font command reference](README.md)
-- [info command reference](../info.md)
+* [font command reference](README.md)
+* [info command reference](../info.md)

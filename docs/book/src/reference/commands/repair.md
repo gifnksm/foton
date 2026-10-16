@@ -1,4 +1,5 @@
-# repair
+<!-- rumdl-disable MD082 -->
+# Repair
 
 Clean up packages left in incomplete states when commands such as `install`
 or `activate` do not complete cleanly.
@@ -19,7 +20,7 @@ Package names, optionally with an exact version as `<package-name>@<version>`.
 
 If not specified, every package that needs cleanup will be cleaned up.
 
-## Global options
+## Global Options
 
 ### `--exit-on-lock`
 
@@ -49,14 +50,14 @@ foton repair <package-name>@<version>
 
 ## Notes
 
-- If cleanup cannot be completed, the package may remain in the local package
+* If cleanup cannot be completed, the package may remain in the local package
   database so that you can retry `repair` later.
 
-## Related pages
+## Related Pages
 
-- [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
-- [install command reference](install.md)
-- [update command reference](update.md)
-- [uninstall command reference](uninstall.md)
-- [list command reference](list.md)
-- [info command reference](info.md)
+* [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
+* [install command reference](install.md)
+* [update command reference](update.md)
+* [uninstall command reference](uninstall.md)
+* [list command reference](list.md)
+* [info command reference](info.md)

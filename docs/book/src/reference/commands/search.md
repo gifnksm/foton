@@ -1,4 +1,5 @@
-# search
+<!-- rumdl-disable MD082 -->
+# Search
 
 Search packages in package registries.
 
@@ -28,7 +29,7 @@ Use a comma-separated list such as `--registry local,foton`.
 
 Maximum number of matching packages to show.
 
-- **Default**: `10`
+* **Default**: `10`
 
 ### `--pre-release`
 
@@ -36,7 +37,7 @@ Allow matching pre-release versions when searching packages in registries.
 
 Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored.
 
-## Global options
+## Global Options
 
 ### `--exit-on-lock`
 
@@ -78,11 +79,11 @@ example-font@1.2.3 [example]
 
 ## Notes
 
-- By default, `search` does not include pre-release versions.
+* By default, `search` does not include pre-release versions.
   Use `--pre-release` if you want pre-release versions to be included.
-- Search matches package names and descriptions only.
+* Search matches package names and descriptions only.
 
-## Related pages
+## Related Pages
 
-- [Discovering Packages](../../guide/basic/discover-packages.md)
-- [install command reference](install.md)
+* [Discovering Packages](../../guide/basic/discover-packages.md)
+* [install command reference](install.md)

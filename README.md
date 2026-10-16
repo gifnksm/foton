@@ -1,6 +1,8 @@
+<!-- rumdl-disable MD063 -->
 <!-- cargo-sync-rdme title [[ -->
 # foton
 <!-- cargo-sync-rdme ]] -->
+<!-- rumdl-enable MD063 -->
 <!-- cargo-sync-rdme badge [[ -->
 [![Maintenance: actively-developed](https://img.shields.io/badge/maintenance-actively--developed-brightgreen.svg?style=flat-square)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-badges-section)
 [![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/foton.svg?style=flat-square)](#license)
@@ -35,16 +37,16 @@ Quick install options:
 
 ```console
 # Install the latest released version from winget
-$ winget install -e --id gifnksm.foton
+winget install -e --id gifnksm.foton
 
 # Install the latest released version from pre-built binaries
-$ cargo binstall foton
+cargo binstall foton
 
 # Install the latest released version with Cargo
-$ cargo install foton
+cargo install foton
 
 # Install the current development version with Cargo
-$ cargo install --git https://github.com/gifnksm/foton.git foton
+cargo install --git https://github.com/gifnksm/foton.git foton
 ```
 
 You can also download pre-built binaries manually from the [GitHub Releases page].
@@ -74,9 +76,9 @@ foton search <query>...
 This project is licensed under either of
 
 * Apache License, Version 2.0
-   ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+  ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
 * MIT license
-   ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+  ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
 

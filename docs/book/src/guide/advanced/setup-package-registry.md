@@ -1,4 +1,4 @@
-# Setting Up Your Own Package Registry
+# Setting up Your Own Package Registry
 
 A package registry is a collection of package manifests that `foton` can search
 and install from.
@@ -10,12 +10,12 @@ For the exact registry layout and configuration format, see
 [Package Registry Reference](../../reference/package-registry.md) and
 [Configuration File Reference](../../reference/configuration.md).
 
-## Registry types
+## Registry Types
 
 A custom package registry can be managed in two common ways:
 
-- as a local directory on your machine
-- as a Git repository that stores the registry root and its manifests
+* as a local directory on your machine
+* as a Git repository that stores the registry root and its manifests
 
 A local directory is convenient for local testing or personal use.
 A Git-backed registry is useful when you want version history, code review, or
@@ -24,7 +24,7 @@ sharing across multiple machines or users.
 The default configuration already includes the public `foton` package registry.
 Custom registries are added through your `config.toml` file.
 
-## Registry layout
+## Registry Layout
 
 A registry stores package manifests in this directory layout:
 
@@ -58,7 +58,7 @@ The `.foton-registry-root` marker file is recommended. It is not required for
 package discovery, but it makes the registry root explicit and helps
 `foton manifest check` detect the registry root automatically.
 
-## Setup workflow
+## Setup Workflow
 
 A practical workflow is:
 
@@ -70,7 +70,7 @@ A practical workflow is:
 
 The sections below cover each part of that workflow.
 
-## Create the registry root
+## Create the Registry Root
 
 Create the registry root directory and add the `.foton-registry-root` marker
 file.
@@ -81,14 +81,14 @@ If you want to manage the registry through Git, make the registry root a Git
 repository, for example by running `git init` there or by placing it inside an
 existing repository.
 
-## Add package manifests
+## Add Package Manifests
 
 Place each manifest at `packages/<package-name>/<version>/manifest.toml` in the
 registry.
 If you need help writing a manifest, see
 [Writing a Package Manifest](write-package-manifest.md).
 
-## Validate package manifests
+## Validate Package Manifests
 
 When the manifest is already stored under a registry root that contains
 `.foton-registry-root`, `manifest check` can detect that registry root
@@ -106,12 +106,12 @@ source-dependent checks first:
 foton manifest check --no-source-checks <registry-root>\packages\**\manifest.toml
 ```
 
-## Add the registry to your config
+## Add the Registry to Your Config
 
 Once the manifests are in place, add the registry to your `config.toml` file.
 You can configure it either as a local directory or as a Git-backed registry.
 
-### Local registry source
+### Local Registry Source
 
 Use `local+<absolute-path>` for a registry stored in a local directory.
 The path must be absolute.
@@ -122,7 +122,7 @@ source = "local+C:/path/to/my-registry"
 enabled = true
 ```
 
-### Git registry source
+### Git Registry Source
 
 Use `git+<url>` for a registry stored in a Git repository.
 
@@ -135,7 +135,7 @@ enabled = true
 `foton` caches Git registries locally and updates the cached repository when it
 fetches registry contents.
 
-### Enable or disable a registry
+### Enable or Disable a Registry
 
 Each registry entry has an `enabled` flag.
 If omitted, it defaults to `true`.
@@ -148,7 +148,7 @@ source = "local+C:/path/to/experimental-registry"
 enabled = false
 ```
 
-## Use the registry from `foton`
+## Use the Registry from `foton`
 
 Search or install from that package registry by ID:
 
@@ -165,7 +165,7 @@ You can also opt in to a disabled package registry explicitly with
 If multiple package registries contain the same package name, use
 `--registry` to choose which registry to use.
 
-## Related pages
+## Related Pages
 
-- [Package Registry Reference](../../reference/package-registry.md)
-- [Configuration File Reference](../../reference/configuration.md)
+* [Package Registry Reference](../../reference/package-registry.md)
+* [Configuration File Reference](../../reference/configuration.md)

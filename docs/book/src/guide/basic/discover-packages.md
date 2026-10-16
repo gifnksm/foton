@@ -5,7 +5,7 @@ Use `foton search` to find packages that are available in your registries.
 In the examples below, replace placeholders such as `<query>` and
 `<registry-id>` with real values.
 
-## Basic search
+## Basic Search
 
 Search for a package by name:
 
@@ -22,7 +22,7 @@ foton search <query-word-1> <query-word-2>
 For multi-term searches, all query terms must match either the package name
 or the description.
 
-## Restrict the search to specific registries
+## Restrict the Search to Specific Registries
 
 If you want to search only selected package registries, pass `--registry`
 with a comma-separated list of package registry IDs.
@@ -31,7 +31,7 @@ with a comma-separated list of package registry IDs.
 foton search --registry <registry-id-1>,<registry-id-2> <query>
 ```
 
-## Control the number of results
+## Control the Number of Results
 
 By default, `foton search` shows up to 10 matching packages.
 Use `--limit` to change that number.
@@ -40,7 +40,7 @@ Use `--limit` to change that number.
 foton search --limit 20 <query>
 ```
 
-## Read the results
+## Read the Results
 
 Search results are printed as package names with versions together with the
 registry ID that provided the package.
@@ -58,7 +58,7 @@ Use `--pre-release` if you want search results to include pre-release
 versions.
 Once you have found a package you want, install it with `foton install`.
 
-## Related pages
+## Related Pages
 
-- [Installing and Updating Packages](install-update-packages.md)
-- [search command reference](../../reference/commands/search.md)
+* [Installing and Updating Packages](install-update-packages.md)
+* [search command reference](../../reference/commands/search.md)

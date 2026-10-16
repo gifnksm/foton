@@ -1,4 +1,4 @@
-# xtask
+# `xtask`
 
 Development helpers for `foton`.
 
@@ -43,13 +43,13 @@ Scenario results are written to the specified output directory.
 
 Files:
 
-- `bootstrap.summary.txt`
-- `report.<report-seq>/<exec-seq>.summary.txt`
+* `bootstrap.summary.txt`
+* `report.<report-seq>/<exec-seq>.summary.txt`
 
 The `bootstrap.summary.txt` file captures the sandbox bootstrap command itself.
 The numbered files are generated per executed command in run order.
 
 ## Notes
 
-- The current implementation assumes `debug` binaries
-- Windows uses static CRT linking via `.cargo/config.toml`
+* The current implementation assumes `debug` binaries
+* Windows uses static CRT linking via `.cargo/config.toml`

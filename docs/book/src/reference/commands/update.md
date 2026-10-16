@@ -1,4 +1,5 @@
-# update
+<!-- rumdl-disable MD082 -->
+# Update
 
 Update installed packages from package registries.
 
@@ -30,7 +31,7 @@ Allow updating to pre-release versions when resolving packages from registries.
 
 Without this option, versions with a suffix such as `1.2.3-rc-1` are ignored.
 
-## Global options
+## Global Options
 
 ### `--exit-on-lock`
 
@@ -60,14 +61,14 @@ foton update --registry <registry-id-1>,<registry-id-2> <package-name>
 
 ## Notes
 
-- If an update does not complete cleanly, use `repair` to clean up any
+* If an update does not complete cleanly, use `repair` to clean up any
   packages it leaves behind.
-- Updating a package installs the newer version without automatically removing
+* Updating a package installs the newer version without automatically removing
   older installed versions.
-- Update resolution uses package names and package registry IDs, not manifest files.
+* Update resolution uses package names and package registry IDs, not manifest files.
 
-## Related pages
+## Related Pages
 
-- [Installing and Updating Packages](../../guide/basic/install-update-packages.md)
-- [repair command reference](repair.md)
-- [Package Registry Reference](../package-registry.md)
+* [Installing and Updating Packages](../../guide/basic/install-update-packages.md)
+* [repair command reference](repair.md)
+* [Package Registry Reference](../package-registry.md)

@@ -1,4 +1,5 @@
-# manifest check
+<!-- rumdl-disable MD082 -->
+# Manifest Check
 
 Validate manifest files for installation errors and quality warnings.
 
@@ -24,7 +25,7 @@ Skip checks that require downloading and examining the source archives or files.
 
 Treat the given manifest files as belonging to the package registry rooted at this directory.
 
-## Global options
+## Global Options
 
 ### `--exit-on-lock`
 
@@ -38,7 +39,7 @@ Skip interactive confirmation prompts.
 
 Treat warnings as errors, causing the command to fail if any warning is emitted.
 
-## What the command checks
+## What the Command Checks
 
 By default, `manifest check` reads the manifest and then stages it as if it
 were going to be installed.
@@ -48,10 +49,10 @@ Use `--no-source-checks` to skip those source-dependent checks.
 
 The command reports:
 
-- installation errors that would prevent the package from being installed
-- quality warnings for common authoring mistakes
+* installation errors that would prevent the package from being installed
+* quality warnings for common authoring mistakes
 
-## Common warnings
+## Common Warnings
 
 For common warning types, see
 [Package Manifest Reference](../../package-manifest.md).
@@ -82,13 +83,13 @@ foton --warnings-as-errors manifest check <manifest-path>
 
 ## Notes
 
-- This command is primarily intended for package authors.
-- Because the command fetches sources by default, network access may be required.
-- A manifest that parses successfully can still fail `manifest check` if the
+* This command is primarily intended for package authors.
+* Because the command fetches sources by default, network access may be required.
+* A manifest that parses successfully can still fail `manifest check` if the
   sources are invalid or the selected fonts do not install correctly.
 
-## Related pages
+## Related Pages
 
-- [Writing a Package Manifest](../../../guide/advanced/write-package-manifest.md)
-- [Package Manifest Reference](../../package-manifest.md)
-- [manifest command reference](README.md)
+* [Writing a Package Manifest](../../../guide/advanced/write-package-manifest.md)
+* [Package Manifest Reference](../../package-manifest.md)
+* [manifest command reference](README.md)

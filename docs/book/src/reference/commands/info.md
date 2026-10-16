@@ -1,4 +1,5 @@
-# info
+<!-- rumdl-disable MD082 -->
+# Info
 
 Show detailed information about packages recorded in the local package database.
 
@@ -20,7 +21,7 @@ Package names, optionally with an exact version as `<package-name>@<version>`.
 
 For installed packages, also include the fonts directory and installed font files.
 
-## Global options
+## Global Options
 
 ### `--exit-on-lock`
 
@@ -52,29 +53,29 @@ foton info --include-files <package-name>
 
 `info` prints detailed information for matching packages recorded in the local package database, including:
 
-- package ID
-- installation state and activation state
-- description, homepage, repository, and license
-- for packages in the `installed` state, a summary of the installed font families
+* package ID
+* installation state and activation state
+* description, homepage, repository, and license
+* for packages in the `installed` state, a summary of the installed font families
 
 With `--include-files`, `info` also shows the fonts directory and the installed
 font files for packages in the `installed` state.
 
 ## Notes
 
-- `info` reads the local package database and does not search package registries.
-- Use `activate` or `deactivate` when you want to change a package's
+* `info` reads the local package database and does not search package registries.
+* Use `activate` or `deactivate` when you want to change a package's
   activation state.
-- Use `repair` when you want to clean up packages left by incomplete
+* Use `repair` when you want to clean up packages left by incomplete
   operations.
-- Use `search` when you want to inspect packages that are available in a
+* Use `search` when you want to inspect packages that are available in a
   package registry but not yet installed.
 
-## Related pages
+## Related Pages
 
-- [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
-- [activate command reference](activate.md)
-- [deactivate command reference](deactivate.md)
-- [list command reference](list.md)
-- [repair command reference](repair.md)
-- [search command reference](search.md)
+* [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
+* [activate command reference](activate.md)
+* [deactivate command reference](deactivate.md)
+* [list command reference](list.md)
+* [repair command reference](repair.md)
+* [search command reference](search.md)

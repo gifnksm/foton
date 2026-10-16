@@ -1,4 +1,5 @@
-# deactivate
+<!-- rumdl-disable MD082 -->
+# Deactivate
 
 Deactivate installed packages.
 
@@ -14,7 +15,7 @@ foton deactivate [OPTIONS] <PACKAGE>...
 
 Package names, optionally with an exact version as `<package-name>@<version>`.
 
-## Global options
+## Global Options
 
 ### `--exit-on-lock`
 
@@ -44,14 +45,14 @@ foton deactivate <package-name-1> <package-name-2>
 
 ## Notes
 
-- `deactivate` operates on packages recorded in the local package database and
+* `deactivate` operates on packages recorded in the local package database and
   does not access package registries.
-- Use `repair` when a package command such as `install` or `activate` does
+* Use `repair` when a package command such as `install` or `activate` does
   not complete cleanly and leaves packages in incomplete states.
 
-## Related pages
+## Related Pages
 
-- [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
-- [activate command reference](activate.md)
-- [repair command reference](repair.md)
-- [info command reference](info.md)
+* [Managing Installed Packages](../../guide/basic/manage-installed-packages.md)
+* [activate command reference](activate.md)
+* [repair command reference](repair.md)
+* [info command reference](info.md)

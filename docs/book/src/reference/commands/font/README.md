@@ -1,4 +1,4 @@
-# font
+# Font
 
 Work with fonts managed by foton.
 
@@ -10,9 +10,9 @@ foton font [OPTIONS] <COMMAND>
 
 ## Commands
 
-- [`list`](list.md): List fonts managed by foton
+* [`list`](list.md): List fonts managed by foton
 
-## Related pages
+## Related Pages
 
-- [Command Reference](../README.md)
-- [font list command reference](list.md)
+* [Command Reference](../README.md)
+* [font list command reference](list.md)

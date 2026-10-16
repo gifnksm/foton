@@ -1,4 +1,4 @@
-# manifest
+# Manifest
 
 Work with package manifest files.
 
@@ -10,10 +10,10 @@ foton manifest [OPTIONS] <COMMAND>
 
 ## Commands
 
-- [`check`](check.md): Validate manifest files for installation errors and
+* [`check`](check.md): Validate manifest files for installation errors and
   quality warnings
 
-## Typical usage
+## Typical Usage
 
 The `manifest` command group is mainly intended for package authors.
 A common workflow is:
@@ -23,7 +23,7 @@ A common workflow is:
 3. Install the manifest locally with `foton install --manifest <MANIFEST>`
 4. Add the manifest to a package registry
 
-## Related pages
+## Related Pages
 
-- [Writing a Package Manifest](../../../guide/advanced/write-package-manifest.md)
-- [Package Manifest Reference](../../package-manifest.md)
+* [Writing a Package Manifest](../../../guide/advanced/write-package-manifest.md)
+* [Package Manifest Reference](../../package-manifest.md)

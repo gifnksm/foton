@@ -1,4 +1,5 @@
-# install
+<!-- rumdl-disable MD082 -->
+# Install
 
 Install packages from package registries or manifest files.
 
@@ -44,7 +45,7 @@ This option applies only to packages installed by `<PACKAGE>`.
 Do not activate the installed packages.
 Use `foton activate` later if you want to make them active manually.
 
-## Global options
+## Global Options
 
 ### `--exit-on-lock`
 
@@ -78,16 +79,16 @@ foton install --manifest <manifest-path>
 
 ## Notes
 
-- Use `foton update` when you want to look for newer versions of already
+* Use `foton update` when you want to look for newer versions of already
   installed packages in package registries.
-- If an install does not complete cleanly, use `repair` to clean up any
+* If an install does not complete cleanly, use `repair` to clean up any
   packages it leaves behind.
-- Installing from a manifest file is useful for local testing before adding it
+* Installing from a manifest file is useful for local testing before adding it
   to a package registry.
 
-## Related pages
+## Related Pages
 
-- [Installing and Updating Packages](../../guide/basic/install-update-packages.md)
-- [activate command reference](activate.md)
-- [repair command reference](repair.md)
-- [Writing a Package Manifest](../../guide/advanced/write-package-manifest.md)
+* [Installing and Updating Packages](../../guide/basic/install-update-packages.md)
+* [activate command reference](activate.md)
+* [repair command reference](repair.md)
+* [Writing a Package Manifest](../../guide/advanced/write-package-manifest.md)
