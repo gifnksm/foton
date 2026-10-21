@@ -10,6 +10,11 @@ and this project adheres to
 
 ## [Unreleased] - ReleaseDate
 
+### Changed
+
+* Publish crates through crates.io trusted publishing and attest GitHub release
+  assets
+
 ## [0.1.3] - 2026-08-29
 
 ### Added

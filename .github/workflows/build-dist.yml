@@ -1,16 +1,15 @@
-name: CD
+name: Build Dist
 
 on:
   push:
-    tags:
-      - "v?[0-9]+.[0-9]+.[0-9]+"
     branches:
       - main
   pull_request:
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: build-dist-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.ref_name != github.event.repository.default_branch }}
 
 permissions:
@@ -23,14 +22,13 @@ env:
   MISE_LOCKED: true
 
 jobs:
-  build-release-assets:
-    name: Build artifacts for ${{ matrix.job.target }}
+  build-dist:
+    name: Build
     runs-on: ${{ matrix.job.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: true
       matrix:
-        rust: [stable]
         job:
           - os: windows-2025
             target: x86_64-pc-windows-msvc
@@ -42,7 +40,8 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
-          toolchain: ${{ matrix.rust }}
+          toolchain: stable
+          targets: ${{ matrix.job.target }}
       - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
         with:
           github_token: ${{ github.token }}
@@ -56,8 +55,8 @@ jobs:
           brew install bash
           echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
         shell: bash
-      - name: Build artifact
-        run: ./scripts/build-dist --target "${TARGET}"
+      - name: Build
+        run: mise run build:dist --target "${TARGET}"
         env:
           TARGET: ${{ matrix.job.target }}
         shell: bash
@@ -66,51 +65,24 @@ jobs:
         with:
           name: artifact-${{ matrix.job.target }}
           path: target/dist/*
+          if-no-files-found: error
 
-  release:
-    name: Create GitHub release
-    if: ${{ startsWith(github.ref, 'refs/tags/') }}
-    needs:
-      - build-release-assets
-    permissions:
-      contents: write # Allow creating releases and uploading release assets
-    runs-on: ubuntu-26.04
-    timeout-minutes: 30
-    steps:
-      - name: Download built artifacts
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: artifact-*
-          path: target/dist
-          merge-multiple: true
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            target/dist/* \
-            --generate-notes \
-            --verify-tag
-        shell: bash
-
-  cd-complete:
-    name: cd-complete
+  build-dist-complete:
+    name: build-dist-complete
     if: ${{ always() }}
     needs:
-      - build-release-assets
-      - release
+      - build-dist
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
-      - name: CD complete
+      - name: Build Dist complete
         env:
           RESULT: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
         run: |
           if "${RESULT}"; then
-            echo "CD succeeded"
+            echo "Build Dist succeeded"
           else
-            echo "CD failed"
+            echo "Build Dist failed"
             exit 1
           fi
         shell: bash
