@@ -10,8 +10,14 @@ lockfile_platforms = [
 minimum_release_age = "3d"
 cargo.binstall_quickinstall = true
 
+[task_config]
+# Use mise's Bash detection to avoid the WSL launcher on Windows.
+# https://mise.jdx.dev/troubleshooting.html#shell-bash-c-task-fails-with-command-not-found-from-powershell
+shell = "bash -c"
+
 [tools]
 "aqua:taiki-e/cargo-llvm-cov" = { version = "0.9.1", lazy = true, lazy_bins = ["cargo-llvm-cov"] }
+cargo-deny = { version = "0.20.2", lazy = true }
 cargo-release = { version = "1.1.6", lazy = true, lazy_bins = ["cargo-release"], platforms.windows-arm64.asset_pattern = "cargo-release-v{{ version }}-x86_64-pc-windows-msvc.zip" }
 editorconfig-checker = { version = "4.0.2", lazy = true, lazy_bins = ["editorconfig-checker"] }
 "github:EmbarkStudios/cargo-about" = { version = "0.9.2", lazy = true, lazy_bins = ["cargo-about"] }
