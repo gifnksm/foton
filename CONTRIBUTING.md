@@ -7,16 +7,29 @@ wish to make by creating a new issue before making the change.
 
 ## Reporting Issues
 
-Before reporting an issue on the
-[issue tracker](https://github.com/gifnksm/foton/issues),
-please check that it has not already been reported by searching for some related
-keywords.
+Before reporting an issue on the [issue tracker], please check that it has not
+already been reported by searching for some related keywords.
+
+[issue tracker]: https://github.com/gifnksm/foton/issues
 
 ## Pull Requests
 
 Try to do one pull request per change.
 
-Run `just ci` before opening or updating a pull request.
+For Rust code changes, run the following checks before opening or updating a
+pull request:
+
+```console
+cargo fmt --all --check
+cargo clippy --all-features --all-targets --workspace
+cargo test
+```
+
+For changes limited to documentation or other non-Rust files, check the files
+relevant to your changes; you do not need to run the Rust checks above.
+
+After opening or updating a pull request, review the CI results and fix any
+failures caused by your changes.
 
 When a pull request resolves an issue, reference it in the PR description with
 `Closes #<number>`. When it is related to an issue but does not resolve it,
@@ -24,17 +37,22 @@ reference it with `Refs #<number>`.
 
 ### Updating the Changelog
 
-Update the changes you have made in
-[CHANGELOG](https://github.com/gifnksm/foton/blob/main/CHANGELOG.md)
-file under the **Unreleased** section.
+Document notable changes that affect users of this crate in the **Unreleased**
+section of [CHANGELOG].
+
+Include changes to public APIs, behavior, performance, security, and
+compatibility requirements such as the minimum supported Rust version (MSRV).
+
+Changes limited to internal refactoring, tests, CI, development tooling, or
+minor documentation edits do not require a changelog entry unless they have a
+notable impact on users.
 
 Add the pull request number to changelog entries when available. If the pull
 request number is not known yet, update the changelog after creating the pull
 request.
 
-Add the changes of your pull request to one of the following subsections,
-depending on the types of changes defined by
-[Keep a changelog](https://keepachangelog.com/en/1.0.0/):
+Place each changelog entry in one of the following subsections, depending on the
+types of changes defined by [Keep a changelog]:
 
 * `Added` for new features.
 * `Changed` for changes in existing functionality.
@@ -45,12 +63,15 @@ depending on the types of changes defined by
 
 If the required subsection does not exist yet under **Unreleased**, create it!
 
+[CHANGELOG]: https://github.com/gifnksm/foton/blob/main/CHANGELOG.md
+[Keep a changelog]: https://keepachangelog.com/en/1.0.0/
+
 ## Developing
 
-If you want to contribute to the development of `foton`, you can follow the
-steps below.
+If you want to contribute to the development of foton, you can follow the steps
+below.
 
-### Set Up
+### Setup
 
 This is no different than other Rust projects.
 
@@ -62,17 +83,11 @@ cargo test
 
 ### Useful Commands
 
-* Run lint and static checks during development:
+* Optionally, run the full CI-equivalent suite locally, including docs and
+  tests, using mise. Installing mise is not required to contribute:
 
   ```console
-  just ci-lint
-  ```
-
-* Run the full CI-equivalent suite, including docs and tests, before opening or
-  updating a pull request:
-
-  ```console
-  just ci
+  mise run ci
   ```
 
 * Build and run release version:
@@ -81,26 +96,4 @@ cargo test
   cargo build --release && cargo run --release
   ```
 
-* Run formatting checks:
-
-  ```console
-  just fmt --check
-  ```
-
-* Format the code in the project:
-
-  ```console
-  just fmt
-  ```
-
-* Run all tests:
-
-  ```console
-  just test-all
-  ```
-
-* Run Clippy:
-
-  ```console
-  just clippy-all -- -D warnings
-  ```
+If you use mise, see `mise tasks ls` for more commands.

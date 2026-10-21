@@ -1,0 +1,3 @@
+# FIXME: migrate to mise
+[ci]
+run = "just ci"
