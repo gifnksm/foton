@@ -10,6 +10,14 @@ and this project adheres to
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+* Embed dependency information in binaries published on GitHub Releases using
+  [`cargo auditable`], enabling dependency inspection and vulnerability
+  scanning.
+
+[`cargo auditable`]: https://github.com/rust-secure-code/cargo-auditable
+
 ### Changed
 
 * Publish crates through crates.io trusted publishing and attest GitHub release

@@ -170,6 +170,26 @@ url = "https://github.com/gifnksm/cargo-sync-rdme/releases/download/v0.8.4/cargo
 url_api = "https://api.github.com/repos/gifnksm/cargo-sync-rdme/releases/assets/634425957"
 provenance = "github-attestations"
 
+[[tools."github:rust-secure-code/cargo-auditable"]]
+version = "0.7.7"
+backend = "github:rust-secure-code/cargo-auditable"
+specifiers = ["0.7.7"]
+
+[tools."github:rust-secure-code/cargo-auditable"."platforms.linux-x64"]
+checksum = "sha256:4c8d3b08c3c34e9f2333367224dbbfb4aab68067698b43de59fe19aded3416dd"
+url = "https://github.com/rust-secure-code/cargo-auditable/releases/download/v0.7.7/cargo-auditable-x86_64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/rust-secure-code/cargo-auditable/releases/assets/605646432"
+
+[tools."github:rust-secure-code/cargo-auditable"."platforms.windows-arm64"]
+checksum = "sha256:ad827b9c8e94de85930ba32a52d5ab5873e7b54148b4e415279b8d5f3f9eb917"
+url = "https://github.com/rust-secure-code/cargo-auditable/releases/download/v0.7.7/cargo-auditable-aarch64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/rust-secure-code/cargo-auditable/releases/assets/605646404"
+
+[tools."github:rust-secure-code/cargo-auditable"."platforms.windows-x64"]
+checksum = "sha256:717ba2d3ed7997c501e9987ee7c94bebf9d7219b18b185a03009420ec7029c7d"
+url = "https://github.com/rust-secure-code/cargo-auditable/releases/download/v0.7.7/cargo-auditable-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/rust-secure-code/cargo-auditable/releases/assets/605646426"
+
 [[tools."github:taiki-e/cargo-hack"]]
 version = "0.6.45"
 backend = "github:taiki-e/cargo-hack"
