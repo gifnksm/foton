@@ -25,10 +25,18 @@ and this project adheres to
 
 ### Security
 
-* Update the transitive dependency `ctutils` from 0.4.3 to 0.4.5 to address
+* Update the transitive dependency `ctutils` from 0.4.2 to 0.4.5 to address
   [RUSTSEC-2026-0385] (non-constant-time mask generation and `u128`
   comparisons).
+* Update the dependency `zip` from 8.6.0 to 9.0.5 to address [RUSTSEC-2026-0367]
+  (preservation of SUID/SGID bits during extraction), [RUSTSEC-2026-0368]
+  (creation of symlinks targeting paths outside the extraction directory), and
+  [RUSTSEC-2026-0369] (permission changes through symlinks without confining the
+  target).
 
+[RUSTSEC-2026-0367]: https://rustsec.org/advisories/RUSTSEC-2026-0367
+[RUSTSEC-2026-0368]: https://rustsec.org/advisories/RUSTSEC-2026-0368
+[RUSTSEC-2026-0369]: https://rustsec.org/advisories/RUSTSEC-2026-0369
 [RUSTSEC-2026-0385]: https://rustsec.org/advisories/RUSTSEC-2026-0385
 
 ## [0.1.3] - 2026-08-29
