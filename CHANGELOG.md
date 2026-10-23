@@ -20,6 +20,8 @@ and this project adheres to
 
 ### Changed
 
+* Use rustls instead of native-tls for HTTPS package downloads, retaining
+  Windows certificate store integration.
 * Publish crates through crates.io trusted publishing and attest GitHub release
   assets
 
