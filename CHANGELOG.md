@@ -23,6 +23,14 @@ and this project adheres to
 * Publish crates through crates.io trusted publishing and attest GitHub release
   assets
 
+### Security
+
+* Update the transitive dependency `ctutils` from 0.4.3 to 0.4.5 to address
+  [RUSTSEC-2026-0385] (non-constant-time mask generation and `u128`
+  comparisons).
+
+[RUSTSEC-2026-0385]: https://rustsec.org/advisories/RUSTSEC-2026-0385
+
 ## [0.1.3] - 2026-08-29
 
 ### Added
