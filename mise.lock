@@ -46,34 +46,34 @@ url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/carg
 url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/471599057"
 
 [[tools.cargo-release]]
-version = "1.1.6"
+version = "1.1.7"
 backend = "github:crate-ci/cargo-release"
-specifiers = ["1.1.6"]
+specifiers = ["v1.1.7"]
 
 [tools.cargo-release."platforms.linux-x64"]
-checksum = "sha256:d82672b9f26b9a11f1b080eedeb74ffa3dd02d96ae9fb3cbc180e4a10d5417db"
-url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.6/cargo-release-v1.1.6-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/568873165"
+checksum = "sha256:9e04ae8b068f52788ce301cabaf34c4b3f0c945793d02c88442b561073f6bdb1"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.7/cargo-release-v1.1.7-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/662700706"
 provenance = "github-attestations"
 
 [tools.cargo-release."platforms.windows-x64"]
-checksum = "sha256:511ac6eb265f137cf78c74f6488bcdad750e669b5dd63324cc5582ea5a59ab5e"
-url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.6/cargo-release-v1.1.6-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/568875956"
+checksum = "sha256:7b67996840ec6d2fd8e78c67281d8807950818869f6d09e0c9678897b48f9837"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.7/cargo-release-v1.1.7-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/662704668"
 provenance = "github-attestations"
 
 [[tools.cargo-release]]
-version = "1.1.6"
+version = "1.1.7"
 backend = "github:crate-ci/cargo-release"
-specifiers = ["1.1.6"]
+specifiers = ["v1.1.7"]
 
 [tools.cargo-release.options]
 asset_pattern = "cargo-release-v{{ version }}-x86_64-pc-windows-msvc.zip"
 
 [tools.cargo-release."platforms.windows-arm64"]
-checksum = "sha256:511ac6eb265f137cf78c74f6488bcdad750e669b5dd63324cc5582ea5a59ab5e"
-url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.6/cargo-release-v1.1.6-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/568875956"
+checksum = "sha256:7b67996840ec6d2fd8e78c67281d8807950818869f6d09e0c9678897b48f9837"
+url = "https://github.com/crate-ci/cargo-release/releases/download/v1.1.7/cargo-release-v1.1.7-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/crate-ci/cargo-release/releases/assets/662704668"
 provenance = "github-attestations"
 
 [[tools.editorconfig-checker]]
