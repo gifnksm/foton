@@ -148,26 +148,26 @@ url = "https://github.com/bnjbvr/cargo-machete/releases/download/v0.9.2/cargo-ma
 url_api = "https://api.github.com/repos/bnjbvr/cargo-machete/releases/assets/397131414"
 
 [[tools."github:gifnksm/cargo-sync-rdme"]]
-version = "0.8.4"
+version = "0.8.5"
 backend = "github:gifnksm/cargo-sync-rdme"
-specifiers = ["v0.8.4"]
+specifiers = ["v0.8.5"]
 
 [tools."github:gifnksm/cargo-sync-rdme"."platforms.linux-x64"]
-checksum = "sha256:b8ee2b353ca20fad19fde10840f40c5a92360010ef641f525299ef92eb9139a8"
-url = "https://github.com/gifnksm/cargo-sync-rdme/releases/download/v0.8.4/cargo-sync-rdme-v0.8.4-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/gifnksm/cargo-sync-rdme/releases/assets/634425962"
+checksum = "sha256:ba5e5bcd3b6c203efb8d57b5b2c4d40fe3dc5099c4ede991ead759aab1826201"
+url = "https://github.com/gifnksm/cargo-sync-rdme/releases/download/v0.8.5/cargo-sync-rdme-v0.8.5-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/gifnksm/cargo-sync-rdme/releases/assets/671655863"
 provenance = "github-attestations"
 
 [tools."github:gifnksm/cargo-sync-rdme"."platforms.windows-arm64"]
-checksum = "sha256:370d38c38b311bc41d72ad8f4291e8f13121254686a9354d645cf04c03255b04"
-url = "https://github.com/gifnksm/cargo-sync-rdme/releases/download/v0.8.4/cargo-sync-rdme-v0.8.4-aarch64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/gifnksm/cargo-sync-rdme/releases/assets/634425960"
+checksum = "sha256:21279d4cac123dfd6596d8de82e6615ce14a6cfb739f3b405f5b128c159cfbed"
+url = "https://github.com/gifnksm/cargo-sync-rdme/releases/download/v0.8.5/cargo-sync-rdme-v0.8.5-aarch64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/gifnksm/cargo-sync-rdme/releases/assets/671655808"
 provenance = "github-attestations"
 
 [tools."github:gifnksm/cargo-sync-rdme"."platforms.windows-x64"]
-checksum = "sha256:15acb0e0b209a1310350c3a9ab1e98bf91a684721763e2c9fac2e38a1798e798"
-url = "https://github.com/gifnksm/cargo-sync-rdme/releases/download/v0.8.4/cargo-sync-rdme-v0.8.4-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/gifnksm/cargo-sync-rdme/releases/assets/634425957"
+checksum = "sha256:dceacd759c9c04d2a60f6cf31da2f12f2dce231e9472c30e4650d597debe2124"
+url = "https://github.com/gifnksm/cargo-sync-rdme/releases/download/v0.8.5/cargo-sync-rdme-v0.8.5-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/gifnksm/cargo-sync-rdme/releases/assets/671655809"
 provenance = "github-attestations"
 
 [[tools."github:rust-secure-code/cargo-auditable"]]
