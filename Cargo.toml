@@ -121,7 +121,7 @@ windows = {
   ]
 }
 windows-registry = "0.6.1"
-zip = "9.2.3"
+zip = "9.3.0"
 
 [dev-dependencies]
 indoc = "2.0.8"
