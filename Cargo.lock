@@ -765,6 +765,7 @@ dependencies = [
  "wild",
  "windows",
  "windows-registry 0.100.0",
+ "windows-result 0.100.0",
  "winresource",
  "zip",
 ]

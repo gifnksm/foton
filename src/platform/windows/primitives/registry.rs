@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
 use snafu::{IntoError as _, OptionExt as _, ResultExt as _, Snafu};
-use windows::{Win32::Foundation::ERROR_FILE_NOT_FOUND, core::HSTRING};
-use windows_registry::{CURRENT_USER, Key, Value};
+use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
+use windows_registry::{CURRENT_USER, HSTRING, Key, Value};
 
 use crate::{package::PackageId, util::path::AbsolutePath};
 
@@ -24,8 +24,11 @@ cfg_select! {
 
 const USER_FONTS_REGISTRY_KEY_PATH: &str = r"Software\Microsoft\Windows NT\CurrentVersion\Fonts";
 
-fn err_is_not_found(err: &windows::core::Error) -> bool {
-    err.code() == ERROR_FILE_NOT_FOUND.to_hresult()
+fn err_is_not_found(err: &windows_result::Error) -> bool {
+    // Compare the underlying HRESULT values because windows and windows-registry
+    // use different versions of windows-result. Both values are HRESULTs, so no
+    // information is lost by comparing their public i32 fields.
+    err.code().0 == ERROR_FILE_NOT_FOUND.to_hresult().0
 }
 
 #[derive(Debug, Snafu)]
@@ -33,22 +36,22 @@ pub(crate) enum RegistryError {
     #[snafu(display("failed to create registry key: {key_path}"))]
     CreateRegistryKey {
         key_path: String,
-        source: windows::core::Error,
+        source: windows_result::Error,
     },
     #[snafu(display("failed to open registry key for read: {key_path}"))]
     OpenRegistryKeyForRead {
         key_path: String,
-        source: windows::core::Error,
+        source: windows_result::Error,
     },
     #[snafu(display("failed to open registry key for write: {key_path}"))]
     OpenRegistryKeyForWrite {
         key_path: String,
-        source: windows::core::Error,
+        source: windows_result::Error,
     },
     #[snafu(display("failed to enumerate values of registry key: {key_path}"))]
     EnumerateValues {
         key_path: String,
-        source: windows::core::Error,
+        source: windows_result::Error,
     },
     #[snafu(display("package `{pkg_id}` fonts already exist in registry key: {key_path}"))]
     PackageRegistryValuesAlreadyExist { pkg_id: PackageId, key_path: String },
@@ -56,13 +59,13 @@ pub(crate) enum RegistryError {
     SetValue {
         key_path: String,
         value_name: String,
-        source: windows::core::Error,
+        source: windows_result::Error,
     },
     #[snafu(display("failed to remove registry value `{value_name}` of registry key: {key_path}"))]
     RemoveValue {
         key_path: String,
         value_name: String,
-        source: windows::core::Error,
+        source: windows_result::Error,
     },
 }
 
