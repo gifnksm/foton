@@ -1,6 +1,9 @@
 [alias]
 xtask = "run --package xtask --"
 
+[registry]
+global-min-publish-age = "3 days"
+
 # On Windows MSVC, statically link the C runtime so that the resulting EXE does
 # not depend on the vcruntime DLL.
 [target.'cfg(all(target_os = "windows", target_env = "msvc"))']
