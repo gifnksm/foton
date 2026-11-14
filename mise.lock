@@ -366,24 +366,24 @@ url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/7318658
 provenance = "github-attestations"
 
 [[tools.typos]]
-version = "1.52.1"
+version = "1.52.2"
 backend = "aqua:crate-ci/typos"
-specifiers = ["1.52.1"]
+specifiers = ["1.52.2"]
 
 [tools.typos."platforms.linux-x64"]
-checksum = "sha256:c034dbec8797cfa0c4548b3726c1eebbafcf703b8a17f15a961b037788eebcdd"
+checksum = "sha256:3b13d1291281d39d01822e54035636487a7a0f228e70097899b1e33aeb0e7e93"
 checksum_source = "mise-versions"
-url = "https://github.com/crate-ci/typos/releases/download/v1.52.1/typos-v1.52.1-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/crate-ci/typos/releases/assets/728875573"
+url = "https://github.com/crate-ci/typos/releases/download/v1.52.2/typos-v1.52.2-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/crate-ci/typos/releases/assets/733787189"
 
 [tools.typos."platforms.windows-arm64"]
-checksum = "sha256:adb3ac98b0ca8964a23b984c786c2116a25b3665e070f2a4f8156e2d6d4df2e3"
+checksum = "sha256:ab79036832cea0f2a21aa947731d39512250cc0f7a6a2f6add26262738a8cc11"
 checksum_source = "mise-versions"
-url = "https://github.com/crate-ci/typos/releases/download/v1.52.1/typos-v1.52.1-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/crate-ci/typos/releases/assets/728878647"
+url = "https://github.com/crate-ci/typos/releases/download/v1.52.2/typos-v1.52.2-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/crate-ci/typos/releases/assets/733790297"
 
 [tools.typos."platforms.windows-x64"]
-checksum = "sha256:adb3ac98b0ca8964a23b984c786c2116a25b3665e070f2a4f8156e2d6d4df2e3"
+checksum = "sha256:ab79036832cea0f2a21aa947731d39512250cc0f7a6a2f6add26262738a8cc11"
 checksum_source = "mise-versions"
-url = "https://github.com/crate-ci/typos/releases/download/v1.52.1/typos-v1.52.1-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/crate-ci/typos/releases/assets/728878647"
+url = "https://github.com/crate-ci/typos/releases/download/v1.52.2/typos-v1.52.2-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/crate-ci/typos/releases/assets/733790297"
