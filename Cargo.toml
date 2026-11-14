@@ -122,7 +122,7 @@ windows = {
 }
 windows-registry = "0.100.0"
 windows-result = "0.100.0"
-zip = "9.5.0"
+zip = "9.5.1"
 
 [dev-dependencies]
 indoc = "2.0.8"
