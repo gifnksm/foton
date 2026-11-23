@@ -17,7 +17,7 @@ shell = "bash -c"
 
 [tools]
 "aqua:taiki-e/cargo-llvm-cov" = { version = "0.9.1", lazy = true, lazy_bins = ["cargo-llvm-cov"] }
-cargo-deny = { version = "0.21.0", lazy = true }
+cargo-deny = { version = "0.22.0", lazy = true }
 cargo-release = { version = "v1.1.7", lazy = true, lazy_bins = ["cargo-release"], platforms.windows-arm64.asset_pattern = "cargo-release-v{{ version }}-x86_64-pc-windows-msvc.zip" }
 editorconfig-checker = { version = "4.0.2", lazy = true, lazy_bins = ["editorconfig-checker"] }
 "github:EmbarkStudios/cargo-about" = { version = "0.9.3", lazy = true, lazy_bins = ["cargo-about"] }
